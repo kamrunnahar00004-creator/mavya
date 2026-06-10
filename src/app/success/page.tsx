@@ -4,54 +4,18 @@ import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Check, Download } from "lucide-react";
-
-const PENDING_DOWNLOAD_KEY = "mavya:pending-download";
-
-type PendingDownload = {
-  dataUrl: string;
-  filename: string;
-  savedAt: number;
-};
+import {
+  readPendingDownload,
+  type PendingDownload,
+} from "@/lib/pending-download";
 
 type DownloadState = {
   download: PendingDownload | null;
   loadError: boolean;
+  loading: boolean;
 };
 
 type PaymentStatus = "checking" | "paid" | "unpaid" | "error";
-
-function readPendingDownload(): DownloadState {
-  if (typeof window === "undefined") {
-    return { download: null, loadError: false };
-  }
-
-  const raw = window.sessionStorage.getItem(PENDING_DOWNLOAD_KEY);
-  if (!raw) {
-    return { download: null, loadError: true };
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as Partial<PendingDownload>;
-    if (
-      typeof parsed.dataUrl !== "string" ||
-      !parsed.dataUrl.startsWith("data:image/") ||
-      typeof parsed.filename !== "string"
-    ) {
-      throw new Error("Invalid pending download.");
-    }
-    return {
-      download: {
-        dataUrl: parsed.dataUrl,
-        filename: parsed.filename,
-        savedAt:
-          typeof parsed.savedAt === "number" ? parsed.savedAt : Date.now(),
-      },
-      loadError: false,
-    };
-  } catch {
-    return { download: null, loadError: true };
-  }
-}
 
 function triggerDownload(download: PendingDownload) {
   const link = document.createElement("a");
@@ -66,9 +30,42 @@ function SuccessContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams.get("session_id");
   const didAutoDownload = useRef(false);
-  const [{ download, loadError }] = useState<DownloadState>(readPendingDownload);
+  const [{ download, loadError, loading }, setDownloadState] =
+    useState<DownloadState>({
+      download: null,
+      loadError: false,
+      loading: true,
+    });
   const [paymentStatus, setPaymentStatus] =
     useState<PaymentStatus>("checking");
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadDownload() {
+      try {
+        const pendingDownload = await readPendingDownload();
+        if (cancelled) return;
+        setDownloadState({
+          download: pendingDownload,
+          loadError: !pendingDownload,
+          loading: false,
+        });
+      } catch {
+        if (!cancelled) {
+          setDownloadState({
+            download: null,
+            loadError: true,
+            loading: false,
+          });
+        }
+      }
+    }
+
+    loadDownload();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -114,8 +111,10 @@ function SuccessContent() {
   const statusMessage =
     !sessionId
       ? "Missing checkout session. Go back and use the Download button after generating a photo."
+      : loading
+      ? "Preparing your download..."
       : loadError
-      ? "Could not find the generated photo in this browser tab. Go back and generate it again before checkout."
+      ? "Could not find the generated photo in this browser. Go back and generate it again before checkout."
       : paymentStatus === "checking"
       ? "Verifying payment..."
       : paymentStatus === "paid"

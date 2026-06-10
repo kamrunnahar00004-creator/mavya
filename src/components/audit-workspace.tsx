@@ -439,10 +439,12 @@ export function AuditWorkspace({
                       ) : (
                         <Lock className="h-4 w-4" aria-hidden="true" />
                       )}
-                      {checkoutLoading ? "Opening checkout..." : "Download photo"}
+                      {checkoutLoading
+                        ? "Opening checkout..."
+                        : "Download photo, $4.99"}
                     </PrimaryButton>
                     <span className="text-[12.5px] text-[var(--color-ink-soft)]">
-                      Opens secure checkout for the full-resolution file.
+                      Secure checkout opens before download.
                     </span>
                   </div>
                 ) : improvedDownloadUrl ? (

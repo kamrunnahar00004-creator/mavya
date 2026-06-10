@@ -22,6 +22,7 @@ import {
 } from "@/lib/audit-mapping";
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
+import { savePendingDownload } from "@/lib/pending-download";
 
 type Mode =
   | "upload"
@@ -54,7 +55,6 @@ const KEY_MAP: Record<string, Mode> = {
 // reversible. Flip to true to bring the photo tray back. The main thumbnail
 // rubric, scoring, generation, and result UI are unaffected either way.
 const MULTI_PHOTO_ENABLED = false;
-const PENDING_DOWNLOAD_KEY = "mavya:pending-download";
 
 type SlotKind = "main" | "extra";
 
@@ -557,14 +557,17 @@ export default function Page() {
         )
       );
       try {
-        window.sessionStorage.setItem(
-          PENDING_DOWNLOAD_KEY,
-          JSON.stringify({
+        try {
+          await savePendingDownload({
             dataUrl: slot.improvedDownloadUrl,
             filename: "mavya-improved.png",
             savedAt: Date.now(),
-          })
-        );
+          });
+        } catch {
+          throw new Error(
+            "Could not prepare the download in this browser. Try refreshing and generating again."
+          );
+        }
         const res = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

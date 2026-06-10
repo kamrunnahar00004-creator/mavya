@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/request-ip";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 
@@ -11,7 +12,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  const ip = clientIp(req);
   const limit = await rateLimit(`score:${ip}`, 6, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
@@ -26,6 +27,22 @@ export async function POST(req: NextRequest) {
             : "rate_limited",
       },
       { status: limit.reason === "missing_durable_store" ? 503 : 429 }
+    );
+  }
+  const dailyLimit = await rateLimit(`score-day:${ip}`, 50, 24 * 60 * 60 * 1000);
+  if (!dailyLimit.ok) {
+    return NextResponse.json(
+      {
+        error:
+          dailyLimit.reason === "missing_durable_store"
+            ? "Rate limiting is not configured."
+            : "Daily score limit hit. Try again tomorrow.",
+        code:
+          dailyLimit.reason === "missing_durable_store"
+            ? "rate_limit_not_configured"
+            : "rate_limited",
+      },
+      { status: dailyLimit.reason === "missing_durable_store" ? 503 : 429 }
     );
   }
 

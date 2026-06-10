@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
+import { clientIp } from "@/lib/request-ip";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import { improvePhoto, sanitizeRetryConstraints } from "@/lib/improve-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 
 export async function POST(req: NextRequest) {
-  const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
+  const ip = clientIp(req);
   const limit = await rateLimit(`gen:${ip}`, 2, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
