@@ -162,13 +162,25 @@ No auth, dashboard, multi-photo workflow, database, subscriptions, Etsy API, or
 full SaaS surface is required for this first-dollar test.
 ```
 
+Founder update on 2026-06-10:
+
+```text
+For the validation launch, show the clean AI-improved preview before payment.
+The primary metric is whether sellers upload, generate, and click Download.
+Download opens Stripe Checkout for $4.99. After successful checkout, the same
+browser tab downloads the generated image. Do not add auth, subscriptions,
+database, Vercel Blob storage, watermarks, or an upscaler before measuring
+download clicks and first payments.
+```
+
 Payment/delivery rule:
 
 ```text
-The clean full-resolution improved image must never reach the browser before
-payment. Before payment, the user sees only a downscaled watermarked preview and
-the honest score. After Stripe Checkout confirms payment, the server streams the
-clean file from blob storage through a verified download endpoint.
+Validation MVP: show the clean generated preview before payment so the seller can
+judge the outcome. The paid action is the Download button. Stripe Checkout gates
+the browser download click, not the preview display. This is intentionally looser
+than a production-grade protected-file system because the current goal is upload
+and download-click validation.
 ```
 
 Local integration verification on 2026-06-01:

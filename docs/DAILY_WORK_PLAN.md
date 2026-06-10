@@ -41,11 +41,12 @@ Immediate next milestone:
 Verify the publish-ready outcome gate against 10-20 real photos across candles,
 soap, mugs, and jewelry. Confirm honest 8+ delivery only on candidates that pass
 fidelity + authenticity + full-product comprehension. Use verified candidates to
-record demo videos. For the first-dollar launch, add only the minimum Stripe +
-blob delivery path: watermarked preview before payment, $4.99 checkout for
-publish-ready results, clean full-resolution download only after verified payment.
-Do not add auth, dashboard, database, subscriptions, or multi-photo features before
-the upload-to-paid signal is measured.
+record demo videos. For the first-dollar launch, use the minimum validation path:
+show the clean improved preview, make the Download button open $4.99 Stripe
+Checkout, and download the generated file after payment in the same browser tab.
+Do not add auth, dashboard, database, subscriptions, Blob storage, watermarks,
+upscaling, or multi-photo features before the upload-to-download-click/payment
+signal is measured.
 ```
 
 The local end-to-end loop is live (see

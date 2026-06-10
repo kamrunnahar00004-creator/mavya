@@ -1,14 +1,76 @@
+"use client";
+
+import { Suspense, useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Check, Download } from "lucide-react";
 
-type SearchParams = Promise<{ session_id?: string }>;
+const PENDING_DOWNLOAD_KEY = "mavya:pending-download";
 
-export default async function SuccessPage({
-  searchParams,
-}: {
-  searchParams: SearchParams;
-}) {
-  const { session_id } = await searchParams;
+type PendingDownload = {
+  dataUrl: string;
+  filename: string;
+  savedAt: number;
+};
+
+type DownloadState = {
+  download: PendingDownload | null;
+  loadError: boolean;
+};
+
+function readPendingDownload(): DownloadState {
+  if (typeof window === "undefined") {
+    return { download: null, loadError: false };
+  }
+
+  const raw = window.sessionStorage.getItem(PENDING_DOWNLOAD_KEY);
+  if (!raw) {
+    return { download: null, loadError: true };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as Partial<PendingDownload>;
+    if (
+      typeof parsed.dataUrl !== "string" ||
+      !parsed.dataUrl.startsWith("data:image/") ||
+      typeof parsed.filename !== "string"
+    ) {
+      throw new Error("Invalid pending download.");
+    }
+    return {
+      download: {
+        dataUrl: parsed.dataUrl,
+        filename: parsed.filename,
+        savedAt:
+          typeof parsed.savedAt === "number" ? parsed.savedAt : Date.now(),
+      },
+      loadError: false,
+    };
+  } catch {
+    return { download: null, loadError: true };
+  }
+}
+
+function triggerDownload(download: PendingDownload) {
+  const link = document.createElement("a");
+  link.href = download.dataUrl;
+  link.download = download.filename || "mavya-improved.png";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
+function SuccessContent() {
+  const searchParams = useSearchParams();
+  const sessionId = searchParams.get("session_id");
+  const didAutoDownload = useRef(false);
+  const [{ download, loadError }] = useState<DownloadState>(readPendingDownload);
+
+  useEffect(() => {
+    if (!sessionId || !download || didAutoDownload.current) return;
+    didAutoDownload.current = true;
+    triggerDownload(download);
+  }, [download, sessionId]);
 
   return (
     <main className="flex min-h-[70vh] items-center justify-center px-6 py-16">
@@ -20,22 +82,24 @@ export default async function SuccessPage({
           Payment confirmed
         </h1>
         <p className="mt-3 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
-          Download your full-resolution improved photo below. Save this page
-          until your download finishes.
+          Your improved photo should download automatically. Keep this tab open
+          until the download finishes.
         </p>
 
-        {session_id ? (
-          <a
-            href={`/api/download?session_id=${encodeURIComponent(session_id)}`}
+        {download && sessionId ? (
+          <button
+            type="button"
+            onClick={() => triggerDownload(download)}
             className="mt-7 inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] active:translate-y-[1px]"
           >
             <Download className="h-4 w-4" aria-hidden="true" />
-            Download photo
-          </a>
+            Download again
+          </button>
         ) : (
-          <p className="mt-7 text-[14px] text-[var(--color-weak)]">
-            Missing session. If you were charged, contact support with your
-            Stripe receipt.
+          <p className="mt-7 text-[14px] leading-relaxed text-[var(--color-weak)]">
+            {loadError
+              ? "Could not find the generated photo in this browser tab. Go back and generate it again before checkout."
+              : "Preparing your download..."}
           </p>
         )}
 
@@ -49,5 +113,21 @@ export default async function SuccessPage({
         </div>
       </div>
     </main>
+  );
+}
+
+export default function SuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="flex min-h-[70vh] items-center justify-center px-6 py-16">
+          <p className="text-[15px] text-[var(--color-ink-muted)]">
+            Preparing your download...
+          </p>
+        </main>
+      }
+    >
+      <SuccessContent />
+    </Suspense>
   );
 }

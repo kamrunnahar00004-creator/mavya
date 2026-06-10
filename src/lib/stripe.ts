@@ -1,6 +1,6 @@
 /**
  * Server-only Stripe client. Never import from a client component — relies on
- * STRIPE_SECRET_KEY. Used by /api/checkout and /api/download.
+ * STRIPE_SECRET_KEY. Used by /api/checkout.
  */
 
 import Stripe from "stripe";

@@ -54,6 +54,7 @@ const KEY_MAP: Record<string, Mode> = {
 // reversible. Flip to true to bring the photo tray back. The main thumbnail
 // rubric, scoring, generation, and result UI are unaffected either way.
 const MULTI_PHOTO_ENABLED = false;
+const PENDING_DOWNLOAD_KEY = "mavya:pending-download";
 
 type SlotKind = "main" | "extra";
 
@@ -65,10 +66,8 @@ type PhotoSlot = {
   originalUrl: string;
   status: "analyzing" | "graded";
   audit: DemoState | null;
-  /** Data URL of the preview. In production this is watermarked/downscaled. */
+  /** Data URL of the generated preview shown before payment. */
   improvedDownloadUrl?: string;
-  /** Present for any generated result that can be paid/downloaded. */
-  assetId?: string;
   freePreview?: boolean;
   freePreviewMessage?: string;
   keepNote?: string;
@@ -85,11 +84,9 @@ type PhotoSlot = {
 type GenerateSuccessBody = {
   ok: true;
   outcome: "publish_ready" | "useful_free_preview";
-  /** Preview image. In production this is watermarked/downscaled. */
+  /** Clean generated preview shown before payment. */
   previewBase64: string;
   previewMimeType: string;
-  /** Present when the generated result can be paid/downloaded. */
-  assetId?: string;
   candidateAudit: RubricJson;
   fidelity: FidelityReport;
 };
@@ -450,10 +447,7 @@ export default function Page() {
           return;
         }
 
-        // In production this is the watermarked preview. In RAW_TEST_MODE it is
-        // the clean local-testing image returned directly by the server.
         const improvedDataUrl = `data:${body.previewMimeType};base64,${body.previewBase64}`;
-        const assetId = body.assetId;
         const improvedAudit: AuditResult =
           slot.kind === "extra"
             ? rubricToSupportingAuditResult(body.candidateAudit)
@@ -485,7 +479,6 @@ export default function Page() {
                   return {
                     ...s,
                     improvedDownloadUrl: improvedDataUrl,
-                    assetId,
                     checkoutError: undefined,
                     freePreview: isFreePreview,
                     freePreviewMessage: previewMessage,
@@ -549,13 +542,13 @@ export default function Page() {
   const handleImprove = useCallback(() => runImprove(false), [runImprove]);
   const handleRetryImprove = useCallback(() => runImprove(true), [runImprove]);
 
-  // Paywall: create a Stripe Checkout Session for the active publish-ready slot
-  // and redirect. The clean file is never in the browser; payment unlocks it via
-  // the verified /api/download endpoint on the success page.
+  // Validation MVP: the clean preview is already visible. Download click opens
+  // Stripe, and the success page downloads the generated image from this tab's
+  // session storage after payment.
   const handleCheckout = useCallback(
     async (email?: string) => {
       const slot = slotsRef.current.find((s) => s.id === activeSlotId);
-      if (!slot || !slot.assetId) return;
+      if (!slot || !slot.improvedDownloadUrl) return;
       setSlots((prev) =>
         prev.map((s) =>
           s.id === slot.id
@@ -564,10 +557,18 @@ export default function Page() {
         )
       );
       try {
+        window.sessionStorage.setItem(
+          PENDING_DOWNLOAD_KEY,
+          JSON.stringify({
+            dataUrl: slot.improvedDownloadUrl,
+            filename: "mavya-improved.png",
+            savedAt: Date.now(),
+          })
+        );
         const res = await fetch("/api/checkout", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ assetId: slot.assetId, email }),
+          body: JSON.stringify({ email }),
         });
         const data = (await res.json().catch(() => null)) as
           | { url?: string; error?: string }
@@ -686,7 +687,6 @@ export default function Page() {
           freePreview={activeSlot.freePreview ?? false}
           freePreviewMessage={activeSlot.freePreviewMessage}
           keepNote={activeSlot.keepNote}
-          paidAssetId={activeSlot.assetId}
           onCheckout={handleCheckout}
           checkoutLoading={activeSlot.checkoutLoading ?? false}
           checkoutError={activeSlot.checkoutError}

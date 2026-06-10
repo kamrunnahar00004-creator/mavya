@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getMeta, isAssetId } from "@/lib/blob-store";
 import {
   IMPROVED_PHOTO_PRICE_CENTS,
   appUrl,
@@ -10,8 +9,6 @@ import { rateLimit } from "@/lib/rate-limit";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-// Only publish-ready assets created within this window can be purchased.
-const MAX_ASSET_AGE_MS = 48 * 60 * 60 * 1000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(req: NextRequest) {
@@ -23,36 +20,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  let body: { assetId?: unknown; email?: unknown };
+  let body: { email?: unknown };
   try {
     body = await req.json();
   } catch {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
 
-  if (!isAssetId(body.assetId)) {
-    return NextResponse.json({ error: "Invalid asset." }, { status: 400 });
-  }
-  const assetId = body.assetId;
   const email = typeof body.email === "string" ? body.email.trim() : "";
   if (email && !EMAIL_RE.test(email)) {
     return NextResponse.json({ error: "Enter a valid email." }, { status: 400 });
-  }
-
-  // Provenance check: the asset must exist and be fresh.
-  // Price + eligibility are decided server-side only; client score is ignored.
-  const meta = await getMeta(assetId);
-  if (!meta) {
-    return NextResponse.json(
-      { error: "This result is not available for purchase." },
-      { status: 404 }
-    );
-  }
-  if (Date.now() - meta.createdAt > MAX_ASSET_AGE_MS) {
-    return NextResponse.json(
-      { error: "This result expired. Generate a new improved photo." },
-      { status: 410 }
-    );
   }
 
   try {
@@ -73,10 +50,8 @@ export async function POST(req: NextRequest) {
         },
       ],
       metadata: {
-        assetId,
-        scoreBefore: String(meta.scoreBefore),
-        scoreAfter: String(meta.scoreAfter),
         product: "improved_photo",
+        validation_flow: "clean_preview_before_payment",
       },
       success_url: `${appUrl()}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${appUrl()}/?checkout=cancelled`,

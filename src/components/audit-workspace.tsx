@@ -67,8 +67,6 @@ type Props = {
   freePreviewMessage?: string;
   /** Muted status shown when a retry keeps the existing better preview. */
   keepNote?: string;
-  /** Present for a publish-ready result: enables the $4.99 unlock flow. */
-  paidAssetId?: string;
   onCheckout?: (email?: string) => void;
   checkoutLoading?: boolean;
   checkoutError?: string;
@@ -99,7 +97,6 @@ export function AuditWorkspace({
   freePreview = false,
   freePreviewMessage,
   keepNote,
-  paidAssetId,
   onCheckout,
   checkoutLoading = false,
   checkoutError,
@@ -427,7 +424,7 @@ export function AuditWorkspace({
                     <span>{checkoutError}</span>
                   </div>
                 )}
-                {paidAssetId && onCheckout ? (
+                {onCheckout && improvedDownloadUrl ? (
                   <div className="flex flex-wrap items-center gap-3">
                     <PrimaryButton
                       onClick={() => onCheckout()}
