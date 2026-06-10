@@ -1,0 +1,636 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import {
+  AlertCircle,
+  ArrowRight,
+  Download,
+  Loader2,
+  Lock,
+  RefreshCw,
+  Sparkles,
+  WandSparkles,
+  Wrench,
+} from "lucide-react";
+import type { DemoState } from "@/data/demo-states";
+import {
+  bandColors,
+  bandForScore,
+  cn,
+  prefersReducedMotion,
+  type ScoreBand,
+} from "@/lib/utils";
+import { MediaProofPanel } from "./media-proof-panel";
+import { MarketplaceThumbnailPreview } from "./marketplace-thumbnail-preview";
+import { PhotoSlotStrip, type SlotView } from "./photo-slot-strip";
+import { ComparisonPreview } from "./comparison-preview";
+import { ScoreVerdict } from "./score-verdict";
+import { PillarScores } from "./pillar-scores";
+import { NextSteps } from "./next-steps";
+
+const IMPROVE_STATUSES = [
+  "Analyzing fixes…",
+  "Generating cleaner photo…",
+  "Checking product details…",
+  "Scoring the result…",
+];
+
+const IMPROVE_ESTIMATE_SECONDS = 56;
+
+const SUPPORTING_ANALYZING_STATUSES = [
+  "Reading this listing photo…",
+  "Checking detail and trust…",
+  "Preparing the supporting photo grade…",
+];
+
+type Props = {
+  state: DemoState;
+  uploadedSrc?: string;
+  onCta: () => void;
+  /**
+   * Async improve flow. When provided, the improve CTA awaits this before
+   * unlocking the preview. The parent is expected to mutate `state` to add
+   * `improvedSrc` + `improvedAudit` before the promise resolves.
+   */
+  onImprove?: () => Promise<void> | void;
+  /** When present, a failed attempt shows a retry control that runs this. */
+  onRetryImprove?: () => Promise<void> | void;
+  improveLoading?: boolean;
+  /** Epoch ms when the active slot started improving. Preserves countdown across slot switches. */
+  improveStartedAt?: number;
+  improveError?: string;
+  /** Data URL or blob URL of the AI-improved image, used for download. */
+  improvedDownloadUrl?: string;
+  /** True when the active preview is safe to show but not publish-ready. */
+  freePreview?: boolean;
+  /** Specific upload recommendation shown for a free preview. */
+  freePreviewMessage?: string;
+  /** Muted status shown when a retry keeps the existing better preview. */
+  keepNote?: string;
+  /** Present for a publish-ready result: enables the $4.99 unlock flow. */
+  paidAssetId?: string;
+  onCheckout?: (email?: string) => void;
+  checkoutLoading?: boolean;
+  checkoutError?: string;
+  /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
+  panelMode?: "main" | "extra";
+  /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
+  slots?: SlotView[];
+  onSelectSlot?: (id: string) => void;
+  onAddPhoto?: () => void;
+  /** Transient workspace notice (e.g. a rejected extra upload). */
+  notice?: string;
+  /** Active slot is still being graded — right panel shows an inline loader. */
+  analyzing?: boolean;
+  animate?: boolean;
+  initialPreview?: boolean;
+};
+
+export function AuditWorkspace({
+  state,
+  uploadedSrc,
+  onCta,
+  onImprove,
+  onRetryImprove,
+  improveLoading = false,
+  improveStartedAt,
+  improveError,
+  improvedDownloadUrl,
+  freePreview = false,
+  freePreviewMessage,
+  keepNote,
+  paidAssetId,
+  onCheckout,
+  checkoutLoading = false,
+  checkoutError,
+  panelMode = "main",
+  slots,
+  onSelectSlot,
+  onAddPhoto,
+  notice,
+  analyzing = false,
+  animate = true,
+  initialPreview = false,
+}: Props) {
+  const isExtra = panelMode === "extra";
+  const [revealed, setRevealed] = useState(!animate);
+  const [improveElapsed, setImproveElapsed] = useState(0);
+  const [improveStatusIdx, setImproveStatusIdx] = useState(0);
+  const [analyzingIdx, setAnalyzingIdx] = useState(0);
+  const [activeTab, setActiveTab] = useState<"original" | "preview">(
+    initialPreview ? "preview" : "original"
+  );
+  const [previewUnlocked, setPreviewUnlocked] = useState(initialPreview);
+  const [hasImprovement, setHasImprovement] = useState(false);
+
+  useEffect(() => {
+    if (!animate) return;
+    const delay = prefersReducedMotion() ? 16 : 40;
+    const id = window.setTimeout(() => setRevealed(true), delay);
+    return () => window.clearTimeout(id);
+  }, [animate]);
+
+  const isWeak = state.band === "weak";
+  const isMid = state.band === "mid";
+  const isStrong = state.band === "strong";
+  // Weak/mid photos can be improved — main by the hero rubric, extra by the
+  // supporting rubric. Strong photos are already affirmed; no improve.
+  const canShowImprovement = isWeak || isMid;
+  const improvedSrc = state.improvedSrc;
+  const generatedPreviewExists = Boolean(improvedSrc && hasImprovement);
+  const previewActive =
+    canShowImprovement &&
+    hasImprovement &&
+    previewUnlocked &&
+    activeTab === "preview";
+  const activeAudit =
+    previewActive && state.improvedAudit ? state.improvedAudit : state;
+
+  const scoreDeltaLabel =
+    previewActive
+      ? `${state.overallScore.toFixed(1)} -> ${activeAudit.overallScore.toFixed(1)}`
+      : "";
+  const previewBelowPublishReady = previewActive && activeAudit.overallScore < 8;
+
+  useEffect(() => {
+    if (!canShowImprovement || !improvedSrc) return;
+    let cancelled = false;
+    const probe = new window.Image();
+    probe.onload = () => !cancelled && setHasImprovement(true);
+    probe.onerror = () => {
+      if (!cancelled) {
+        setHasImprovement(false);
+        setActiveTab("original");
+      }
+    };
+    probe.src = improvedSrc;
+    return () => {
+      cancelled = true;
+    };
+  }, [canShowImprovement, improvedSrc]);
+
+  // Inline improve countdown + rotating status. Keeps the audit page visible.
+  useEffect(() => {
+    if (!improveLoading) return;
+    const start = improveStartedAt ?? Date.now();
+    const reset = window.setTimeout(() => {
+      setImproveElapsed(Math.floor((Date.now() - start) / 1000));
+      setImproveStatusIdx(0);
+    }, 0);
+    const tick = window.setInterval(
+      () => setImproveElapsed(Math.floor((Date.now() - start) / 1000)),
+      1000
+    );
+    const rotate = window.setInterval(
+      () => setImproveStatusIdx((i) => (i + 1) % IMPROVE_STATUSES.length),
+      2000
+    );
+    return () => {
+      window.clearTimeout(reset);
+      window.clearInterval(tick);
+      window.clearInterval(rotate);
+    };
+  }, [improveLoading, improveStartedAt]);
+
+  const improveRemaining = IMPROVE_ESTIMATE_SECONDS - improveElapsed;
+  const improveCountdown =
+    improveRemaining > 0 ? `Generating… ${improveRemaining}s` : "Finishing…";
+  const improveStatus = IMPROVE_STATUSES[improveStatusIdx];
+
+  // Inline supporting-photo analyzing status rotation (right panel only).
+  useEffect(() => {
+    if (!analyzing) return;
+    const reset = window.setTimeout(() => setAnalyzingIdx(0), 0);
+    const id = window.setInterval(
+      () =>
+        setAnalyzingIdx((i) => (i + 1) % SUPPORTING_ANALYZING_STATUSES.length),
+      1800
+    );
+    return () => {
+      window.clearTimeout(reset);
+      window.clearInterval(id);
+    };
+  }, [analyzing]);
+  const analyzingStatus = SUPPORTING_ANALYZING_STATUSES[analyzingIdx];
+
+  return (
+    <main className="px-6 py-5 pb-10">
+      {notice && (
+        <div
+          role="status"
+          className="mx-auto mb-4 flex max-w-[1200px] items-start gap-2 rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] text-[var(--color-ink)]"
+        >
+          <AlertCircle
+            className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-mid)]"
+            strokeWidth={2}
+            aria-hidden="true"
+          />
+          <span>{notice}</span>
+        </div>
+      )}
+      <div
+        className={cn(
+          "mx-auto grid max-w-[1200px] grid-cols-[1.05fr_1fr] gap-8 items-start",
+          revealed && "reveal-on"
+        )}
+      >
+        {/* LEFT: MEDIA */}
+        <section
+          aria-label="Submitted photo and previews"
+          className="flex flex-col gap-4"
+        >
+          <MediaProofPanel
+            src={state.imageSrc}
+            overrideSrc={
+              activeTab === "preview" && hasImprovement && improvedSrc
+                ? improvedSrc
+                : uploadedSrc
+            }
+            alt={state.imageAlt}
+            placeholderLabel={state.imageSrc.split("/").pop()}
+            placeholderSub={
+              isStrong
+                ? "model-worn initial earring (strong demo)"
+                : isWeak
+                ? "teacup candle (weak demo)"
+                : undefined
+            }
+            contain
+          />
+
+          {canShowImprovement && hasImprovement && improvedSrc && previewUnlocked && (
+            <ComparisonPreview
+              improvedSrc={improvedSrc}
+              mode={state.comparisonMode}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
+          )}
+
+          {/* Etsy search preview is a main-photo concept only. */}
+          {!isExtra && (
+            <MarketplaceThumbnailPreview
+              src={state.imageSrc}
+              overrideSrc={
+                previewActive && improvedSrc ? improvedSrc : uploadedSrc
+              }
+              alt=""
+              headline={
+                previewActive
+                  ? activeAudit.thumbnailHeadline
+                  : state.thumbnailHeadline
+              }
+              sub={
+                previewActive
+                  ? activeAudit.thumbnailSub
+                  : state.thumbnailSub
+              }
+              contain={previewActive}
+            />
+          )}
+
+          {slots && onSelectSlot && onAddPhoto && (
+            <PhotoSlotStrip
+              slots={slots}
+              onSelect={onSelectSlot}
+              onAdd={onAddPhoto}
+            />
+          )}
+        </section>
+
+        {/* RIGHT: AUDIT */}
+        <section
+          aria-label="Audit result"
+          className="flex flex-col gap-3.5"
+        >
+          {analyzing ? (
+            <div className="reveal-item" data-reveal-order="0">
+              <span className="eyebrow mb-2 block">
+                {isExtra ? "Supporting photo grade" : "Photo grade"}
+              </span>
+              <div
+                className="text-[18px] font-medium leading-snug text-[var(--color-ink)]"
+                aria-live="polite"
+              >
+                {analyzingStatus}
+              </div>
+              <div className="progress-track mt-4" aria-hidden="true">
+                <span className="progress-indeterminate" />
+              </div>
+            </div>
+          ) : (
+            <>
+          <div className="reveal-item" data-reveal-order="0">
+            <ScoreVerdict
+              key={previewActive ? "improved" : "original"}
+              score={activeAudit.overallScore}
+              verdict={activeAudit.verdict}
+              heading={isExtra ? "Supporting photo grade" : "Main photo score"}
+              animate={animate}
+            />
+            {previewActive && (
+              <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
+                <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--color-ink-muted)]">
+                  <span className="text-[var(--color-weak)]">
+                    {state.overallScore.toFixed(1)}
+                  </span>
+                  <ArrowRight className="h-3 w-3 text-[var(--color-ink-soft)]" aria-hidden="true" />
+                  <span className="text-[var(--color-strong)]">
+                    {activeAudit.overallScore.toFixed(1)}
+                  </span>
+                </span>
+                <span className="text-[var(--color-ink-soft)]">
+                  AI-improved preview. Label text and small patterns may differ. Do not publish unless they match your physical product.
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="reveal-item" data-reveal-order="1">
+            <PriorityBlock
+              label={activeAudit.priorityLabel}
+              action={activeAudit.priorityAction}
+              observation={activeAudit.priorityObservation}
+              score={activeAudit.overallScore}
+              band={bandForScore(activeAudit.overallScore)}
+            />
+          </div>
+
+          <div className="reveal-item" data-reveal-order="2">
+            <PillarScores pillars={activeAudit.pillars} />
+          </div>
+
+          <div className="reveal-item" data-reveal-order="3">
+            <NextSteps
+              label={activeAudit.nextStepsLabel}
+              steps={activeAudit.nextSteps}
+              band={bandForScore(activeAudit.overallScore)}
+            />
+          </div>
+
+          {/* Improve flow: main uses the hero rubric, extra the supporting rubric. */}
+          {(
+          <div className="reveal-item mt-1.5 border-t border-[var(--color-border-soft)] pt-4" data-reveal-order="4">
+            {/* A failed retry must not show an alarming banner over an already
+                delivered publish-ready preview — the displayed result WAS delivered.
+                The "Generate another version" control stays available below. */}
+            {improveError && !(previewActive && !freePreview) && (
+              <div className="mb-3 flex flex-col items-start gap-2.5">
+                <div
+                  role="alert"
+                  className="flex items-start gap-2 rounded-[var(--radius-lg)] border border-[var(--color-weak)] bg-[var(--color-weak-soft)] px-3 py-2 text-[13px] text-[var(--color-ink)]"
+                >
+                  <AlertCircle
+                    className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-weak)]"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  />
+                  <span>{improveError}</span>
+                </div>
+                {improveLoading && (
+                  <span
+                    className="ml-9 text-[12.5px] text-[var(--color-ink-soft)]"
+                    aria-live="polite"
+                  >
+                    {improveStatus}
+                  </span>
+                )}
+              </div>
+            )}
+            {previewActive ? (
+              <div className="flex flex-col items-start gap-3">
+                {scoreDeltaLabel && (
+                  <div className="rounded-full bg-[var(--color-strong-soft)] px-3 py-1 text-[13px] font-bold text-[var(--color-strong)]">
+                    {scoreDeltaLabel}
+                  </div>
+                )}
+                {freePreview && previewBelowPublishReady && freePreviewMessage && (
+                  <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
+                    {freePreviewMessage}
+                  </div>
+                )}
+                {keepNote && previewBelowPublishReady && (
+                  <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
+                    {keepNote}
+                  </div>
+                )}
+                {checkoutError && (
+                  <div
+                    role="alert"
+                    className="flex items-start gap-2 rounded-[var(--radius-lg)] border border-[var(--color-weak)] bg-[var(--color-weak-soft)] px-3 py-2 text-[13px] text-[var(--color-ink)]"
+                  >
+                    <AlertCircle
+                      className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-weak)]"
+                      strokeWidth={2}
+                      aria-hidden="true"
+                    />
+                    <span>{checkoutError}</span>
+                  </div>
+                )}
+                {paidAssetId && onCheckout ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <PrimaryButton
+                      onClick={() => onCheckout()}
+                      variant="primary"
+                      disabled={checkoutLoading}
+                    >
+                      {checkoutLoading ? (
+                        <Loader2
+                          className="h-4 w-4 animate-spin"
+                          aria-hidden="true"
+                        />
+                      ) : (
+                        <Lock className="h-4 w-4" aria-hidden="true" />
+                      )}
+                      {checkoutLoading ? "Opening checkout..." : "Download photo"}
+                    </PrimaryButton>
+                    <span className="text-[12.5px] text-[var(--color-ink-soft)]">
+                      Opens secure checkout for the full-resolution file.
+                    </span>
+                  </div>
+                ) : improvedDownloadUrl ? (
+                  <a
+                    href={improvedDownloadUrl}
+                    download="mavya-improved.png"
+                    className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] hover:shadow-[0_6px_16px_rgba(216,91,44,0.36)] active:translate-y-[1px]"
+                  >
+                    <Download className="h-4 w-4" aria-hidden="true" />
+                    Download photo
+                  </a>
+                ) : null}
+                {onRetryImprove && previewBelowPublishReady && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={onRetryImprove}
+                      disabled={improveLoading}
+                      className="inline-flex items-center gap-2 text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {improveLoading ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                      )}
+                      {improveLoading ? improveCountdown : "Generate another version"}
+                    </button>
+                    {improveLoading && (
+                      <span
+                        className="text-[12.5px] text-[var(--color-ink-soft)]"
+                        aria-live="polite"
+                      >
+                        {improveStatus}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                {isStrong && (
+                  <PrimaryButton onClick={onCta} variant="primary">
+                    {state.ctaLabel}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </PrimaryButton>
+                )}
+                {canShowImprovement &&
+                  activeTab === "original" &&
+                  (hasImprovement || onImprove) && (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <PrimaryButton
+                        onClick={async () => {
+                          if (generatedPreviewExists) {
+                            return;
+                          }
+                          if (onImprove) {
+                            await onImprove();
+                            setPreviewUnlocked(true);
+                            setActiveTab("preview");
+                          } else if (hasImprovement) {
+                            setPreviewUnlocked(true);
+                            setActiveTab("preview");
+                            onCta();
+                          }
+                        }}
+                        variant={generatedPreviewExists ? "neutral" : "primary"}
+                        disabled={improveLoading || generatedPreviewExists}
+                      >
+                        {improveLoading ? (
+                          <Loader2
+                            className="h-4 w-4 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <WandSparkles
+                            className="h-4 w-4"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {generatedPreviewExists
+                          ? "Preview generated"
+                          : improveLoading
+                          ? improveCountdown
+                          : isExtra
+                          ? "Create improved supporting photo"
+                          : state.ctaLabel}
+                      </PrimaryButton>
+                      {improveLoading && (
+                        <span
+                          className="text-[12.5px] text-[var(--color-ink-soft)]"
+                          aria-live="polite"
+                        >
+                          {improveStatus}
+                        </span>
+                      )}
+                    </div>
+                  )}
+              </>
+            )}
+          </div>
+          )}
+            </>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function PriorityBlock({
+  label,
+  action,
+  observation,
+  score,
+  band,
+}: {
+  label: string;
+  action: string;
+  observation?: string;
+  score: number;
+  band: ScoreBand;
+}) {
+  const Icon = band === "strong" ? Sparkles : Wrench;
+  // Priority block color follows the SCORE BAND, not just weak/strong split
+  const scoreBand = bandForScore(score);
+  const colors = bandColors(scoreBand);
+
+  return (
+    <div
+      className="relative rounded-[var(--radius-xl)] px-6 py-5"
+      style={{ background: colors.soft }}
+    >
+      <div className="flex items-start gap-4">
+        <div
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-white shadow-[0_1px_2px_rgba(25,23,20,0.06)]"
+          style={{ color: colors.accent }}
+        >
+          <Icon className="h-[18px] w-[18px]" strokeWidth={2} aria-hidden="true" />
+        </div>
+        <div className="flex-1">
+          <div
+            className="text-[10px] font-bold uppercase tracking-[0.14em]"
+            style={{ color: colors.accent }}
+          >
+            {label}
+          </div>
+          <div className="mt-1.5 text-[18px] font-bold leading-[1.3] tracking-[-0.005em] text-[var(--color-ink)]">
+            {action}
+          </div>
+          {observation && (
+            <div className="mt-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
+              {observation}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrimaryButton({
+  onClick,
+  variant,
+  children,
+  disabled = false,
+}: {
+  onClick: () => void | Promise<void>;
+  variant: "primary" | "neutral";
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "inline-flex items-center gap-2 rounded-full px-6 py-3 text-[15px] font-semibold text-white transition-all active:translate-y-[1px]",
+        variant === "primary"
+          ? "bg-[var(--color-primary)] shadow-[0_4px_12px_rgba(232,107,57,0.30)] hover:bg-[var(--color-primary-hover)] hover:shadow-[0_6px_16px_rgba(216,91,44,0.36)]"
+          : "bg-[var(--color-neutral-dark)] shadow-[0_4px_12px_rgba(63,58,53,0.25)] hover:bg-[var(--color-neutral-dark-hover)]",
+        disabled && "cursor-not-allowed opacity-70"
+      )}
+    >
+      {children}
+    </button>
+  );
+}

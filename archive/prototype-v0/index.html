@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mavya</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-state="upload">
+
+  <!-- HEADER -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="brand">Mavya</div>
+      <button class="new-audit" type="button" aria-label="Start new audit">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+        </svg>
+        New audit
+      </button>
+    </div>
+  </header>
+
+  <!-- STATE 1: UPLOAD -->
+  <main class="screen screen-upload" data-screen="upload">
+    <div class="upload-wrap">
+      <h1 class="upload-headline">Rate your Etsy first photo</h1>
+      <p class="upload-sub">See what is costing your listing clicks.</p>
+
+      <div class="dropzone" tabindex="0" role="button" aria-label="Upload product photo">
+        <div class="dropzone-inner">
+          <svg class="dropzone-icon" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          <div class="dropzone-text">Drag and drop your photo here</div>
+          <div class="dropzone-or">or</div>
+          <button class="btn btn-primary" type="button" id="upload-btn">Upload photo</button>
+        </div>
+        <input type="file" id="upload-input" accept="image/png,image/jpeg" hidden>
+      </div>
+
+      <div class="upload-meta">
+        <span>PNG or JPG, one hero image</span>
+        <span class="upload-meta-dot" aria-hidden="true">/</span>
+        <span>First rating free</span>
+      </div>
+    </div>
+  </main>
+
+  <!-- STATE 2: ANALYZING -->
+  <main class="screen screen-result" data-screen="analyzing">
+    <div class="result-wrap">
+      <section class="media-col" aria-label="Submitted photo">
+        <div class="media-panel">
+          <div class="media-image">
+            <img id="analyzing-image" class="upload-preview" alt="Submitted product photo">
+          </div>
+        </div>
+      </section>
+      <section class="audit-col" aria-label="Analyzing photo">
+        <div class="analyzing" aria-live="polite">
+          <div class="analyzing-skeleton-score">
+            <div class="skeleton skeleton-score-num"></div>
+            <div class="skeleton skeleton-verdict"></div>
+          </div>
+          <div class="analyzing-skeleton-pillars">
+            <div class="skeleton skeleton-tile"></div>
+            <div class="skeleton skeleton-tile"></div>
+            <div class="skeleton skeleton-tile"></div>
+            <div class="skeleton skeleton-tile"></div>
+          </div>
+          <div class="analyzing-label">Analyzing your first photo...</div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- STATE 3: WEAK RESULT -->
+  <main class="screen screen-result" data-screen="weak">
+    <div class="result-wrap">
+
+      <!-- LEFT: MEDIA -->
+      <section class="media-col" aria-label="Submitted photo and previews">
+        <div class="media-panel">
+          <div class="media-image" id="weak-image">
+            <!-- ASSET SLOT: assets/candle-02.png -->
+            <img class="real-asset weak-original" data-src="assets/candle-02.png" alt="Teacup candle product photo" hidden>
+            <img class="weak-preview" alt="Improved teacup candle preview" hidden>
+            <div class="media-placeholder" data-asset="assets/candle-02.png">
+              <div class="placeholder-label">candle-02.png</div>
+              <div class="placeholder-sub">teacup candle (weak demo)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="comparison-control" id="weak-comparison" hidden>
+          <button class="toggle-btn is-active" type="button" data-tab="original">Original</button>
+          <button class="toggle-btn" type="button" data-tab="preview">Improvement preview</button>
+        </div>
+
+        <div class="thumbnail-preview">
+          <div class="thumbnail-label">Marketplace thumbnail preview</div>
+          <div class="thumbnail-row">
+            <div class="thumbnail-tile">
+              <div class="thumbnail-image">
+                <img class="real-asset weak-thumbnail" data-src="assets/candle-02.png" alt="" hidden>
+                <div class="media-placeholder is-small" data-asset="assets/candle-02.png">
+                  <div class="placeholder-label-sm">candle-02</div>
+                </div>
+              </div>
+            </div>
+            <div class="thumbnail-caption">
+              This is how your photo appears in Etsy search results.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT: AUDIT -->
+      <section class="audit-col" aria-label="Audit result">
+        <div class="score-block score-weak" data-reveal="score">
+          <div class="score-number-row">
+            <div class="score-number" data-target="4.1">4.1</div>
+            <div class="score-denom">/ 10</div>
+          </div>
+          <div class="score-verdict">Your hero photo needs work</div>
+        </div>
+
+        <div class="priority-block" data-reveal="priority">
+          <div class="priority-label">Fix This First</div>
+          <div class="priority-action">Retake without flash in soft daylight.</div>
+        </div>
+
+        <div class="pillar-grid" data-reveal="pillars">
+          <div class="pillar-tile">
+            <div class="pillar-name">Thumbnail</div>
+            <div class="pillar-value">5</div>
+          </div>
+          <div class="pillar-tile">
+            <div class="pillar-name">Lighting</div>
+            <div class="pillar-value pillar-low">3</div>
+          </div>
+          <div class="pillar-tile">
+            <div class="pillar-name">Background</div>
+            <div class="pillar-value">4</div>
+          </div>
+          <div class="pillar-tile">
+            <div class="pillar-name">Click Appeal</div>
+            <div class="pillar-value">4</div>
+          </div>
+        </div>
+
+        <div class="next-steps" data-reveal="actions">
+          <div class="next-steps-label">Next steps</div>
+          <ol class="next-steps-list">
+            <li>
+              <div class="step-observation">Flash glare washes out cup detail.</div>
+              <div class="step-action">Retake in soft daylight.</div>
+            </li>
+            <li>
+              <div class="step-observation">Wax decorations look uneven and messy.</div>
+              <div class="step-action">Show cleaner finished candle.</div>
+            </li>
+            <li>
+              <div class="step-observation">Flowers compete with decorated candle.</div>
+              <div class="step-action">Use simpler plain background.</div>
+            </li>
+          </ol>
+        </div>
+
+        <div class="cta-row" data-reveal="cta">
+          <button class="btn btn-neutral" type="button" id="weak-cta" hidden>
+            See improvement preview
+          </button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- STATE 4: STRONG RESULT -->
+  <main class="screen screen-result" data-screen="strong">
+    <div class="result-wrap">
+
+      <section class="media-col" aria-label="Submitted photo and thumbnail preview">
+        <div class="media-panel">
+          <div class="media-image">
+            <!-- ASSET SLOT: assets/earring-strong.jpg -->
+            <img class="real-asset" data-src="assets/earring-strong.jpg" alt="Model-worn initial earring product photo" hidden>
+            <div class="media-placeholder" data-asset="assets/earring-strong.jpg">
+              <div class="placeholder-label">earring-strong.jpg</div>
+              <div class="placeholder-sub">model-worn initial earring (strong demo)</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="thumbnail-preview">
+          <div class="thumbnail-label">Marketplace thumbnail preview</div>
+          <div class="thumbnail-row">
+            <div class="thumbnail-tile">
+              <div class="thumbnail-image">
+                <img class="real-asset" data-src="assets/earring-strong.jpg" alt="" hidden>
+                <div class="media-placeholder is-small" data-asset="assets/earring-strong.jpg">
+                  <div class="placeholder-label-sm">earring</div>
+                </div>
+              </div>
+            </div>
+            <div class="thumbnail-caption">
+              This is how your photo appears in Etsy search results.
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="audit-col" aria-label="Audit result">
+        <div class="score-block score-strong" data-reveal="score">
+          <div class="score-number-row">
+            <div class="score-number" data-target="8.2">8.2</div>
+            <div class="score-denom">/ 10</div>
+          </div>
+          <div class="score-verdict">Strong hero photo</div>
+        </div>
+
+        <div class="priority-block" data-reveal="priority">
+          <div class="priority-label">Keep This Photo</div>
+          <div class="priority-action">Keep this. Add separate product-only photo.</div>
+        </div>
+
+        <div class="pillar-grid" data-reveal="pillars">
+          <div class="pillar-tile">
+            <div class="pillar-name">Thumbnail</div>
+            <div class="pillar-value">8</div>
+          </div>
+          <div class="pillar-tile">
+            <div class="pillar-name">Lighting</div>
+            <div class="pillar-value pillar-high">9</div>
+          </div>
+          <div class="pillar-tile">
+            <div class="pillar-name">Background</div>
+            <div class="pillar-value pillar-high">9</div>
+          </div>
+          <div class="pillar-tile">
+            <div class="pillar-name">Click Appeal</div>
+            <div class="pillar-value">7</div>
+          </div>
+        </div>
+
+        <div class="next-steps" data-reveal="actions">
+          <div class="next-steps-label">Add next</div>
+          <ol class="next-steps-list">
+            <li>
+              <div class="step-observation">Multiple earrings make listing contents unclear.</div>
+              <div class="step-action">Add separate included-pieces photo.</div>
+            </li>
+            <li>
+              <div class="step-observation">Initial stud detail is small.</div>
+              <div class="step-action">Add separate macro detail photo.</div>
+            </li>
+            <li>
+              <div class="step-observation">Size reads naturally but not precisely.</div>
+              <div class="step-action">Add separate measurement photo.</div>
+            </li>
+          </ol>
+        </div>
+
+        <div class="cta-row" data-reveal="cta">
+          <button class="btn btn-primary" type="button" id="strong-cta">
+            Score another photo
+          </button>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- STATE 5: INVALID INPUT -->
+  <main class="screen screen-result screen-invalid" data-screen="invalid">
+    <div class="result-wrap">
+      <section class="media-col" aria-label="Submitted file">
+        <div class="media-panel media-panel-invalid">
+          <div class="media-image">
+            <img class="real-asset" data-src="assets/invalid-screenshot.png" alt="Submitted non-product file" hidden>
+            <div class="media-placeholder" data-asset="assets/invalid-screenshot.png">
+              <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="15" y1="9" x2="9" y2="15"></line>
+                <line x1="9" y1="9" x2="15" y2="15"></line>
+              </svg>
+              <div class="placeholder-label">invalid-screenshot.png</div>
+              <div class="placeholder-sub">non-product upload (invalid demo)</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="audit-col audit-col-invalid">
+        <div class="invalid-block">
+          <div class="invalid-heading">Not a product photo</div>
+          <p class="invalid-body">Upload a product photo.</p>
+          <p class="invalid-body">Mavya scores listing photos, not screenshots or documents.</p>
+          <div class="cta-row">
+            <button class="btn btn-primary" type="button" id="invalid-cta">
+              Try another upload
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
