@@ -13,10 +13,16 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  if (!rateLimit(`checkout:${ip}`, 10, 60_000).ok) {
+  const limit = await rateLimit(`checkout:${ip}`, 10, 60_000);
+  if (!limit.ok) {
     return NextResponse.json(
-      { error: "Too many requests. Wait a minute." },
-      { status: 429 }
+      {
+        error:
+          limit.reason === "missing_durable_store"
+            ? "Rate limiting is not configured."
+            : "Too many requests. Wait a minute.",
+      },
+      { status: limit.reason === "missing_durable_store" ? 503 : 429 }
     );
   }
 

@@ -168,9 +168,11 @@ Founder update on 2026-06-10:
 For the validation launch, show the clean AI-improved preview before payment.
 The primary metric is whether sellers upload, generate, and click Download.
 Download opens Stripe Checkout for $4.99. After successful checkout, the same
-browser tab downloads the generated image. Do not add auth, subscriptions,
-database, Vercel Blob storage, watermarks, or an upscaler before measuring
-download clicks and first payments.
+browser tab downloads the generated image only after the server verifies the
+Stripe session is paid. Use durable Upstash Redis rate limits in production so
+OpenAI/Stripe routes are not protected by fake per-instance memory limits. Do
+not add auth, subscriptions, database, Vercel Blob storage, watermarks, or an
+upscaler before measuring download clicks and first payments.
 ```
 
 Payment/delivery rule:

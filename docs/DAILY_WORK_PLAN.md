@@ -43,10 +43,11 @@ soap, mugs, and jewelry. Confirm honest 8+ delivery only on candidates that pass
 fidelity + authenticity + full-product comprehension. Use verified candidates to
 record demo videos. For the first-dollar launch, use the minimum validation path:
 show the clean improved preview, make the Download button open $4.99 Stripe
-Checkout, and download the generated file after payment in the same browser tab.
-Do not add auth, dashboard, database, subscriptions, Blob storage, watermarks,
-upscaling, or multi-photo features before the upload-to-download-click/payment
-signal is measured.
+Checkout, verify the paid Stripe session server-side, and download the generated
+file after payment in the same browser tab. Production must use durable Upstash
+Redis rate limits, not per-instance memory limits. Do not add auth, dashboard,
+database, subscriptions, Blob storage, watermarks, upscaling, or multi-photo
+features before the upload-to-download-click/payment signal is measured.
 ```
 
 The local end-to-end loop is live (see

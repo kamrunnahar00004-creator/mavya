@@ -12,11 +12,20 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  const limit = rateLimit(`score:${ip}`, 6, 60_000);
+  const limit = await rateLimit(`score:${ip}`, 6, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
-      { error: "Too many requests. Wait a minute.", code: "rate_limited" },
-      { status: 429 }
+      {
+        error:
+          limit.reason === "missing_durable_store"
+            ? "Rate limiting is not configured."
+            : "Too many requests. Wait a minute.",
+        code:
+          limit.reason === "missing_durable_store"
+            ? "rate_limit_not_configured"
+            : "rate_limited",
+      },
+      { status: limit.reason === "missing_durable_store" ? 503 : 429 }
     );
   }
 

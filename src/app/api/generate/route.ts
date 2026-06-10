@@ -13,26 +13,38 @@ export const maxDuration = 240;
 
 export async function POST(req: NextRequest) {
   const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "local";
-  const limit = rateLimit(`gen:${ip}`, 2, 60_000);
+  const limit = await rateLimit(`gen:${ip}`, 2, 60_000);
   if (!limit.ok) {
     return NextResponse.json(
       {
         ok: false,
-        code: "rate_limited",
-        message: "Generation rate limit hit. Wait a minute.",
+        code:
+          limit.reason === "missing_durable_store"
+            ? "rate_limit_not_configured"
+            : "rate_limited",
+        message:
+          limit.reason === "missing_durable_store"
+            ? "Rate limiting is not configured."
+            : "Generation rate limit hit. Wait a minute.",
       },
-      { status: 429 }
+      { status: limit.reason === "missing_durable_store" ? 503 : 429 }
     );
   }
-  const dailyLimit = rateLimit(`gen-day:${ip}`, 5, 24 * 60 * 60 * 1000);
+  const dailyLimit = await rateLimit(`gen-day:${ip}`, 5, 24 * 60 * 60 * 1000);
   if (!dailyLimit.ok) {
     return NextResponse.json(
       {
         ok: false,
-        code: "rate_limited",
-        message: "Daily generation limit hit. Try again tomorrow.",
+        code:
+          dailyLimit.reason === "missing_durable_store"
+            ? "rate_limit_not_configured"
+            : "rate_limited",
+        message:
+          dailyLimit.reason === "missing_durable_store"
+            ? "Rate limiting is not configured."
+            : "Daily generation limit hit. Try again tomorrow.",
       },
-      { status: 429 }
+      { status: dailyLimit.reason === "missing_durable_store" ? 503 : 429 }
     );
   }
 
