@@ -166,13 +166,16 @@ Founder update on 2026-06-10:
 
 ```text
 For the validation launch, show the clean AI-improved preview before payment.
-The primary metric is whether sellers upload, generate, and click Download.
-Download opens Stripe Checkout for $4.99. After successful checkout, the same
-browser tab downloads the generated image only after the server verifies the
-Stripe session is paid. Use durable Upstash Redis rate limits in production so
-OpenAI/Stripe routes are not protected by fake per-instance memory limits. Do
-not add auth, subscriptions, database, Vercel Blob storage, watermarks, or an
-upscaler before measuring download clicks and first payments.
+The primary metric is whether sellers upload, generate, and click Download
+photo, $4.99. Download opens Stripe Checkout. Before redirecting, the generated
+image is saved in browser IndexedDB. After successful checkout, the same browser
+downloads the generated image only after the server verifies the Stripe session
+is paid. Use durable Upstash Redis for production rate limits and MVP funnel
+counts so OpenAI/Stripe routes are protected and the founder can see upload,
+generation, download-click, checkout-started, and payment-verified counts. Do
+not add auth, subscriptions, database, Vercel Blob storage, watermarks, a
+dashboard, a paid analytics platform, or an upscaler before measuring download
+clicks and first payments.
 ```
 
 Payment/delivery rule:
@@ -183,6 +186,19 @@ judge the outcome. The paid action is the Download button. Stripe Checkout gates
 the browser download click, not the preview display. This is intentionally looser
 than a production-grade protected-file system because the current goal is upload
 and download-click validation.
+```
+
+MVP funnel tracking:
+
+```text
+Track only simple aggregate counters in Upstash Redis:
+photo_uploaded, audit_completed, improve_clicked, improve_completed,
+download_clicked, checkout_started, payment_verified.
+
+Read counts through /api/metrics?secret=METRICS_SECRET. Do not build a dashboard
+or add a full analytics suite until seller validation creates a real need.
+Download-click is the main demand signal. Payment is a bonus signal because the
+clean preview is visible before payment by design.
 ```
 
 Local integration verification on 2026-06-01:

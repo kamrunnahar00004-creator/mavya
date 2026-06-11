@@ -44,10 +44,14 @@ fidelity + authenticity + full-product comprehension. Use verified candidates to
 record demo videos. For the first-dollar launch, use the minimum validation path:
 show the clean improved preview, make the Download button open $4.99 Stripe
 Checkout, verify the paid Stripe session server-side, and download the generated
-file after payment in the same browser tab. Production must use durable Upstash
-Redis rate limits, not per-instance memory limits. Do not add auth, dashboard,
-database, subscriptions, Blob storage, watermarks, upscaling, or multi-photo
-features before the upload-to-download-click/payment signal is measured.
+file after payment in the same browser via IndexedDB. Production must use
+durable Upstash Redis rate limits, not per-instance memory limits. MVP funnel
+tracking is simple Upstash counters only: uploaded, audit completed, improve
+clicked/completed, download clicked, checkout started, and payment verified.
+Read those counts through `/api/metrics?secret=METRICS_SECRET`. Do not add auth,
+dashboard, database, subscriptions, Blob storage, watermarks, upscaling, paid
+analytics tooling, or multi-photo features before the upload-to-download-click
+signal is measured.
 ```
 
 The local end-to-end loop is live (see

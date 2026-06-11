@@ -18,6 +18,9 @@ This rubric is for Mavya V0/V1. It must stay simple enough to fit on one screen,
 - Three next steps max in result.
 - Output must enable a Cal-AI / Umax / LooksMax style score reveal.
 - Language stays blunt, short, beginner-friendly.
+- Funnel analytics must never alter the score. Upload, improve, download-click,
+  checkout, and payment counters are validation data only; the rubric remains
+  the source of truth for photo judgment.
 
 ## Core Score
 
