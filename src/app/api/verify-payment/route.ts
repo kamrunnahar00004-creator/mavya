@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { getStripe } from "@/lib/stripe";
+import { trackFunnelEvent } from "@/lib/analytics-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -47,6 +48,9 @@ export async function POST(req: NextRequest) {
       session.metadata?.product === "improved_photo" &&
       session.metadata?.validation_flow === "clean_preview_before_payment";
     const paid = session.payment_status === "paid" && isExpectedProduct;
+    if (paid) {
+      await trackFunnelEvent("payment_verified");
+    }
 
     return NextResponse.json(
       { paid },

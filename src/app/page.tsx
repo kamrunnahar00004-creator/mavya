@@ -23,6 +23,7 @@ import {
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import { savePendingDownload } from "@/lib/pending-download";
+import { trackClientEvent } from "@/lib/track-client";
 
 type Mode =
   | "upload"
@@ -255,6 +256,7 @@ export default function Page() {
         audit: null,
       };
 
+      trackClientEvent("photo_uploaded");
       setNotice(null);
       setScoreError(null);
       setInitialPreview(false);
@@ -316,6 +318,7 @@ export default function Page() {
             s.id === id ? { ...s, status: "graded", audit } : s
           )
         );
+        trackClientEvent("audit_completed");
         setMode("real");
       } catch (err) {
         console.error("[page] score failed", err);
@@ -362,6 +365,7 @@ export default function Page() {
       const slot = slotsRef.current.find((s) => s.id === activeSlotId);
       if (!slot || !slot.audit) return;
       if (slot.improveStatus === "generating") return;
+      trackClientEvent("improve_clicked");
       const startedAt = Date.now();
       setSlots((prev) =>
         prev.map((s) =>
@@ -501,6 +505,7 @@ export default function Page() {
               : s
           )
         );
+        trackClientEvent("improve_completed");
         setInitialPreview(true);
       } catch (err) {
         console.error("[page] improve flow failed", err);
@@ -549,6 +554,7 @@ export default function Page() {
     async (email?: string) => {
       const slot = slotsRef.current.find((s) => s.id === activeSlotId);
       if (!slot || !slot.improvedDownloadUrl) return;
+      trackClientEvent("download_clicked");
       setSlots((prev) =>
         prev.map((s) =>
           s.id === slot.id

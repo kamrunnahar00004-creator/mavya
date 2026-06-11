@@ -6,6 +6,7 @@ import {
 } from "@/lib/stripe";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
+import { trackFunnelEvent } from "@/lib/analytics-events";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
         { status: 502 }
       );
     }
+    await trackFunnelEvent("checkout_started");
     return NextResponse.json({ url: session.url }, { status: 200 });
   } catch (err) {
     console.error("[api/checkout] stripe error:", err);
