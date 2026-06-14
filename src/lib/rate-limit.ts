@@ -22,6 +22,10 @@ function requiresDurableRateLimit(): boolean {
   return process.env.VERCEL === "1" || process.env.REQUIRE_DURABLE_RATE_LIMIT === "true";
 }
 
+function rateLimitDisabled(): boolean {
+  return process.env.DISABLE_RATE_LIMITS === "true";
+}
+
 function getRedis(): Redis {
   if (redis) return redis;
   redis = Redis.fromEnv();
@@ -67,6 +71,10 @@ export async function rateLimit(
   max: number,
   windowMs: number
 ): Promise<RateLimitResult> {
+  if (rateLimitDisabled()) {
+    return { ok: true };
+  }
+
   if (durableRateLimitConfigured()) {
     return redisRateLimit(key, max, windowMs);
   }
