@@ -210,6 +210,11 @@ uses the current improved preview as the edit base so it can build on what got
 better. The original uploaded photo remains the identity anchor: every new
 candidate is still checked against the original by the fidelity gate before it
 can be called publish-ready or shown as a useful preview.
+
+Framing is judged relative to the original. A retry must not crop tighter than
+the original or lose product context the original showed. Intentional macro or
+detail shots are allowed to stay tight; they are judged as detail photos, not
+automatically treated as broken crops.
 ```
 
 Local integration verification on 2026-06-01:

@@ -111,16 +111,22 @@ Low pillar examples:
 - product too small in frame
 - design or label unreadable
 - product cut off
+- accidental over-crop compared with the intended view
 - blurry product
 - multiple items confuse listing
 - buyer cannot tell what the product is
-- product technically fits inside the image but is framed so tightly that there
-  is no margin or an Etsy square crop would clip a key edge, handle, saucer,
-  clasp, label, or included piece
+- main hero view framed so tightly that an Etsy square crop would clip a key
+  edge, handle, saucer, clasp, label, or included piece
 - packaging or label dominates the actual product
 - white script or small label text disappears at mobile size
 - dark product disappears into dark background
 - set/bundle is unclear
+
+Intentional macro/detail photos are not automatically bad crops. A locket face,
+engraving, gemstone, clasp, label, texture, or small design detail can be strong
+as a supporting/detail photo. As a main thumbnail, score whether buyers can
+understand the full item being sold and recommend a separate full-product hero
+when needed.
 
 ### 2. Lighting (weight 25)
 

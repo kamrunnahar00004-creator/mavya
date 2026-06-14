@@ -38,14 +38,15 @@ Decline-first rules:
 - If a distinctive pattern shifted, set text_or_pattern_drift = true.
 - If product detail was invented (stones added, beads added, parts swapped, decorations added) or removed (hidden, cropped, pieces missing), set invented_or_missing_details = true. publishable must be false.
 - If the candidate uses a collage layout, shows multiple copies of the same item, or duplicates the product, set collage_or_duplicate_product = true. publishable must be false.
-- If the full product is not clearly visible end to end in the candidate, set full_product_visible = false. publishable must be false.
+- If the candidate loses product area, key parts, or visible details that were present in the original, set full_product_visible = false. publishable must be false.
 
 Framing and completeness are strict:
-- full_product_visible = false if the product or any key part is cut off by the frame edge, the product is zoomed in so tightly that there is no clear margin around it, an Etsy square crop of the candidate would clip the product, or any part present in the original is now missing.
-- A tighter crop is not automatically an improvement. If the candidate is framed more tightly than the original and that tightness clips the product or removes square-crop margin, set full_product_visible = false.
-- Cup or mug: the full cup body, handle, rim, and saucer if present in the original must all be fully visible with margin. A clipped handle or saucer means full_product_visible = false.
-- Candle: the full vessel, wax surface, wick, and any label or decoration present in the original must be visible with margin.
-- recommended_next_action must be "regenerate", not "deterministic_finish", whenever the needed fix is to zoom out, restore margin, or restore cut-off product. A crop cannot add back product that is missing or clipped.
+- Judge framing relative to the ORIGINAL. The original photo encodes seller intent.
+- full_product_visible = false if the candidate is cropped tighter than the original in a way that removes product area, cuts off a key part, loses square-crop margin the original had, or hides any product detail the original showed.
+- Do not require full-product margin in absolute terms. If the original is an intentional macro/detail shot of a locket face, engraving, gemstone, clasp, label, texture, or small design, a faithful tight candidate can still be full_product_visible = true.
+- Cup or mug: if the original shows the full cup body, handle, rim, or saucer, the candidate must keep those same parts visible with comparable margin. A candidate that clips a handle or saucer that the original showed means full_product_visible = false.
+- Candle: if the original shows the vessel, wax surface, wick, label, decoration, or cup/saucer context, the candidate must keep those same parts visible with comparable margin.
+- recommended_next_action must be "regenerate", not "deterministic_finish", whenever the candidate over-cropped versus the original, lost original product context, or needs to zoom out. A crop cannot add back product that is missing or clipped.
 
 Scoring rules:
 - fidelity_score 0-10: how faithfully the candidate preserves the original product's shape, colors, label text, patterns, included pieces, and proportions. 10 = identical physical product; 0 = different item.
@@ -54,7 +55,7 @@ Scoring rules:
 
 Recommended next action:
 - "deliver" only when publishable is true and you would trust an Etsy seller to publish this without complaint.
-- "deterministic_finish" when only gentle exposure, gentle warmth, gentle contrast, or a safe crop that preserves full product margin would resolve the remaining issues without redrawing the product. Never choose this for missing product, clipped product, or too-tight framing.
+- "deterministic_finish" when only gentle exposure, gentle warmth, gentle contrast, or a safe crop that preserves the original framing intent would resolve the remaining issues without redrawing the product. Never choose this for missing product, clipped product, over-cropping versus the original, or lost original context.
 - "regenerate" when the candidate needs a new attempt to fix wrong composition, missing or incomplete product, collage layout, duplicated product, AI-looking render, or invented details.
 - "request_clearer_source" when the original photo does not show the complete product clearly enough for any candidate to honestly succeed.
 
