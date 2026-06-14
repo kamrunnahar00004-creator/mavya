@@ -386,6 +386,9 @@ export default function Page() {
         const form = new FormData();
         form.set("image", slot.file);
         if (slot.kind === "extra") form.set("mode", "extra");
+        if (retry && slot.improvedDownloadUrl) {
+          form.set("retryBaseImage", slot.improvedDownloadUrl);
+        }
         if (retry && slot.unresolvedIssues?.length) {
           form.set(
             "unresolvedIssues",
@@ -549,7 +552,7 @@ export default function Page() {
 
   // Validation MVP: the clean preview is already visible. Download click opens
   // Stripe, and the success page downloads the generated image from this tab's
-  // session storage after payment.
+  // IndexedDB after payment.
   const handleCheckout = useCallback(
     async (email?: string) => {
       const slot = slotsRef.current.find((s) => s.id === activeSlotId);

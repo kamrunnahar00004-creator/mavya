@@ -52,6 +52,11 @@ Read those counts through `/api/metrics?secret=METRICS_SECRET`. Do not add auth,
 dashboard, database, subscriptions, Blob storage, watermarks, upscaling, paid
 analytics tooling, or multi-photo features before the upload-to-download-click
 signal is measured.
+
+Regeneration behavior for sub-8 previews: first generation starts from the
+original upload. A seller-triggered retry starts from the current improved
+preview, but every candidate is still compared against the original upload for
+product identity, completeness, and authenticity.
 ```
 
 The local end-to-end loop is live (see

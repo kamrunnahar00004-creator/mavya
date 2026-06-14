@@ -7,6 +7,7 @@ import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 
 const MAX_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
+const DATA_URL_RE = /^data:(image\/png|image\/jpeg);base64,([A-Za-z0-9+/=]+)$/;
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -106,6 +107,7 @@ export async function POST(req: NextRequest) {
   const systemPrompt = mode === "extra" ? GENERAL_RUBRIC_PROMPT : undefined;
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  const originalMimeType = file.type as "image/png" | "image/jpeg";
 
   // Server-side canonical audit. Never trust browser audit JSON for prompt
   // composition or safety gating.
@@ -113,7 +115,7 @@ export async function POST(req: NextRequest) {
   try {
     originalAudit = await scorePhoto({
       imageBuffer: buffer,
-      imageMimeType: file.type,
+      imageMimeType: originalMimeType,
       systemPrompt,
     });
   } catch (err) {
@@ -139,10 +141,55 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  let baseBuffer: Buffer | undefined;
+  let baseMimeType: "image/png" | "image/jpeg" | undefined;
+  let promptAudit = originalAudit;
+  const retryBaseRaw = form.get("retryBaseImage");
+  if (typeof retryBaseRaw === "string" && retryBaseRaw.length > 0) {
+    const match = DATA_URL_RE.exec(retryBaseRaw);
+    if (!match) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "bad_retry_base",
+          message: "Could not use the previous preview. Generate from the original photo instead.",
+        },
+        { status: 400 }
+      );
+    }
+    baseMimeType = match[1] as "image/png" | "image/jpeg";
+    baseBuffer = Buffer.from(match[2], "base64");
+    if (baseBuffer.length > MAX_SIZE) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: "retry_base_too_large",
+          message: "Previous preview is too large to retry.",
+        },
+        { status: 400 }
+      );
+    }
+    try {
+      promptAudit = await scorePhoto({
+        imageBuffer: baseBuffer,
+        imageMimeType: baseMimeType,
+        systemPrompt,
+      });
+    } catch (err) {
+      console.error("[generate] retry base scoring failed:", err);
+      promptAudit = originalAudit;
+      baseBuffer = undefined;
+      baseMimeType = undefined;
+    }
+  }
+
   const result = await improvePhoto({
     originalBuffer: buffer,
-    originalMimeType: file.type as "image/png" | "image/jpeg",
+    originalMimeType,
     originalAudit,
+    baseBuffer,
+    baseMimeType,
+    promptAudit,
     extraConstraints,
     mode,
   });

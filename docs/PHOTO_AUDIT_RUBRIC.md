@@ -114,6 +114,9 @@ Low pillar examples:
 - blurry product
 - multiple items confuse listing
 - buyer cannot tell what the product is
+- product technically fits inside the image but is framed so tightly that there
+  is no margin or an Etsy square crop would clip a key edge, handle, saucer,
+  clasp, label, or included piece
 - packaging or label dominates the actual product
 - white script or small label text disappears at mobile size
 - dark product disappears into dark background

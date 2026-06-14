@@ -424,7 +424,27 @@ export function AuditWorkspace({
                     <span>{checkoutError}</span>
                   </div>
                 )}
-                {onCheckout && improvedDownloadUrl ? (
+                {improveLoading ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <PrimaryButton
+                      onClick={() => undefined}
+                      variant="primary"
+                      disabled
+                    >
+                      <Loader2
+                        className="h-4 w-4 animate-spin"
+                        aria-hidden="true"
+                      />
+                      {improveCountdown}
+                    </PrimaryButton>
+                    <span
+                      className="text-[12.5px] text-[var(--color-ink-soft)]"
+                      aria-live="polite"
+                    >
+                      {improveStatus}
+                    </span>
+                  </div>
+                ) : onCheckout && improvedDownloadUrl ? (
                   <div className="flex flex-wrap items-center gap-3">
                     <PrimaryButton
                       onClick={() => onCheckout()}
@@ -457,29 +477,16 @@ export function AuditWorkspace({
                     Download photo
                   </a>
                 ) : null}
-                {onRetryImprove && previewBelowPublishReady && (
+                {onRetryImprove && previewBelowPublishReady && !improveLoading && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
                       onClick={onRetryImprove}
-                      disabled={improveLoading}
                       className="inline-flex items-center gap-2 text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {improveLoading ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                      ) : (
-                        <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                      )}
-                      {improveLoading ? improveCountdown : "Generate another version"}
+                      <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+                      Generate another version
                     </button>
-                    {improveLoading && (
-                      <span
-                        className="text-[12.5px] text-[var(--color-ink-soft)]"
-                        aria-live="polite"
-                      >
-                        {improveStatus}
-                      </span>
-                    )}
                   </div>
                 )}
               </div>
@@ -524,10 +531,10 @@ export function AuditWorkspace({
                             aria-hidden="true"
                           />
                         )}
-                        {generatedPreviewExists
-                          ? "Preview generated"
-                          : improveLoading
+                        {improveLoading
                           ? improveCountdown
+                          : generatedPreviewExists
+                          ? "Preview generated"
                           : isExtra
                           ? "Create improved supporting photo"
                           : state.ctaLabel}

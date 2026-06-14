@@ -40,6 +40,13 @@ Decline-first rules:
 - If the candidate uses a collage layout, shows multiple copies of the same item, or duplicates the product, set collage_or_duplicate_product = true. publishable must be false.
 - If the full product is not clearly visible end to end in the candidate, set full_product_visible = false. publishable must be false.
 
+Framing and completeness are strict:
+- full_product_visible = false if the product or any key part is cut off by the frame edge, the product is zoomed in so tightly that there is no clear margin around it, an Etsy square crop of the candidate would clip the product, or any part present in the original is now missing.
+- A tighter crop is not automatically an improvement. If the candidate is framed more tightly than the original and that tightness clips the product or removes square-crop margin, set full_product_visible = false.
+- Cup or mug: the full cup body, handle, rim, and saucer if present in the original must all be fully visible with margin. A clipped handle or saucer means full_product_visible = false.
+- Candle: the full vessel, wax surface, wick, and any label or decoration present in the original must be visible with margin.
+- recommended_next_action must be "regenerate", not "deterministic_finish", whenever the needed fix is to zoom out, restore margin, or restore cut-off product. A crop cannot add back product that is missing or clipped.
+
 Scoring rules:
 - fidelity_score 0-10: how faithfully the candidate preserves the original product's shape, colors, label text, patterns, included pieces, and proportions. 10 = identical physical product; 0 = different item.
 - authenticity_score 0-10: how like a real seller's product photograph the candidate looks. 10 = indistinguishable from a real product photo; 0 = obvious AI render.
@@ -47,7 +54,7 @@ Scoring rules:
 
 Recommended next action:
 - "deliver" only when publishable is true and you would trust an Etsy seller to publish this without complaint.
-- "deterministic_finish" when only a tighter crop, gentle exposure, gentle warmth, or gentle contrast adjustment would resolve the remaining issues without redrawing the product.
+- "deterministic_finish" when only gentle exposure, gentle warmth, gentle contrast, or a safe crop that preserves full product margin would resolve the remaining issues without redrawing the product. Never choose this for missing product, clipped product, or too-tight framing.
 - "regenerate" when the candidate needs a new attempt to fix wrong composition, missing or incomplete product, collage layout, duplicated product, AI-looking render, or invented details.
 - "request_clearer_source" when the original photo does not show the complete product clearly enough for any candidate to honestly succeed.
 

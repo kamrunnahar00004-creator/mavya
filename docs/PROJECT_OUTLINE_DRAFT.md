@@ -201,6 +201,17 @@ Download-click is the main demand signal. Payment is a bonus signal because the
 clean preview is visible before payment by design.
 ```
 
+Regeneration rule:
+
+```text
+The first AI-improved photo starts from the seller's original upload. If the
+seller clicks Generate another version after a sub-8 preview exists, the retry
+uses the current improved preview as the edit base so it can build on what got
+better. The original uploaded photo remains the identity anchor: every new
+candidate is still checked against the original by the fidelity gate before it
+can be called publish-ready or shown as a useful preview.
+```
+
 Local integration verification on 2026-06-01:
 
 ```text

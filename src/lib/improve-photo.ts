@@ -8,7 +8,7 @@
  *   -> canonical re-score AND fidelity comparison in parallel
  *   -> if (delivered): return
  *   -> else candidate-specific deterministic finish using the CANDIDATE audit's
- *      own crop_suggestion / light_adjustment (bounds-validated, then re-verified)
+ *      own light_adjustment (then re-verified)
  *      -> re-score AND fidelity in parallel
  *      -> if (delivered): return
  *   -> else structured failure with unresolved issues for a user-triggered retry
@@ -88,7 +88,7 @@ Preserve product identity aggressively: same product type, same shape, materials
 
 Label and pattern protection is strict: preserve every visible label word exactly as shown in the source photo. Preserve typography, brand name, small label artwork, packaging text, and distinctive patterns faithfully. If any source text is unclear, keep it visually unchanged and unclear rather than guessing or replacing it. Do not invent text, rewrite text, replace label artwork, or clean away printed details.
 
-PRODUCT FIDELITY — STRICT: Preserve the product itself exactly. Keep the same object, shape, proportions, colors, materials, visible label/text/design, pattern, packaging if part of the product, count, bundle pieces, and included accessories. Do not invent, redesign, relabel, warp, remove, or hide product details. The entire PRODUCT must stay visible — do not crop or hide the product. This does NOT mean preserving non-product background objects. For jewelry, both ends and the clasp stay in frame; for sets and bundles, all included pieces stay visible.
+PRODUCT FIDELITY — STRICT: Preserve the product itself exactly. Keep the same object, shape, proportions, colors, materials, visible label/text/design, pattern, packaging if part of the product, count, bundle pieces, and included accessories. Do not invent, redesign, relabel, warp, remove, or hide product details. The entire PRODUCT must stay visible with even margin on all sides. Do not crop, cut off, or hide the product. Leave enough room that an Etsy square crop keeps the whole product visible. This does NOT mean preserving non-product background objects. For jewelry, both ends and the clasp stay in frame; for sets and bundles, all included pieces stay visible. For mugs, teacups, and cup candles, keep the full cup body, rim, handle, and saucer if present visible with margin.
 
 SCENE / BACKGROUND — FLEXIBLE WHEN THE AUDIT FLAGS IT: The surrounding scene is not sacred. If the audit identifies background distraction, clutter, an awkward setting, a dirty surface, a low-trust scene, or non-product objects competing with the product, you MAY remove or replace those scene elements. You may place the product on a clean, simple, realistic surface with natural contact shadow. You may remove distracting non-product objects such as faucets, sinks, appliances, fixtures, furniture, tools, random props, clutter, messy bedding, floors, shelves, or hands when they are not part of the product or a useful scale reference.
 
@@ -171,7 +171,8 @@ function describeLightInstruction(
 function buildTargetedPrompt(
   audit: RubricJson,
   extraConstraints: string[] = [],
-  mode: ImproveMode = "main"
+  mode: ImproveMode = "main",
+  source: "original" | "improved_preview" = "original"
 ): string {
   const isExtra = mode === "extra";
   // Pass each fix as Action + Reason so the generator resolves the actual
@@ -206,6 +207,11 @@ function buildTargetedPrompt(
         .join("\n")}`
     : "";
 
+  const retryInstruction =
+    source === "improved_preview"
+      ? `This image is already an improved version of the product. Preserve everything that is already correct: product identity, shape, colors, label text, patterns, realistic lighting, clean background, and the parts that already look good. Do not redraw the product. Fix only the remaining issues identified below. If a remaining issue is tight framing or a cut-off edge, zoom out and show the complete product with even margin on all sides, enough that an Etsy square crop keeps the whole product visible.`
+      : "";
+
   const objective = isExtra
     ? `Quality objective: make a genuinely clearer, more trustworthy SUPPORTING listing photo — better clarity, lighting, background, and product proof — with the complete physical product clearly visible and authentic. This is NOT a search thumbnail; it does not need hero framing. Do not fabricate quality or sacrifice product identity. If preservation and polish conflict, preserve the physical product faithfully.`
     : `Quality objective: make the improved hero image genuinely listing-ready, with the complete physical product clearly visible, authentic in appearance, and strong enough to earn an honest 8+ audit score on thumbnail clarity, lighting, background, and click appeal. Do not fabricate quality or sacrifice product identity to reach that target. If preservation and polish conflict, preserve the physical product faithfully.`;
@@ -217,6 +223,7 @@ function buildTargetedPrompt(
     cropInstruction,
     lightInstruction,
     extras,
+    retryInstruction,
     objective,
   ]
     .filter((block): block is string =>
@@ -261,54 +268,19 @@ function delivered(args: {
 }
 
 /**
- * Candidate-specific deterministic finish. Uses the CANDIDATE audit's own
- * crop_suggestion + light_adjustment and validates crop bounds. The crop keeps
- * most of the frame, but product safety is established by the required re-score
- * and fidelity comparison after this pass. Returns the original base64 unchanged
- * if there is nothing useful to apply.
+ * Candidate-specific deterministic finish. Uses only the CANDIDATE audit's own
+ * light_adjustment. Cropping is intentionally skipped here: a local crop cannot
+ * restore clipped product or square-crop margin, and it can manufacture the exact
+ * too-tight framing failure the fidelity gate is trying to catch.
  */
 async function applyCandidateFinish(
   candidateBase64: string,
   candidateAudit: RubricJson
 ): Promise<string> {
-  const crop = candidateAudit.crop_suggestion;
   const light = candidateAudit.light_adjustment;
 
   let pipeline = sharp(Buffer.from(candidateBase64, "base64"));
-  const meta = await pipeline.metadata();
-  const width = meta.width ?? 0;
-  const height = meta.height ?? 0;
   let changed = false;
-
-  // Safe crop: only when the suggested region keeps most of the frame, so the
-  // complete product stays visible. Reject tiny or out-of-bounds crops.
-  if (
-    crop &&
-    width > 0 &&
-    height > 0 &&
-    crop.w >= 0.6 &&
-    crop.h >= 0.6 &&
-    crop.x >= 0 &&
-    crop.y >= 0 &&
-    crop.x + crop.w <= 1 &&
-    crop.y + crop.h <= 1
-  ) {
-    const left = Math.round(crop.x * width);
-    const top = Math.round(crop.y * height);
-    const w = Math.round(crop.w * width);
-    const h = Math.round(crop.h * height);
-    if (
-      left >= 0 &&
-      top >= 0 &&
-      w > 0 &&
-      h > 0 &&
-      left + w <= width &&
-      top + h <= height
-    ) {
-      pipeline = pipeline.extract({ left, top, width: w, height: h });
-      changed = true;
-    }
-  }
 
   // Gentle exposure/warmth only when the candidate audit asks for it.
   if (light) {
@@ -575,6 +547,11 @@ export async function improvePhoto(args: {
   originalBuffer: Buffer;
   originalMimeType: "image/png" | "image/jpeg";
   originalAudit: RubricJson;
+  /** Optional edit base. Retries can start from the current preview, while fidelity still compares to the original. */
+  baseBuffer?: Buffer;
+  baseMimeType?: "image/png" | "image/jpeg";
+  /** Optional audit of the edit base, used so retries target remaining issues in the current preview. */
+  promptAudit?: RubricJson;
   extraConstraints?: string[];
   mode?: ImproveMode;
 }): Promise<ImproveResult> {
@@ -582,17 +559,22 @@ export async function improvePhoto(args: {
   const mode: ImproveMode = args.mode ?? "main";
   // Supporting photos are re-scored by the general rubric, not the hero rubric.
   const systemPrompt = mode === "extra" ? GENERAL_RUBRIC_PROMPT : undefined;
+  const editBuffer = args.baseBuffer ?? args.originalBuffer;
+  const editMimeType = args.baseMimeType ?? args.originalMimeType;
+  const promptAudit = args.promptAudit ?? args.originalAudit;
+  const promptSource = args.baseBuffer ? "improved_preview" : "original";
 
   // 1. Targeted generation.
   let candidateBase64: string;
   try {
     candidateBase64 = await imageEditCall({
-      imageBuffer: args.originalBuffer,
-      imageMimeType: args.originalMimeType,
+      imageBuffer: editBuffer,
+      imageMimeType: editMimeType,
       prompt: buildTargetedPrompt(
-        args.originalAudit,
+        promptAudit,
         args.extraConstraints,
-        mode
+        mode,
+        promptSource
       ),
       size: "1024x1024",
     });
