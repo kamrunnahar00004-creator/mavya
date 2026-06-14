@@ -82,7 +82,9 @@ function dedupeFixesByFamily(fixes: TargetedFix[]): TargetedFix[] {
 
 const RESTRAINED_PROMPT = `Edit the attached product photo into a restrained but more professional Etsy hero photo. Make it look like a real product photographer retook the same physical item. Keep natural perspective and realistic lens feel. Use a slightly better angle only when it does not hide, invent, or alter product details.
 
-Cleanliness requirements: remove visible hair, lint, dust, grime, debris, stains, dirty-looking marks, distracting clutter, and background mess. Keep real handmade texture and material detail visible, but make the product clean and gift-ready.
+Cleanliness requirements: remove visible hair, lint, dust, grime, debris, stains, dirty-looking marks, distracting clutter, and background mess. Keep real handmade texture and material detail visible, but make the product clean, polished, and gift-ready. Do not erase intentional handmade character, patina, glaze variation, textile texture, wood grain, metal finish, wax texture, or other real product material cues.
+
+Premium presentation requirement: make the photo feel like high-end boutique product photography, with refined lighting, controlled highlights, crisp detail, clean surfaces, and deliberate composition. The result should feel expensive and professionally shot without turning into a synthetic luxury ad, glossy render, or different product.
 
 Preserve product identity aggressively: same product type, same shape, materials, colors, label, design, pattern, edges, proportions, included pieces, and distinctive details. Do not redesign the product, invent decorations, or make a different item.
 
@@ -104,7 +106,7 @@ Category notes: soap/skincare/candles — sinks, faucets, bathrooms, dirty count
 
 Lighting: soft natural window light, gentle real shadows, clean white balance, no harsh flash, no dirty grey cast.
 
-Style: believable professional product photography for Etsy, natural and restrained, not an AI-generated catalog render. The result should be a faithful professional retake of this product, not a redesigned version. The output must not look synthetic, rendered, or catalog-glossy.
+Style: believable premium product photography for Etsy, natural and restrained, not an AI-generated catalog render. The result should be a faithful high-end retake of this product, not a redesigned version. The output must not look synthetic, rendered, over-smoothed, or catalog-glossy.
 
 Avoid: invented or melted text, warped patterns, fake bokeh, extra props, hands, obvious synthetic lighting, duplicated product, collage layouts, and cropped or hidden product details.`;
 
