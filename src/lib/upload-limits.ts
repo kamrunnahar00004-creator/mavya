@@ -1,0 +1,5 @@
+export const MAX_SERVER_IMAGE_BYTES = 4 * 1024 * 1024;
+export const CLIENT_IMAGE_MAX_EDGE = 1600;
+export const CLIENT_IMAGE_TARGET_BYTES = 2.8 * 1024 * 1024;
+export const CLIENT_IMAGE_MIN_QUALITY = 0.68;
+export const CLIENT_IMAGE_START_QUALITY = 0.84;

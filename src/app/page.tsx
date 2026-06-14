@@ -24,6 +24,10 @@ import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import { savePendingDownload } from "@/lib/pending-download";
 import { trackClientEvent } from "@/lib/track-client";
+import {
+  compressDataUrlForUpload,
+  prepareUploadImage,
+} from "@/lib/client-image";
 
 type Mode =
   | "upload"
@@ -229,8 +233,8 @@ export default function Page() {
   }, []);
 
   const analyzePhoto = useCallback(
-    async (file: File, kind: SlotKind) => {
-      if (!file.type.startsWith("image/")) {
+    async (inputFile: File, kind: SlotKind) => {
+      if (!inputFile.type.startsWith("image/")) {
         if (kind === "main") {
           setMode("invalid");
         } else {
@@ -239,6 +243,7 @@ export default function Page() {
         return;
       }
 
+      const file = await prepareUploadImage(inputFile);
       const url = URL.createObjectURL(file);
       const id = makeId();
       const previousActiveSlotId = activeSlotId;
@@ -387,7 +392,10 @@ export default function Page() {
         form.set("image", slot.file);
         if (slot.kind === "extra") form.set("mode", "extra");
         if (retry && slot.improvedDownloadUrl) {
-          form.set("retryBaseImage", slot.improvedDownloadUrl);
+          form.set(
+            "retryBaseImage",
+            await compressDataUrlForUpload(slot.improvedDownloadUrl)
+          );
         }
         if (retry && slot.unresolvedIssues?.length) {
           form.set(

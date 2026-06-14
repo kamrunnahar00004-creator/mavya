@@ -4,8 +4,8 @@ import { clientIp } from "@/lib/request-ip";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import { improvePhoto, sanitizeRetryConstraints } from "@/lib/improve-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
+import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
 
-const MAX_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
 const DATA_URL_RE = /^data:(image\/png|image\/jpeg);base64,([A-Za-z0-9+/=]+)$/;
 
@@ -73,9 +73,13 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (file.size > MAX_SIZE) {
+  if (file.size > MAX_SERVER_IMAGE_BYTES) {
     return NextResponse.json(
-      { ok: false, code: "too_large", message: "Photo too large. Max 10MB." },
+      {
+        ok: false,
+        code: "too_large",
+        message: "Photo too large. Use a smaller image under 4MB.",
+      },
       { status: 400 }
     );
   }
@@ -159,7 +163,7 @@ export async function POST(req: NextRequest) {
     }
     baseMimeType = match[1] as "image/png" | "image/jpeg";
     baseBuffer = Buffer.from(match[2], "base64");
-    if (baseBuffer.length > MAX_SIZE) {
+    if (baseBuffer.length > MAX_SERVER_IMAGE_BYTES) {
       return NextResponse.json(
         {
           ok: false,

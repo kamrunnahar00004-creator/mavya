@@ -3,8 +3,8 @@ import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
+import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
 
-const MAX_SIZE = 10 * 1024 * 1024; // 10MB
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
 
 export const runtime = "nodejs";
@@ -69,9 +69,9 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
-  if (file.size > MAX_SIZE) {
+  if (file.size > MAX_SERVER_IMAGE_BYTES) {
     return NextResponse.json(
-      { error: "Photo too large. Max 10MB.", code: "too_large" },
+      { error: "Photo too large. Use a smaller image under 4MB.", code: "too_large" },
       { status: 400 }
     );
   }

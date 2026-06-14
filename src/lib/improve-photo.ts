@@ -138,7 +138,7 @@ function describeCropInstruction(
   const width = Math.round(crop.w * 100);
   const height = Math.round(crop.h * 100);
   if (width <= 0 || height <= 0) return null;
-  return `Composition target: use a tighter composition comparable to retaining roughly ${width}% of the current frame width and ${height}% of its height. Keep the complete product centered and fully visible. Never crop, cut off, or hide any part of the product.`;
+  return `Composition target: use a gentle recompose comparable to retaining roughly ${width}% of the current frame width and ${height}% of its height. Apply this only when it keeps every product part the source showed with comparable margin. Never crop tighter than the source in a way that cuts off, hides, or removes product context.`;
 }
 
 /**

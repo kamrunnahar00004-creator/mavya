@@ -217,6 +217,15 @@ detail shots are allowed to stay tight; they are judged as detail photos, not
 automatically treated as broken crops.
 ```
 
+Upload-size rule:
+
+```text
+Client uploads are resized/compressed before score or generation requests so
+normal phone photos stay under Vercel serverless body limits. Server routes cap
+individual image files at roughly 4MB. Do not raise this to 10MB unless the
+hosting/runtime body limit changes.
+```
+
 Local integration verification on 2026-06-01:
 
 ```text
