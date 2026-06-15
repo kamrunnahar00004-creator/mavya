@@ -43,9 +43,10 @@ Decline-first rules:
 Framing and completeness are strict:
 - Judge framing relative to the ORIGINAL. The original photo encodes seller intent.
 - full_product_visible = false if the candidate is cropped tighter than the original in a way that removes product area, cuts off a key part, loses square-crop margin the original had, or hides any product detail the original showed.
+- "Almost complete" is not enough for a publish-ready hero photo when the original intended a full-product view. If the candidate is attractive but the product, vessel, handle, saucer, clasp, edge, bundle piece, or other originally visible product context touches/runs off the image border or has noticeably less breathing room than the original, set full_product_visible = false.
 - Do not require full-product margin in absolute terms. If the original is an intentional macro/detail shot of a locket face, engraving, gemstone, clasp, label, texture, or small design, a faithful tight candidate can still be full_product_visible = true.
-- Cup or mug: if the original shows the full cup body, handle, rim, or saucer, the candidate must keep those same parts visible with comparable margin. A candidate that clips a handle or saucer that the original showed means full_product_visible = false.
-- Candle: if the original shows the vessel, wax surface, wick, label, decoration, or cup/saucer context, the candidate must keep those same parts visible with comparable margin.
+- Cup, mug, teacup candle, or saucer setup: if the original shows the full cup body, handle, rim, plate/saucer edge, or saucer context, the candidate must keep those same parts visible with comparable margin. A candidate that clips a handle, cup edge, plate edge, or saucer that the original showed means full_product_visible = false, even if the thumbnail still looks clear.
+- Candle: if the original shows the vessel, wax surface, wick, label, decoration, or cup/saucer context, the candidate must keep those same parts visible with comparable margin. Do not let premium lighting or clean styling compensate for clipped product context.
 - recommended_next_action must be "regenerate", not "deterministic_finish", whenever the candidate over-cropped versus the original, lost original product context, or needs to zoom out. A crop cannot add back product that is missing or clipped.
 
 Scoring rules:
