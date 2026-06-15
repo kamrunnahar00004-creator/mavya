@@ -90,7 +90,9 @@ Preserve product identity aggressively: same product type, same shape, materials
 
 Label and pattern protection is strict: preserve every visible label word exactly as shown in the source photo. Preserve typography, brand name, small label artwork, packaging text, and distinctive patterns faithfully. If any source text is unclear, keep it visually unchanged and unclear rather than guessing or replacing it. Do not invent text, rewrite text, replace label artwork, or clean away printed details.
 
-PRODUCT FIDELITY — STRICT: Preserve the product itself exactly. Keep the same object, shape, proportions, colors, materials, visible label/text/design, pattern, packaging if part of the product, count, bundle pieces, and included accessories. Do not invent, redesign, relabel, warp, remove, or hide product details. Preserve the original framing intent: if the source shows the full product, keep the full product visible with comparable margin; if the source is an intentional macro/detail shot, keep that detail-shot intent without inventing missing context. Never crop tighter than the source in a way that cuts off product parts, removes square-crop margin the source had, or hides details the source showed. For mugs, teacups, and cup candles, if the source shows the cup body, rim, handle, or saucer, keep those same parts visible with comparable margin.
+PRODUCT FIDELITY — STRICT: Preserve the product itself exactly. Keep the same object, shape, proportions, colors, materials, visible label/text/design, pattern, packaging if part of the product, count, bundle pieces, and included accessories. Do not invent, redesign, relabel, warp, remove, or hide product details.
+
+FRAMING — STRICT: Preserve the original framing intent. If the source shows a full-product hero view, keep every originally visible product part and product-context edge fully inside the frame with visible breathing room. Do not let the product, vessel, handle, rim, saucer, plate edge, clasp, bundle piece, or decorative edge touch or run off the image border. Never crop tighter than the source in a way that cuts off product parts, removes square-crop margin the source had, or hides details the source showed. If the source is an intentional macro/detail shot, keep that detail-shot intent without inventing missing context. For mugs, teacups, and cup candles, if the source shows the cup body, rim, handle, saucer, or plate edge, keep those same parts fully visible with comparable or slightly more margin.
 
 SCENE / BACKGROUND — FLEXIBLE WHEN THE AUDIT FLAGS IT: The surrounding scene is not sacred. If the audit identifies background distraction, clutter, an awkward setting, a dirty surface, a low-trust scene, or non-product objects competing with the product, you MAY remove or replace those scene elements. You may place the product on a clean, simple, realistic surface with natural contact shadow. You may remove distracting non-product objects such as faucets, sinks, appliances, fixtures, furniture, tools, random props, clutter, messy bedding, floors, shelves, or hands when they are not part of the product or a useful scale reference.
 
@@ -113,11 +115,11 @@ Avoid: invented or melted text, warped patterns, fake bokeh, extra props, hands,
 function categoryGuidance(category: RubricJson["detected_category"]): string {
   switch (category) {
     case "candles":
-      return "For this candle, preserve the jar, label, wax, wick, and flame. Use a restrained backdrop with enough contrast for the container silhouette and label to read clearly. Product-only presentation. Do not add lifestyle props.";
+      return "For this candle, preserve the jar, label, wax, wick, flame, vessel edges, and any cup/saucer context shown in the source. Keep the full vessel and saucer/plate edge visible when the source showed them. Use a restrained backdrop with enough contrast for the container silhouette and label to read clearly. Product-only presentation. Do not add lifestyle props.";
     case "soap":
       return "For this soap, preserve the bar shape, texture, packaging, and handmade surface. Use a clean neutral surface without smoothing away real material detail. Product-only presentation. Do not add lifestyle props.";
     case "mugs":
-      return "For this mug, preserve the handle, rim, proportions, printed design, and glaze. Use an angle that keeps the full design readable. Product-only presentation. Do not add coffee, hands, or lifestyle props unless explicitly requested.";
+      return "For this mug, preserve the handle, rim, proportions, printed design, glaze, and saucer/plate context if shown. Use an angle that keeps the full design readable and keeps the cup, handle, and saucer/plate edge fully inside the frame. Product-only presentation. Do not add coffee, hands, or lifestyle props unless explicitly requested.";
     case "crochet_plush":
       return "For this crochet or plush product, preserve stitch pattern, seams, proportions, face details, and every included piece. Keep soft texture visible without inventing fibers or accessories. Product-only presentation. Do not add hands, models, or extra pieces.";
     case "jewelry":
@@ -140,7 +142,7 @@ function describeCropInstruction(
   const width = Math.round(crop.w * 100);
   const height = Math.round(crop.h * 100);
   if (width <= 0 || height <= 0) return null;
-  return `Composition target: use a gentle recompose comparable to retaining roughly ${width}% of the current frame width and ${height}% of its height. Apply this only when it keeps every product part the source showed with comparable margin. Never crop tighter than the source in a way that cuts off, hides, or removes product context.`;
+  return `Composition target: use a gentle recompose comparable to retaining roughly ${width}% of the current frame width and ${height}% of its height. Apply this only when it keeps every product part the source showed with comparable or slightly more margin. Never crop tighter than the source in a way that cuts off, hides, touches the frame edge, or removes product context. If the source is already tight, zoom out slightly rather than tightening further.`;
 }
 
 /**
