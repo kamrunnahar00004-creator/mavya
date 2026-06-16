@@ -84,7 +84,7 @@ const RESTRAINED_PROMPT = `Edit the attached product photo into a restrained but
 
 Cleanliness requirements: remove visible hair, lint, dust, grime, debris, stains, dirty-looking marks, distracting clutter, and background mess. Keep real handmade texture and material detail visible, but make the product clean, polished, and gift-ready. Do not erase intentional handmade character, patina, glaze variation, textile texture, wood grain, metal finish, wax texture, or other real product material cues.
 
-Premium presentation requirement: make the photo feel like high-end boutique product photography, with refined lighting, controlled highlights, crisp detail, clean surfaces, and deliberate composition. The result should feel expensive and professionally shot without turning into a synthetic luxury ad, glossy render, or different product.
+Presentation requirement: make the photo feel like a clean, true-to-life, well-lit real product photograph, with controlled highlights, crisp detail, clean surfaces, and deliberate composition. The result should look professionally photographed by a careful seller without becoming glossy, over-smoothed, synthetic, or a different product.
 
 Preserve product identity aggressively: same product type, same shape, materials, colors, label, design, pattern, edges, proportions, included pieces, and distinctive details. Do not redesign the product, invent decorations, or make a different item.
 
@@ -108,7 +108,7 @@ Category notes: soap/skincare/candles — sinks, faucets, bathrooms, dirty count
 
 Lighting: soft natural window light, gentle real shadows, clean white balance, no harsh flash, no dirty grey cast.
 
-Style: believable premium product photography for Etsy, natural and restrained, not an AI-generated catalog render. The result should be a faithful high-end retake of this product, not a redesigned version. The output must not look synthetic, rendered, over-smoothed, or catalog-glossy.
+Style: believable professional product photography for Etsy, natural and restrained, not an AI-generated catalog render. The result should be a faithful true-to-life retake of this product, not a redesigned version. The output must not look synthetic, rendered, over-smoothed, or catalog-glossy.
 
 Avoid: invented or melted text, warped patterns, fake bokeh, extra props, hands, obvious synthetic lighting, duplicated product, collage layouts, and cropped or hidden product details.`;
 
