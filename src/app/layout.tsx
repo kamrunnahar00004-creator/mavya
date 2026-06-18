@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
+import Script from "next/script";
 import { Inter, Fraunces } from "next/font/google";
 import "./globals.css";
+
+// Microsoft Clarity session recordings + heatmaps. Project id is public (it ships
+// in the client script anyway), so it is hardcoded for zero-config deploys; an env
+// var can override it. Diagnostic instrumentation, not a product feature: lets us
+// SEE why visitors bounce, not just the number.
+const CLARITY_PROJECT_ID =
+  process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID ?? "x97det48lq";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -35,6 +43,11 @@ export default function RootLayout({
       <body>
         {children}
         <Analytics />
+        {CLARITY_PROJECT_ID && (
+          <Script id="clarity-init" strategy="afterInteractive">
+            {`(function(c,l,a,r,i,t,y){c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);})(window,document,"clarity","script","${CLARITY_PROJECT_ID}");`}
+          </Script>
+        )}
       </body>
     </html>
   );
