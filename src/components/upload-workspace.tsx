@@ -27,7 +27,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
   return (
     <main className="flex min-h-[calc(100dvh-64px)] flex-col items-center justify-start px-6 pt-[7vh] pb-12">
       <div className="mx-auto max-w-[1040px] text-center">
-        <h1 className="font-display whitespace-nowrap text-[42px] font-bold tracking-[-0.02em] leading-[1.1] text-[var(--color-ink)]">
+        <h1 className="font-display text-[28px] sm:text-[36px] md:text-[42px] font-bold tracking-[-0.02em] leading-[1.1] text-[var(--color-ink)]">
           Your{" "}
           <span
             className="italic"
@@ -37,7 +37,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           </span>{" "}
           thumbnail is costing you clicks.
         </h1>
-        <p className="mx-auto mt-4 text-[22px] font-medium leading-snug text-[var(--color-ink)]">
+        <p className="mx-auto mt-4 text-[17px] sm:text-[22px] font-medium leading-snug text-[var(--color-ink)]">
           Find out why.{" "}
           <span
             className="font-extrabold"

@@ -227,7 +227,7 @@ export function AuditWorkspace({
       )}
       <div
         className={cn(
-          "mx-auto grid max-w-[1200px] grid-cols-[1.05fr_1fr] gap-8 items-start",
+          "mx-auto grid max-w-[1200px] grid-cols-1 lg:grid-cols-[1.05fr_1fr] gap-6 lg:gap-8 items-start",
           revealed && "reveal-on"
         )}
       >
