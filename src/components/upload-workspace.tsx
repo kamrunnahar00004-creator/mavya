@@ -29,10 +29,13 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
       <div className="mx-auto max-w-[1040px] text-center">
         <h1 className="font-display text-[28px] sm:text-[36px] md:text-[42px] font-bold tracking-[-0.02em] leading-[1.1] text-[var(--color-ink)]">
           Rate your{" "}
-          <span className="italic" style={{ marginRight: "0.04em" }}>
+          <span
+            className="italic"
+            style={{ color: "var(--color-primary)", marginRight: "0.08em" }}
+          >
             Etsy
           </span>{" "}
-          listing photo{" "}
+          photo{" "}
           <span
             className="font-extrabold"
             style={{ color: "var(--color-primary)" }}
