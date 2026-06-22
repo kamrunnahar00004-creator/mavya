@@ -35,16 +35,16 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           >
             Etsy
           </span>{" "}
-          photo{" "}
+          listing photo
+        </h1>
+        <p className="mx-auto mt-4 text-[17px] sm:text-[22px] font-medium leading-snug text-[var(--color-ink)]">
+          Find out why it’s not getting clicks.{" "}
           <span
             className="font-extrabold"
             style={{ color: "var(--color-primary)" }}
           >
-            free
+            Free.
           </span>
-        </h1>
-        <p className="mx-auto mt-4 text-[17px] sm:text-[22px] font-medium leading-snug text-[var(--color-ink)]">
-          Find out why it’s not getting clicks.
         </p>
 
         {errorBanner && (
