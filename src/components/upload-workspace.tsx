@@ -25,7 +25,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
   }
 
   return (
-    <main className="flex min-h-[calc(78dvh-64px)] flex-col items-center justify-start px-6 pt-[5vh] pb-10 sm:min-h-[calc(82dvh-64px)]">
+    <main className="flex min-h-[calc(78dvh-64px)] flex-col items-center justify-start px-4 pb-7 pt-7 sm:min-h-[calc(82dvh-64px)] sm:px-6 sm:pb-10 sm:pt-[5vh]">
       <div className="mx-auto max-w-[1040px] text-center">
         <h1 className="font-display text-[28px] sm:text-[36px] md:text-[42px] font-bold tracking-[-0.02em] leading-[1.1] text-[var(--color-ink)]">
           Rate your{" "}
@@ -37,7 +37,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           </span>{" "}
           listing photo
         </h1>
-        <p className="mx-auto mt-4 text-[17px] sm:text-[22px] font-medium leading-snug text-[var(--color-ink)]">
+        <p className="mx-auto mt-3 text-[17px] sm:mt-4 sm:text-[22px] font-medium leading-snug text-[var(--color-ink)]">
           Find out why it’s not getting clicks.{" "}
           <span
             className="font-extrabold"
@@ -79,13 +79,13 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
             if (file && file.type.startsWith("image/")) onFile(file);
           }}
           className={cn(
-            "group mx-auto mt-8 flex h-[280px] w-full max-w-[720px] cursor-pointer flex-col items-center justify-center gap-5 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-6 py-8 transition-all",
+            "group mx-auto mt-6 flex h-[248px] w-full max-w-[720px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-5 py-6 transition-all sm:mt-8 sm:h-[280px] sm:gap-5 sm:px-6 sm:py-8",
             "shadow-[var(--shadow-soft)]",
             "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
             dragActive && "dropzone-active"
           )}
         >
-          <div className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+          <div className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] sm:h-16 sm:w-16">
             <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
           </div>
 
@@ -124,7 +124,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           />
         </div>
 
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-[13px] text-[var(--color-ink-muted)]">
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-[12px] text-[var(--color-ink-muted)] sm:mt-6 sm:gap-x-5 sm:text-[13px]">
           <span className="inline-flex items-center gap-1.5">
             <Check className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={2.5} aria-hidden="true" />
             First rating free
