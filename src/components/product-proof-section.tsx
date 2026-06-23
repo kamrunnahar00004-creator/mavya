@@ -20,7 +20,7 @@ export function ProductProofSection() {
       aria-labelledby="product-proof-heading"
       className="border-t border-[var(--color-border-soft)] bg-[var(--color-page-deep)]"
     >
-      <div className="mx-auto max-w-[1200px] px-6 py-14 sm:py-16 lg:py-20">
+      <div className="mx-auto max-w-[1200px] px-6 pb-14 pt-8 sm:pb-16 sm:pt-10 lg:pb-20 lg:pt-12">
         <div className="mx-auto max-w-[700px] text-center">
           <h2
             id="product-proof-heading"
@@ -28,14 +28,10 @@ export function ProductProofSection() {
           >
             See what buyers see
           </h2>
-          <p className="mx-auto mt-3 max-w-[620px] text-[15px] leading-relaxed text-[var(--color-ink-muted)] sm:text-[17px]">
-            Mavya scores your Etsy thumbnail, shows what is costing clicks,
-            and verifies the improved result.
-          </p>
         </div>
 
         <div
-          className="mx-auto mt-8 grid max-w-[1080px] items-start gap-8 lg:mt-10 lg:grid-cols-[0.92fr_1.08fr] lg:gap-14"
+          className="mx-auto mt-5 grid max-w-[1080px] items-start gap-8 sm:mt-6 lg:grid-cols-[0.92fr_1.08fr] lg:gap-14"
           aria-live="polite"
         >
           <div>
