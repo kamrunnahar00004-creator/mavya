@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AppHeader } from "@/components/app-header";
 import { UploadWorkspace } from "@/components/upload-workspace";
+import { ProductProofSection } from "@/components/product-proof-section";
 import { AnalyzingState } from "@/components/analyzing-state";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { InvalidUploadState } from "@/components/invalid-upload-state";
@@ -664,10 +665,13 @@ export default function Page() {
       )}
 
       {mode === "upload" && (
-        <UploadWorkspace
-          onFile={handleFirstFile}
-          errorBanner={scoreError ?? undefined}
-        />
+        <>
+          <UploadWorkspace
+            onFile={handleFirstFile}
+            errorBanner={scoreError ?? undefined}
+          />
+          <ProductProofSection />
+        </>
       )}
 
       {mode === "analyzing" && (
