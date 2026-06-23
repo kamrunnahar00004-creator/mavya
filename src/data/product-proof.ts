@@ -7,7 +7,6 @@ export type ProductProofState = {
   verdict: string;
   pillars: Pillar[];
   findings: string[];
-  provenance?: string;
 };
 
 export const PRODUCT_PROOF: Record<"before" | "after", ProductProofState> = {
@@ -46,6 +45,5 @@ export const PRODUCT_PROOF: Record<"before" | "after", ProductProofState> = {
       "Soft light preserves the wax and glass detail.",
       "Clean backdrop builds buyer trust.",
     ],
-    provenance: "AI-improved example",
   },
 };

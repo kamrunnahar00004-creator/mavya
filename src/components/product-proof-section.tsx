@@ -70,11 +70,6 @@ export function ProductProofSection() {
                 className="object-contain"
                 priority={false}
               />
-              {proof.provenance && (
-                <div className="absolute left-3 top-3 rounded-full border border-white/80 bg-white/90 px-3 py-1.5 text-[11px] font-bold text-[var(--color-ink)] shadow-sm backdrop-blur-sm">
-                  {proof.provenance}
-                </div>
-              )}
             </div>
           </div>
 
