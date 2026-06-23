@@ -20,18 +20,18 @@ export function ProductProofSection() {
       aria-labelledby="product-proof-heading"
       className="border-t border-[var(--color-border-soft)] bg-[var(--color-page-deep)]"
     >
-      <div className="mx-auto max-w-[1200px] px-4 pb-12 pt-6 sm:px-6 sm:pb-16 sm:pt-10 lg:pb-20 lg:pt-12">
+      <div className="mx-auto max-w-[1200px] px-4 pb-12 pt-4 sm:px-6 sm:pb-16 sm:pt-10 lg:pb-20 lg:pt-12">
         <div className="mx-auto max-w-[700px] text-center">
           <h2
             id="product-proof-heading"
             className="font-display text-[28px] font-bold leading-tight text-[var(--color-ink)] sm:text-[38px]"
           >
-            See what buyers see
+            What buyers see
           </h2>
         </div>
 
         <div
-          className="mx-auto mt-4 grid max-w-[1080px] items-start gap-6 sm:mt-6 sm:gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:gap-14"
+          className="mx-auto mt-7 grid max-w-[1080px] items-start gap-6 sm:mt-6 sm:gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:gap-14"
           aria-live="polite"
         >
           <div>
