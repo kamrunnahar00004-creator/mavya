@@ -25,7 +25,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
   }
 
   return (
-    <main className="flex min-h-[calc(86dvh-64px)] flex-col items-center justify-start px-6 pt-[5vh] pb-10 sm:min-h-[calc(88dvh-64px)]">
+    <main className="flex min-h-[calc(78dvh-64px)] flex-col items-center justify-start px-6 pt-[5vh] pb-10 sm:min-h-[calc(82dvh-64px)]">
       <div className="mx-auto max-w-[1040px] text-center">
         <h1 className="font-display text-[28px] sm:text-[36px] md:text-[42px] font-bold tracking-[-0.02em] leading-[1.1] text-[var(--color-ink)]">
           Rate your{" "}
