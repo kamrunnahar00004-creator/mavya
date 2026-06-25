@@ -7,7 +7,7 @@ import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
 
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
 const BAD_MIME_MESSAGE =
-  "Use JPG or PNG. iPhone HEIC? Upload a screenshot or switch Camera to Most Compatible.";
+  "Use a JPG or PNG photo.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
