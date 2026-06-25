@@ -40,10 +40,10 @@ export function ActiveProcessingState({
 
   return (
     <main className="px-6 py-10 pb-24">
-      <div className="mx-auto grid max-w-[1200px] grid-cols-[1.05fr_1fr] gap-10 items-start">
-        <section aria-label="Submitted photo">
+      <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-6 lg:grid-cols-[1.05fr_1fr] lg:gap-10 items-start">
+        <section aria-label="Submitted photo" className="order-2 lg:order-1">
           <div className="overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border-soft)] bg-[var(--color-surface)] shadow-[var(--shadow-soft)]">
-            <div className="relative h-[clamp(430px,calc(100vh-300px),580px)] w-full bg-[var(--color-page-deep)]">
+            <div className="relative h-[clamp(320px,52vh,440px)] w-full bg-[var(--color-page-deep)] lg:h-[clamp(430px,calc(100vh-300px),580px)]">
               {imageSrc ? (
                 <Image
                   src={imageSrc}
@@ -72,7 +72,7 @@ export function ActiveProcessingState({
         <section
           aria-label={title}
           aria-live="polite"
-          className="flex flex-col gap-5 pt-2"
+          className="order-1 flex flex-col items-center gap-5 text-center lg:order-2 lg:items-start lg:pt-2 lg:text-left"
         >
           <span className="eyebrow">{title}</span>
 
@@ -80,7 +80,7 @@ export function ActiveProcessingState({
             {currentStatus}
           </div>
 
-          <div className="progress-track" aria-hidden="true">
+          <div className="progress-track w-full max-w-[420px] lg:max-w-none" aria-hidden="true">
             <span className="progress-indeterminate" />
           </div>
         </section>
