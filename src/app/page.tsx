@@ -655,7 +655,7 @@ export default function Page() {
         <input
           ref={extraInputRef}
           type="file"
-          accept="image/png,image/jpeg"
+          accept="image/*"
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0];

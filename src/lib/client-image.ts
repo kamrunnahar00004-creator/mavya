@@ -12,9 +12,19 @@ const OUTPUT_TYPE = "image/jpeg";
 export async function prepareUploadImage(file: File): Promise<File> {
   if (!file.type.startsWith("image/")) return file;
 
+  // The server only accepts JPEG/PNG. Anything else (webp, gif, bmp, etc.) must be
+  // re-encoded to JPEG client-side via the canvas pipeline, even when the original
+  // is already small, otherwise it reaches the server and is rejected as bad_mime.
+  const isServerReadyType =
+    file.type === "image/jpeg" || file.type === "image/png";
+
   try {
     const blob = await drawCompressed(file);
-    if (blob.size >= file.size && file.size <= CLIENT_IMAGE_TARGET_BYTES) {
+    if (
+      isServerReadyType &&
+      blob.size >= file.size &&
+      file.size <= CLIENT_IMAGE_TARGET_BYTES
+    ) {
       return file;
     }
     const name = file.name.replace(/\.[^.]+$/, "") || "mavya-photo";

@@ -94,7 +94,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
               Drop your first listing photo
             </div>
             <div className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
-              PNG or JPG, one hero image
+              JPG, PNG, or iPhone photo
             </div>
           </div>
 
@@ -115,7 +115,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           <input
             ref={inputRef}
             type="file"
-            accept="image/png,image/jpeg"
+            accept="image/*"
             hidden
             onChange={(e) => {
               const file = e.target.files?.[0];
@@ -135,7 +135,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           </span>
           <span className="inline-flex items-center gap-1.5">
             <Check className="h-3.5 w-3.5 text-[var(--color-primary)]" strokeWidth={2.5} aria-hidden="true" />
-            Takes 10 seconds
+            Quick audit
           </span>
         </div>
       </div>

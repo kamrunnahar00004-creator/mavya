@@ -8,6 +8,8 @@ import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
 
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
 const DATA_URL_RE = /^data:(image\/png|image\/jpeg);base64,([A-Za-z0-9+/=]+)$/;
+const BAD_MIME_MESSAGE =
+  "Use JPG or PNG. iPhone HEIC? Upload a screenshot or switch Camera to Most Compatible.";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -69,7 +71,7 @@ export async function POST(req: NextRequest) {
   }
   if (!ALLOWED_TYPES.has(file.type)) {
     return NextResponse.json(
-      { ok: false, code: "bad_mime", message: "Use a PNG or JPG." },
+      { ok: false, code: "bad_mime", message: BAD_MIME_MESSAGE },
       { status: 400 }
     );
   }
