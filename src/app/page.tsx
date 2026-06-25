@@ -148,7 +148,8 @@ function freePreviewMessage(fidelity: FidelityReport): string {
   let tail =
     "trying a cleaner, sharper source photo, or generating another version for a different result.";
   if (fidelity.ai_looking) {
-    tail = "uploading a real product photo taken in soft natural light.";
+    tail =
+      "reviewing it closely first — this version looks AI-generated, so check it against your real product before using it, or upload a photo taken in soft natural light for a more natural result.";
   } else if (
     fidelity.text_or_pattern_drift ||
     fidelity.invented_or_missing_details

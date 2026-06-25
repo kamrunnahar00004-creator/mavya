@@ -402,11 +402,14 @@ const FAILURE_INCOMPLETE_RESULT =
  * recognizable, even if it misses a publish-ready check. Scores are never altered.
  */
 const USEFUL_PREVIEW_MIN_GAIN = 0.3;
-// Lowered 6 -> 5: deliver moderate-drift previews on clear real products instead
-// of hard-rejecting them. The "patterns may differ" warning + seller review is the
-// safeguard. Authenticity floor stays 6 so AI-looking results still cannot pass.
+// fidelity floor 5: deliver moderate-drift previews on clear real products instead
+// of hard-rejecting them; SEVERE drift / wrong product still scores below 5 and is
+// rejected. authenticity floor lowered 6 -> 3 (founder call 2026-06-25): an
+// AI-looking but faithful render now delivers as a clearly labeled "looks
+// AI-generated" preview for the seller to judge, instead of dead-ending. A floor of
+// 3 still rejects a totally degenerate / synthetic-garbage render (authenticity 0-2).
 const USEFUL_PREVIEW_MIN_FIDELITY = 5;
-const USEFUL_PREVIEW_MIN_AUTHENTICITY = 6;
+const USEFUL_PREVIEW_MIN_AUTHENTICITY = 3;
 
 function hasHardTrustFailure(fidelity: FidelityReport): boolean {
   return (
@@ -420,15 +423,18 @@ function hasHardTrustFailure(fidelity: FidelityReport): boolean {
 
 /**
  * Blocks for the FREE-PREVIEW path only. Softer than hasHardTrustFailure: it does
- * NOT auto-reject text/pattern/detail drift. Minor polish drift on a clear real
- * product should deliver as a labeled "patterns may differ — review before
- * publishing" preview, gated by the graded fidelity_score below (which still
- * rejects SEVERE drift). Only unambiguously broken results hard-block here:
- * AI-looking, collage/duplicate, or an incomplete product.
+ * NOT auto-reject text/pattern/detail drift, and (founder call 2026-06-25) no
+ * longer auto-rejects an AI-looking result. An artificial-but-faithful render is
+ * the seller's photo, just styled synthetically — deliver it as a clearly labeled
+ * "looks AI-generated, review before publishing" preview and let the seller decide,
+ * rather than dead-ending them after a 2-minute wait. Severity is still enforced by
+ * the graded fidelity_score floor below (severe drift / wrong product scores low
+ * and is rejected). Only unambiguously BROKEN output hard-blocks here: a collage /
+ * duplicate product, or an incomplete product — there is nothing for a seller to
+ * "decide" about a two-mug collage, it is just wrong.
  */
 function blocksFreePreview(fidelity: FidelityReport): boolean {
   return (
-    fidelity.ai_looking ||
     fidelity.collage_or_duplicate_product ||
     !fidelity.full_product_visible
   );

@@ -401,7 +401,7 @@ export function AuditWorkspace({
                     {scoreDeltaLabel}
                   </div>
                 )}
-                {freePreview && previewBelowPublishReady && freePreviewMessage && (
+                {freePreview && freePreviewMessage && (
                   <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
                     {freePreviewMessage}
                   </div>
@@ -477,7 +477,9 @@ export function AuditWorkspace({
                     Download photo
                   </a>
                 ) : null}
-                {onRetryImprove && previewBelowPublishReady && !improveLoading && (
+                {onRetryImprove &&
+                  (previewBelowPublishReady || freePreview) &&
+                  !improveLoading && (
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
