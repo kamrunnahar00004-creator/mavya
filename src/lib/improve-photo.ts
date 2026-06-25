@@ -94,7 +94,11 @@ PRODUCT FIDELITY — STRICT: Preserve the product itself exactly. Keep the same 
 
 FRAMING — STRICT: Preserve the original framing intent. If the source shows a full-product hero view, keep every originally visible product part and product-context edge fully inside the frame with visible breathing room. Do not let the product, vessel, handle, rim, saucer, plate edge, clasp, bundle piece, or decorative edge touch or run off the image border. Never crop tighter than the source in a way that cuts off product parts, removes square-crop margin the source had, or hides details the source showed. If the source is an intentional macro/detail shot, keep that detail-shot intent without inventing missing context. For mugs, teacups, and cup candles, if the source shows the cup body, rim, handle, saucer, or plate edge, keep those same parts fully visible with comparable or slightly more margin.
 
-SCENE / BACKGROUND — FLEXIBLE WHEN THE AUDIT FLAGS IT: The surrounding scene is not sacred. If the audit identifies background distraction, clutter, an awkward setting, a dirty surface, a low-trust scene, or non-product objects competing with the product, you MAY remove or replace those scene elements. You may place the product on a clean, simple, realistic surface with natural contact shadow. You may remove distracting non-product objects such as faucets, sinks, appliances, fixtures, furniture, tools, random props, clutter, messy bedding, floors, shelves, or hands when they are not part of the product or a useful scale reference.
+TOP ISSUE FIRST: Resolve the single most important diagnosed problem (the first fix listed below) before anything else, and do not introduce a new problem while fixing it. Above all, do not add new background clutter, props, or busy styling in the name of making the photo look "nicer".
+
+SCENE / BACKGROUND — SIMPLIFY WHEN THE AUDIT FLAGS IT: The surrounding scene is not sacred. If the audit identifies background distraction, clutter, an awkward setting, a dirty surface, a low-trust scene, or non-product objects competing with the product, REMOVE those elements and place the product on a clean, simple, realistic surface with a natural contact shadow. Simplifying means an emptier, cleaner surface, NOT a prettier busy scene. Do NOT replace removed clutter with new props, food, books, foliage, decorations, or extra styling. You may remove distracting non-product objects such as faucets, sinks, appliances, fixtures, furniture, tools, random props, clutter, messy bedding, floors, shelves, or hands when they are not part of the product or a useful scale reference.
+
+CONTEXT BUDGET: Context or props are allowed ONLY when they clearly increase product comprehension, desire, scale, or trust for this category. Use at most ONE subtle support cue, and only when it does not compete with or distract from the product. If you are unsure, use a clean simple surface with no props. A clean product-only photo always beats a styled but cluttered one.
 
 Scene-cleanup safeguards:
 - Remove only objects clearly NOT part of the product or the sold set. Do not remove included accessories, bundle pieces, lids, dishes, stands, or packaging that appear to be part of what is sold.
@@ -125,7 +129,7 @@ function categoryGuidance(category: RubricJson["detected_category"]): string {
     case "jewelry":
       return "For this jewelry product, preserve stone count, settings, metal color, shape, proportions, clasp, both ends of the piece, and arrangement exactly. Do not invent sparkle, stones, or engraving. Product-only presentation by default; only a clean model-worn close-up is acceptable when it clearly improves comprehension and preserves every original detail.";
     default:
-      return "Preserve every visible product-specific detail exactly. Use a clean product-first composition without redesigning the item. Product-only presentation. Do not add people, hands, props, or lifestyle scenes.";
+      return "Preserve every visible product-specific detail exactly. Use a clean product-first composition without redesigning the item. Product-only presentation. Do not add people, hands, props, or lifestyle scenes. If the product is a card, print, poster, sign, sticker, or other flat design-led item, the printed design, artwork, and any text are the product: keep them dominant, fully visible, and readable, shot flat-on or at a slight angle on a clean simple surface, with minimal or no props so nothing competes with the design.";
   }
 }
 
@@ -197,7 +201,7 @@ function buildTargetedPrompt(
     ? "supporting product photo"
     : "hero photo";
   const fixesBlock = fixes.length
-    ? `The original audit identified these ${problemLabel} problems. Resolve the actual problem described in each reason, not just the short action:\n${fixes
+    ? `The original audit identified these ${problemLabel} problems, most important first. Resolve the FIRST problem before the others, and do not introduce a new problem (especially new background clutter or props) while fixing it. Resolve the actual problem described in each reason, not just the short action:\n${fixes
         .map((f) => `- Action: ${f.action}\n  Reason: ${f.reason ?? ""}`)
         .join("\n")}`
     : `The original audit did not identify a ${problemLabel} edit. Keep the product faithful and make only restrained professional improvements.`;

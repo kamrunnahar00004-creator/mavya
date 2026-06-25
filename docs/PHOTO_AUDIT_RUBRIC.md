@@ -128,6 +128,14 @@ as a supporting/detail photo. As a main thumbnail, score whether buyers can
 understand the full item being sold and recommend a separate full-product hero
 when needed.
 
+Category-aware framing (adjusts how the Thumbnail pillar is judged; weights stay locked):
+
+- Jewelry, stickers, small crafts: product fills more of the frame with macro detail; tiny-in-frame is a thumbnail problem.
+- Candles, mugs, soap, gift items: product dominates with a little clean breathing room; at most one subtle mood cue, product stays hero.
+- Cards, prints, signs: the printed design and text ARE the product and must be dominant, fully visible, and readable at thumbnail size; a design that is small, angled away, glare-obscured, or buried in props is a thumbnail problem.
+- Home decor, wall art: more context allowed, but the product must stay the clear focal point.
+- Bigger helps only when it increases clarity; never reward a frame so tight that a key edge or the Etsy square crop clips the product.
+
 ### 2. Lighting (weight 25)
 
 Question:
@@ -191,6 +199,14 @@ Low pillar examples:
 - visible edge halo, jagged outline, floating product, or pasted-on product cutout
 - clean template mockup is acceptable but should be backed by real-life photo
 - photo does not communicate scent, softness, use case, or giftability
+
+Reward rule (desire is a bonus, never a rescue): when the product is already clear,
+complete, readable, and trustworthy, a photo that also shows strong giftability,
+emotional pull, specific use, or an obvious reason to want it should score Click Appeal
+7-9. If thumbnail clarity, lighting, full-product visibility, or authenticity/trust are
+weak, Click Appeal stays low regardless of styling or mood. Styling cannot lift Click
+Appeal when the product is unclear, cut off, dirty, AI-looking, or pasted-in. All
+existing AI/mockup/cutout caps still apply.
 
 ## Internal Sub-Checks (backend only, not shown)
 
@@ -445,6 +461,18 @@ Do not confuse a distracting nearby object with product obstruction.
 ### Generation: Product Strict, Scene Flexible (2026-06-04)
 
 `src/lib/improve-photo.ts` separates PRODUCT fidelity (strict — never change shape/colors/label/pattern/proportions/included pieces, keep the full product visible) from SCENE/background (flexible — when the audit flags background distraction, the generator MAY remove distracting non-product objects like faucets/sinks/appliances/clutter and place the product on a clean realistic surface with a natural contact shadow). Safeguards: keep included accessories + intentional scale references; do not strip clean intentional styling; keep transparent/reflective contents consistent; no floating product; only clean aggressively when distraction is actually flagged. `buildTargetedPrompt` now passes each audit fix as `Action` + `Reason` (using `priority_explanation` / `next_steps.observation`) so the generator resolves the real diagnosed problem. The fidelity gate is unchanged and remains the drift backstop.
+
+Top-issue-first + context-budget (2026-06-25): generation must resolve the single most
+important diagnosed problem first and must not introduce a new problem while fixing it.
+When background clutter or a competing scene is the issue, SIMPLIFY to a clean simple
+realistic surface with a natural contact shadow; removing clutter means an emptier
+surface, NOT replacing it with new props, food, books, foliage, or styling. Context or
+props are allowed only when they clearly increase comprehension, desire, scale, or trust,
+at most one subtle support cue, and a clean product-only photo always beats a styled but
+cluttered one. For cards, prints, posters, signs, and stickers (detected as `other`), the
+design/artwork/text must stay dominant, fully visible, and readable with minimal or no
+props. The honest re-score plus `dominantIssueResolved` still refuse to deliver a result
+that did not actually fix the diagnosed issue.
 
 ## V0 Result Card (UI mapping)
 

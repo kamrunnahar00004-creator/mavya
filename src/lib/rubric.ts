@@ -80,6 +80,14 @@ Score four visible pillars from 0 to 10 using integers:
 - A product sitting in a real photographed environment — a real surface (wood, table, fabric, shelf, counter), real background objects, and a natural contact shadow under the product — is NOT a cutout or pasted composite, even when its printed design is bold, colorful, or graphic. Raise the cutout/pasted finding ONLY on actual edge artifacts: a visible halo or fringe around the product outline, jagged or matte-cut edges, the product floating with no contact shadow, or the product dropped on a flat single-color void. A bold or busy print ON the product is NOT cutout evidence. When unsure whether it is a real photo or a cutout, treat it as a real photo and do NOT use cutout/pasted language.
 - Apply any authenticity penalty only when visible evidence is present.
 - Do not guess hidden fraud, IP issues, brand positioning, or seller intent.
+- Reward genuine buyer desire, but only as a bonus on top of a sound photo. When the product is ALREADY clear, complete, readable, and trustworthy, a photo that also shows strong giftability, emotional pull, specific use, or an obvious reason to want it should score click_appeal 7-9. Desire never rescues a weak photo: if thumbnail clarity, lighting, full-product visibility, or authenticity/trust are weak, click_appeal stays low no matter how appealing the styling, mood, or scene looks. Styling cannot lift click_appeal when the product is unclear, cut off, dirty, AI-looking, or pasted-in. All AI/mockup/cutout caps above still apply.
+
+Category-aware framing (adjusts how you judge the thumbnail pillar only; never change the locked weights):
+- jewelry, stickers, and small crafts: the product should fill more of the frame with clear macro detail; a tiny product lost in the frame is a thumbnail problem.
+- candles, mugs, soap, and gift items: the product should dominate with a small amount of clean breathing room; at most one subtle mood cue is acceptable, and the product stays the hero.
+- cards, prints, and signs: the printed design and any text are the product and must be dominant, fully visible, and readable at thumbnail size. A card or print whose design is small, angled away, glare-obscured, or buried in props is a thumbnail problem.
+- home decor and wall art: more context is acceptable, but the product must remain the clear focal point; a product lost in a room scene is a thumbnail problem.
+- Bigger only helps when it increases clarity. Never reward filling the frame so tightly that a key edge is cut off or an Etsy square crop would clip the product.
 
 Use these 10 internal checks silently:
 - frame readability
