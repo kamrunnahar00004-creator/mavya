@@ -49,12 +49,10 @@ export async function scorePhoto(args: {
     );
   }
 
-  const allZeroPillars =
-    parsed.pillars.thumbnail === 0 &&
-    parsed.pillars.lighting === 0 &&
-    parsed.pillars.background === 0 &&
-    parsed.pillars.click_appeal === 0;
-  const isInvalid = parsed.detected_category === "other" && allZeroPillars;
+  // Invalid is now an explicit model classification (upload_kind), not inferred
+  // from "other + all-zero pillars". This stops digital Etsy products (planners,
+  // printables, templates) from being treated as non-products.
+  const isInvalid = parsed.upload_kind === "invalid";
   parsed.overall_score = isInvalid ? 0 : computeOverall(parsed.pillars);
 
   return parsed;

@@ -34,6 +34,29 @@ Decimals allowed (e.g. `6.5`). Display rounds to one decimal max.
 
 The score is the weighted sum of 4 visible pillars. The backend may judge richer sub-checks underneath those pillars, but the UI stays simple.
 
+## Upload Classification (upload_kind)
+
+Added 2026-06-28. Every audit returns `upload_kind: "physical_product" | "digital_product" | "invalid"`. This replaces the old invalid heuristic (`detected_category === "other" && all pillars zero`). Invalid is now an explicit model classification.
+
+- **physical_product** — a direct photo of a physical product. Scored by the physical pillar rubric. Existing flow unchanged.
+- **digital_product** — a digital Etsy listing asset (printable wall art, digital/printable planner, budget/Excel/Sheets spreadsheet, Notion/Canva/social/invitation/wedding/resume/business template, educational printable, digital sticker sheet, SVG/cut file, workbook/journal/tracker, PLR/MRR bundle). These are VALID Etsy products and must NOT be rejected as "not a product photo." Scored with the digital interpretation below. `detected_category` may be `other`; `upload_kind` carries the signal.
+- **invalid** — not a sellable Etsy listing asset at all (random screenshot, code/IDE capture, chat, meme, pure selfie, receipt, unrelated document/photo). Routes to the invalid state.
+
+### Digital scoring interpretation
+
+For `digital_product`, the same four visible pillars are reinterpreted. A realistic mockup, on-screen preview, and readable on-image text can be GOOD for digital (NOT trust failures merely because they are mockups, previews, or labels). Physical-product penalties should not fire just because a digital listing uses a device mockup, page preview, dashboard, frame mockup, format badge, or short product label. Still penalize digital thumbnails that are AI-distorted, unreadable, fake-looking, misleading, cluttered, or fail to show what the buyer receives.
+
+- **Thumbnail** — one-second comprehension: what is it, what do you receive, is the actual design preview visible, centered, and readable at mobile thumbnail size (~150-270px).
+- **Lighting** — presentation clarity (sharpness, contrast, clean rendering), not physical lighting.
+- **Background** — clean supportive layout; penalize clutter, collage, badge-soup (more than 2-3 labels); reward a mockup/context that supports the product.
+- **Click Appeal** — buyer desire + trust: clear niche, category-appropriate mockup (iPad/planner, framed-room/wall art, laptop-dashboard/spreadsheet, flat-lay/invitation, grid/bundle), useful labels (GoodNotes, Canva, Excel + Sheets, Printable PDF, Instant Download, 2026, Bundle, ATS-Friendly, Cricut/Silhouette, PLR/MRR). Penalize spammy/misleading/shipped-physical-looking.
+
+Digital advice must be digital-specific (e.g. "Show the planner on an iPad mockup.", "Make the GoodNotes label readable.", "Use fewer badges."), never "use better lighting" or "upload a product photo."
+
+### First-pass behavior (MVP)
+
+Digital products route to the existing audit UI (same score data) with a "Digital Etsy product detected. Experimental" banner. The improve button still uses the physical generation pipeline, honestly labeled experimental. Deferred: a dedicated digital-product screen, a "this is a physical product" misclassification override, and a category-specific digital mockup compositor. No moderation/safety gate this pass.
+
 ## Visible Pillars (shown in UI)
 
 Main photos use the search-thumbnail pillar labels below:

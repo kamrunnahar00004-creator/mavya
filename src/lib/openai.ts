@@ -15,6 +15,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
     type: "object",
     additionalProperties: false,
     required: [
+      "upload_kind",
       "overall_score",
       "pillars",
       "detected_category",
@@ -28,6 +29,10 @@ const RUBRIC_RESPONSE_SCHEMA = {
       "generation_risk_reason",
     ],
     properties: {
+      upload_kind: {
+        type: "string",
+        enum: ["physical_product", "digital_product", "invalid"],
+      },
       overall_score: { type: "number", minimum: 0, maximum: 10 },
       pillars: {
         type: "object",

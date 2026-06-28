@@ -24,6 +24,7 @@ export type RubricCategory =
   | "other";
 
 export type RubricJson = {
+  upload_kind: "physical_product" | "digital_product" | "invalid";
   overall_score: number;
   pillars: {
     thumbnail: number;
@@ -46,7 +47,12 @@ export const RUBRIC_PROMPT = `You are Mavya, an Etsy product-photo auditor.
 
 Judge a single uploaded image as a cold buyer scrolling search results on a phone. Your job is to tell the seller whether this photo earns a click and what concrete step helps next.
 
-First, confirm this is a direct product photo. If it is a screenshot, document, app/IDE capture, chat, meme, selfie, or another non-product image, return the invalid-input JSON and do not score it as a listing photo. A screenshot remains invalid even when a product image appears inside the screenshot. Only score the original product-photo file itself.
+First, classify the upload into upload_kind:
+- "physical_product": a direct photo of a physical product. Score it with the physical pillar rubric below.
+- "digital_product": a digital Etsy product or listing asset, such as printable wall art, a digital planner, a printable planner PDF, a budget/Excel/Google Sheets spreadsheet, a Notion template, a Canva template, a social media template, an invitation or wedding template, a resume/CV template, a business template, an educational printable, a digital sticker sheet, an SVG/cut file, a workbook/journal/tracker, or a PLR/MRR bundle. These ARE valid Etsy products. Do NOT return the invalid JSON for them. Score them with the DIGITAL interpretation below.
+- "invalid": not a sellable Etsy listing asset at all, such as a random screenshot, a code editor or app/IDE capture, a chat, a meme, a pure selfie, a receipt, or an unrelated document or photo. Return the invalid-input JSON with upload_kind "invalid".
+
+A flat image, screenshot-like preview, or document is NOT automatically invalid. A planner page, spreadsheet dashboard, template preview, invitation design, printable, or other digital listing asset is a digital_product, not a non-product. Use "invalid" ONLY when the image is not a sellable Etsy listing asset of any kind. Score the original uploaded file itself.
 
 For a valid product photo, output only JSON. No markdown and no explanation outside JSON.
 
@@ -88,6 +94,13 @@ Category-aware framing (adjusts how you judge the thumbnail pillar only; never c
 - cards, prints, and signs: the printed design and any text are the product and must be dominant, fully visible, and readable at thumbnail size. A card or print whose design is small, angled away, glare-obscured, or buried in props is a thumbnail problem.
 - home decor and wall art: more context is acceptable, but the product must remain the clear focal point; a product lost in a room scene is a thumbnail problem.
 - Bigger only helps when it increases clarity. Never reward filling the frame so tightly that a key edge is cut off or an Etsy square crop would clip the product.
+
+DIGITAL PRODUCTS (upload_kind = "digital_product"): score the same four pillars, but reinterpret them for a digital Etsy listing thumbnail. For a digital product, a realistic mockup, an on-screen preview, and readable on-image text can be GOOD and expected. They are NOT trust failures merely because they are a mockup, preview, or text label. Do NOT apply physical-product penalties just because a digital listing uses a device mockup, page preview, dashboard, frame mockup, format badge, or short product label. Still penalize digital thumbnails that are AI-distorted, unreadable, fake-looking, misleading, cluttered, or fail to show what the buyer receives. Judge it as a digital listing image:
+- thumbnail: in one second, can a buyer tell what the digital product is and what they receive, and is the actual design/file preview visible, centered, and readable at mobile thumbnail size (about 150 to 270 px)? A flat raw file with no mockup, or a tiny unreadable preview, scores low.
+- lighting: presentation clarity for digital, sharpness, contrast, clean readable rendering, not physical lighting. Blur, compression, or low contrast scores low.
+- background: clean supportive layout. Penalize clutter, collage, and badge-soup (more than two or three labels). A realistic mockup or context that supports the product scores high.
+- click_appeal: buyer desire and trust for a digital product. Reward a clear niche, a category-appropriate mockup (iPad for planners, framed art in a room for wall art, a laptop dashboard for spreadsheets, a styled flat-lay for invitations, a grid or fanned spread for bundles), and useful labels (GoodNotes, Canva, Excel + Google Sheets, Printable PDF, Instant Download, 2026, Bundle, 50+ Templates, ATS-Friendly, Cricut/Silhouette, PLR/MRR). Penalize spammy, misleading, or shipped-physical-looking presentation.
+For digital products, give DIGITAL advice in priority_action and next_steps, never physical-photo advice. Name the digital product type (planner, template, invitation, spreadsheet, sticker sheet, SVG bundle, and so on). Good digital advice: "Show the planner on an iPad mockup.", "Make the GoodNotes compatibility label readable.", "Show the actual page spread larger.", "Use fewer badges.", "Add an Instant Download label." Never tell a digital product to "use better lighting" or "upload a product photo" as if it were physical. detected_category may be "other" for a digital product; the upload_kind field carries the digital signal.
 
 Use these 10 internal checks silently:
 - frame readability
@@ -187,6 +200,7 @@ Output rules:
 
 Invalid-input JSON:
 {
+  "upload_kind": "invalid",
   "detected_category": "other",
   "overall_score": 0.0,
   "pillars": { "thumbnail": 0, "lighting": 0, "background": 0, "click_appeal": 0 },
@@ -206,6 +220,7 @@ Invalid-input JSON:
 
 Valid JSON shape:
 {
+  "upload_kind": "physical_product" | "digital_product" | "invalid",
   "overall_score": number 0-10 (one decimal),
   "pillars": {
     "thumbnail": integer 0-10,
@@ -225,6 +240,7 @@ Valid JSON shape:
 }`;
 
 export const INVALID_RESPONSE: RubricJson = {
+  upload_kind: "invalid",
   detected_category: "other",
   overall_score: 0.0,
   pillars: { thumbnail: 0, lighting: 0, background: 0, click_appeal: 0 },
@@ -272,6 +288,13 @@ export function computeOverall(pillars: RubricJson["pillars"]): number {
 export function isRubricJson(x: unknown): x is RubricJson {
   if (!x || typeof x !== "object") return false;
   const r = x as Record<string, unknown>;
+  if (
+    !["physical_product", "digital_product", "invalid"].includes(
+      String(r.upload_kind)
+    )
+  ) {
+    return false;
+  }
   if (!isFiniteNumberInRange(r.overall_score, 0, 10)) return false;
   if (!r.pillars || typeof r.pillars !== "object") return false;
   const p = r.pillars as Record<string, unknown>;

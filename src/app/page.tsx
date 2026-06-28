@@ -290,8 +290,7 @@ export default function Page() {
         }
         const data = (await res.json()) as { rubric: RubricJson };
         const rubric = data.rubric;
-        const isInvalid =
-          rubric.detected_category === "other" && rubric.overall_score === 0;
+        const isInvalid = rubric.upload_kind === "invalid";
 
         if (isInvalid) {
           removeSlot(id);
@@ -309,6 +308,15 @@ export default function Page() {
             setMode(remaining.length ? "real" : "upload");
           }
           return;
+        }
+
+        // Digital Etsy products are valid. They share the audit UI for now, with a
+        // detection banner and an honest "experimental" note (the improve pipeline
+        // is still the physical one until a digital mockup pass is built).
+        if (rubric.upload_kind === "digital_product" && kind === "main") {
+          setNotice(
+            "Digital Etsy product detected. Experimental: we score this as a digital thumbnail and judge any improvement honestly."
+          );
         }
 
         const audit =
