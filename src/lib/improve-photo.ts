@@ -406,13 +406,15 @@ const FAILURE_INCOMPLETE_RESULT =
  * recognizable, even if it misses a publish-ready check. Scores are never altered.
  */
 const USEFUL_PREVIEW_MIN_GAIN = 0.3;
-// fidelity floor 5: deliver moderate-drift previews on clear real products instead
-// of hard-rejecting them; SEVERE drift / wrong product still scores below 5 and is
-// rejected. authenticity floor lowered 6 -> 3 (founder call 2026-06-25): an
-// AI-looking but faithful render now delivers as a clearly labeled "looks
-// AI-generated" preview for the seller to judge, instead of dead-ending. A floor of
-// 3 still rejects a totally degenerate / synthetic-garbage render (authenticity 0-2).
-const USEFUL_PREVIEW_MIN_FIDELITY = 5;
+// fidelity floor lowered 5 -> 4 (founder call 2026-06-28): moderate detail/text
+// drift now DELIVERS as a labeled "review before using" preview instead of
+// dead-ending after a 1-2 minute wait. Very low-fidelity / wrong-product outputs
+// still block, and the structural hard-blocks (collage/duplicate, incomplete
+// product) still apply via blocksFreePreview.
+// authenticity floor 3 (founder call 2026-06-25): an AI-looking but faithful render
+// delivers as a labeled preview; a totally degenerate / synthetic-garbage render
+// (authenticity 0-2) is still rejected.
+const USEFUL_PREVIEW_MIN_FIDELITY = 4;
 const USEFUL_PREVIEW_MIN_AUTHENTICITY = 3;
 
 function hasHardTrustFailure(fidelity: FidelityReport): boolean {

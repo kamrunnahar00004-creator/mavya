@@ -145,16 +145,17 @@ const FREE_PREVIEW_PREFIX =
  * score, because that is often wrong. Never inflates or hides the score.
  */
 function freePreviewMessage(fidelity: FidelityReport): string {
+  // Detail/text drift now delivers as a usable preview with an honest standalone
+  // warning (founder MVP policy) instead of dead-ending. Not phrased as a
+  // "we recommend" recommendation, it is a review-before-using caution.
+  if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
+    return "This version may have changed product details. Review it carefully before using it, or generate another version.";
+  }
   let tail =
     "trying a cleaner, sharper source photo, or generating another version for a different result.";
   if (fidelity.ai_looking) {
     tail =
       "reviewing it closely first — this version looks AI-generated, so check it against your real product before using it, or upload a photo taken in soft natural light for a more natural result.";
-  } else if (
-    fidelity.text_or_pattern_drift ||
-    fidelity.invented_or_missing_details
-  ) {
-    tail = "uploading a sharper close-up so the product details stay accurate.";
   } else if (!fidelity.full_product_visible) {
     tail = "uploading a photo that shows the complete product.";
   }
@@ -315,7 +316,7 @@ export default function Page() {
         // is still the physical one until a digital mockup pass is built).
         if (rubric.upload_kind === "digital_product" && kind === "main") {
           setNotice(
-            "Digital Etsy product detected. Experimental: we score this as a digital thumbnail and judge any improvement honestly."
+            "Digital product detected. AI improvement for digital products is still experimental, so review the result before using it."
           );
         }
 
