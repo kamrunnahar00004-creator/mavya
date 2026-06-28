@@ -456,7 +456,10 @@ export default function Page() {
                       ...s,
                       improveStatus: hasExistingPreview ? "idle" : "error",
                       improveStartedAt: undefined,
-                      improveError: hasExistingPreview ? undefined : message,
+                      improveError:
+                        hasExistingPreview && !hasExistingSub8Preview
+                          ? undefined
+                          : message,
                       keepNote: undefined,
                       unresolvedIssues:
                         unresolvedIssues ?? s.unresolvedIssues ?? null,
@@ -547,7 +550,8 @@ export default function Page() {
                     ...s,
                     improveStatus: hasExistingPreview ? "idle" : "error",
                     improveStartedAt: undefined,
-                    improveError: hasExistingPreview
+                    improveError:
+                      hasExistingPreview && !hasExistingSub8Preview
                       ? undefined
                       : err instanceof Error
                       ? err.message
