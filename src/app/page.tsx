@@ -72,6 +72,8 @@ type PhotoSlot = {
   originalUrl: string;
   status: "analyzing" | "graded";
   audit: DemoState | null;
+  /** True when the rubric classified this upload as a digital Etsy product. Edit is physical-only for v1. */
+  isDigital?: boolean;
   /** Data URL of the generated preview shown before payment. */
   improvedDownloadUrl?: string;
   freePreview?: boolean;
@@ -82,6 +84,16 @@ type PhotoSlot = {
   improveError?: string;
   canRetryImprove?: boolean;
   unresolvedIssues?: string[] | null;
+  /** Pre-edit version, captured so the seller can revert one step after an edit. */
+  revertSnapshot?: {
+    improvedSrc?: string;
+    improvedAudit?: AuditResult;
+    improvedScore?: number;
+    improvedVerdict?: string;
+    improvedDownloadUrl?: string;
+    freePreview?: boolean;
+    freePreviewMessage?: string;
+  };
   // Paywall (publish-ready only).
   checkoutLoading?: boolean;
   checkoutError?: string;
@@ -329,9 +341,10 @@ export default function Page() {
                 imageAlt: file.name,
               });
 
+        const isDigital = rubric.upload_kind === "digital_product";
         setSlots((prev) =>
           prev.map((s) =>
-            s.id === id ? { ...s, status: "graded", audit } : s
+            s.id === id ? { ...s, status: "graded", audit, isDigital } : s
           )
         );
         trackClientEvent("audit_completed");
@@ -376,13 +389,36 @@ export default function Page() {
   }, []);
 
   // Improve flow — main photos use the hero rubric, extra photos the supporting rubric.
+  // `editInstruction` switches to the user-directed edit path: the edit runs on the
+  // source selected in the UI (original or current preview), and the
+  // result ALWAYS replaces the current version (edits are explicit, so a worse result
+  // is still shown), while a revert snapshot preserves the pre-edit version.
   const runImprove = useCallback(
-    async (retry: boolean) => {
+    async (
+      retry: boolean,
+      editInstruction?: string,
+      editSource: "original" | "preview" = "preview"
+    ) => {
       const slot = slotsRef.current.find((s) => s.id === activeSlotId);
       if (!slot || !slot.audit) return;
       if (slot.improveStatus === "generating") return;
-      trackClientEvent("improve_clicked");
+      const isEdit = Boolean(editInstruction);
+      trackClientEvent(isEdit ? "edit_clicked" : "improve_clicked");
       const startedAt = Date.now();
+      // Snapshot the current improved version before an edit overwrites it, so the
+      // seller can revert one step.
+      const revertSnapshot =
+        isEdit && slot.audit.improvedSrc
+          ? {
+              improvedSrc: slot.audit.improvedSrc,
+              improvedAudit: slot.audit.improvedAudit,
+              improvedScore: slot.audit.improvedScore,
+              improvedVerdict: slot.audit.improvedVerdict,
+              improvedDownloadUrl: slot.improvedDownloadUrl,
+              freePreview: slot.freePreview,
+              freePreviewMessage: slot.freePreviewMessage,
+            }
+          : undefined;
       setSlots((prev) =>
         prev.map((s) =>
           s.id === slot.id
@@ -393,6 +429,7 @@ export default function Page() {
                 improveError: undefined,
                 canRetryImprove: false,
                 keepNote: undefined,
+                ...(revertSnapshot ? { revertSnapshot } : {}),
               }
             : s
         )
@@ -402,13 +439,21 @@ export default function Page() {
         const form = new FormData();
         form.set("image", slot.file);
         if (slot.kind === "extra") form.set("mode", "extra");
-        if (retry && slot.improvedDownloadUrl) {
+        // Retry always builds from the current preview. An edit builds from the
+        // image the seller selected in the UI: original or current preview.
+        const useBase =
+          (retry || (isEdit && editSource === "preview")) &&
+          slot.improvedDownloadUrl;
+        if (useBase) {
           form.set(
             "retryBaseImage",
-            await compressDataUrlForUpload(slot.improvedDownloadUrl)
+            await compressDataUrlForUpload(slot.improvedDownloadUrl!)
           );
         }
-        if (retry && slot.unresolvedIssues?.length) {
+        if (isEdit) {
+          form.set("editInstruction", editInstruction!);
+        }
+        if (retry && !isEdit && slot.unresolvedIssues?.length) {
           form.set(
             "unresolvedIssues",
             JSON.stringify(slot.unresolvedIssues)
@@ -491,7 +536,11 @@ export default function Page() {
             s.id === slot.id && s.audit
               ? (() => {
                   const existingScore = s.audit?.improvedScore;
+                  // Edits ALWAYS apply (the seller asked for this specific change, so
+                  // a worse result is still shown honestly). Only the automatic
+                  // retry path keeps the better version when the new one is not better.
                   if (
+                    !isEdit &&
                     typeof existingScore === "number" &&
                     improvedAudit.overallScore <= existingScore
                   ) {
@@ -530,7 +579,7 @@ export default function Page() {
               : s
           )
         );
-        trackClientEvent("improve_completed");
+        trackClientEvent(isEdit ? "edit_completed" : "improve_completed");
         setInitialPreview(true);
       } catch (err) {
         console.error("[page] improve flow failed", err);
@@ -572,6 +621,41 @@ export default function Page() {
 
   const handleImprove = useCallback(() => runImprove(false), [runImprove]);
   const handleRetryImprove = useCallback(() => runImprove(true), [runImprove]);
+  const handleEdit = useCallback(
+    (instruction: string, source: "original" | "preview") =>
+      runImprove(false, instruction, source),
+    [runImprove]
+  );
+  // Restore the version captured before the last edit (one-step revert).
+  const handleRevert = useCallback(() => {
+    const slot = slotsRef.current.find((s) => s.id === activeSlotId);
+    if (!slot?.revertSnapshot || !slot.audit) return;
+    const snap = slot.revertSnapshot;
+    setSlots((prev) =>
+      prev.map((s) =>
+        s.id === slot.id && s.audit
+          ? {
+              ...s,
+              improvedDownloadUrl: snap.improvedDownloadUrl,
+              freePreview: snap.freePreview,
+              freePreviewMessage: snap.freePreviewMessage,
+              revertSnapshot: undefined,
+              canRetryImprove:
+                typeof snap.improvedScore === "number"
+                  ? snap.improvedScore < 8
+                  : s.canRetryImprove,
+              audit: {
+                ...s.audit,
+                improvedSrc: snap.improvedSrc,
+                improvedAudit: snap.improvedAudit,
+                improvedScore: snap.improvedScore,
+                improvedVerdict: snap.improvedVerdict,
+              },
+            }
+          : s
+      )
+    );
+  }, [activeSlotId]);
 
   // Validation MVP: the clean preview is already visible. Download click opens
   // Stripe, and the success page downloads the generated image from this tab's
@@ -728,6 +812,8 @@ export default function Page() {
           onCheckout={handleCheckout}
           checkoutLoading={activeSlot.checkoutLoading ?? false}
           checkoutError={activeSlot.checkoutError}
+          onEdit={activeSlot.isDigital ? undefined : handleEdit}
+          onRevert={activeSlot.revertSnapshot ? handleRevert : undefined}
         />
       )}
 

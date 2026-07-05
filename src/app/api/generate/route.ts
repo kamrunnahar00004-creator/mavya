@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
-import { improvePhoto, sanitizeRetryConstraints } from "@/lib/improve-photo";
+import {
+  improvePhoto,
+  sanitizeRetryConstraints,
+  sanitizeEditInstruction,
+} from "@/lib/improve-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
 
@@ -108,6 +112,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Optional plain-language seller edit instruction. Untrusted: sanitized here and
+  // wrapped under immutable product-preservation rules in the generation prompt.
+  // The fidelity gate re-run against the original is the real backstop.
+  const editRaw = form.get("editInstruction");
+  const editInstruction =
+    typeof editRaw === "string"
+      ? sanitizeEditInstruction(editRaw)
+      : undefined;
+
   // mode=extra improves a supporting photo, graded by the general rubric.
   const mode = form.get("mode") === "extra" ? "extra" : "main";
   const systemPrompt = mode === "extra" ? GENERAL_RUBRIC_PROMPT : undefined;
@@ -198,6 +211,7 @@ export async function POST(req: NextRequest) {
     promptAudit,
     extraConstraints,
     mode,
+    editInstruction,
   });
 
   if (!result.ok) {

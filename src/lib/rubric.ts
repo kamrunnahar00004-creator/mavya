@@ -23,8 +23,33 @@ export type RubricCategory =
   | "mugs"
   | "other";
 
+export type ChecklistDoubt =
+  | "identity"
+  | "scale"
+  | "quality"
+  | "fit"
+  | "completeness"
+  | "risk"
+  | "desire";
+
+export type SupportingPhotoChecklistItem = {
+  rank: number;
+  shot_id: string;
+  title: string;
+  reason: string;
+  how_to: string;
+  buyer_question: string;
+  answers_doubt: ChecklistDoubt;
+  priority: "critical" | "recommended";
+  avoid: string;
+  feasible_because: string;
+};
+
 export type RubricJson = {
   upload_kind: "physical_product" | "digital_product" | "invalid";
+  /** Wider taxonomy used ONLY to route the supporting-photo checklist pool. Separate from detected_category. */
+  checklist_category: string;
+  supporting_photo_checklist: SupportingPhotoChecklistItem[];
   overall_score: number;
   pillars: {
     thumbnail: number;
@@ -185,6 +210,39 @@ Advice wording:
 - If advice recommends another listing image, the action must include "separate photo," "additional photo," or "second photo": "Add separate in-hand photo with coffee."
 - Never make a support-photo recommendation sound like a modification to the scored hero photo.
 
+SUPPORTING PHOTO CHECKLIST:
+After scoring, also return checklist_category and a supporting_photo_checklist of the top 5 supporting photos THIS listing is missing. This is a buyer-objection removal tool: each item kills one specific buyer doubt for THIS product. Never generic photography advice.
+
+For an invalid upload, return checklist_category "other" and supporting_photo_checklist [] (empty).
+
+checklist_category (choose the closest; this only routes the checklist and is separate from detected_category):
+- physical: candles, jewelry, apparel, mugs, crochet_plush, soap, home_decor, wall_art, stickers, stationery, bags, personalized, vintage, art_supplies
+- digital: digital_planner, printables, wall_art_download, canva_template, digital_stickers, svg_cut_file, spreadsheet, notion_template, resume_template, ebook_workbook, invitation_digital
+- if unsure, use "other".
+
+shot_id vocabulary (use exact ids; pick 5 that fit the checklist_category and THIS product):
+- physical: scale_reference, detail_macro, lifestyle_in_use, back_side_inside, texture_material, variations_grid, whats_included, size_chart_info, packaging_gift, on_model_worn, condition_flaws, ingredients_safety, makers_mark, capacity_demo, lit_glow, label_closeup, wax_wick_detail, safety_materials, on_wall_to_scale, framed_unframed, personalization_finished_example, personalization_options, personalization_macro, ordering_instruction, use_example, color_accuracy
+- digital: page_overview, page_closeup, device_context, printed_result, compatibility_info, how_it_works, editing_demo, editable_callout, scale_context_digital, ratio_size_chart, size_options_info, dashboard_filled, feature_closeup, table_of_contents, layer_preview, license_info
+Never use a physical id for a digital product or a digital id for a physical product.
+
+Return exactly 5 items for a valid product, ranked 1-5 by how big the unanswered buyer doubt is for THIS specific product. Each item:
+- shot_id: from the vocabulary, feasible for this product.
+- title: max 4 words.
+- reason: max 15 words. MUST name a specific visible attribute of THIS product (its material, size, text, color, scent proxy, file type, count, etc.). Banned words/phrases: "high quality", "good lighting", "professional", "eye-catching", "showcase your product", "from different angles".
+- how_to: max 15 words, one concrete instruction.
+- buyer_question: the buyer's silent question this photo answers, e.g. "How big is this in real life?"
+- answers_doubt: one of identity, scale, quality, fit, completeness, risk, desire.
+- priority: "critical" (moves conversion) or "recommended" (nice to have).
+- avoid: one common bad substitute to avoid.
+- feasible_because: name the visible product attribute that makes this exact shot possible for THIS item.
+
+Checklist rules:
+- The 5 items MUST cover at least 4 distinct answers_doubt values. No five variations of one idea.
+- Do NOT recommend a photo of something the main photo already shows well. Prioritize what the main photo hides.
+- Main-photo adaptation: if the main photo is weak (overall below 8.0), item 1 must be a corrected main-product shot that references the specific diagnosed issue. If strong (8.0+), item 1 is the product's biggest remaining buyer doubt.
+- Feasibility: never recommend on_model_worn for a non-wearable, lit_glow for a non-candle, ingredients_safety unless it touches skin / is burned / is baby-adjacent, packaging_gift unless packaging is plausibly provided, or condition_flaws except for vintage/used items.
+- Policy (do not violate): personalized products get a finished-example shot, never a "Your Text Here" blank. Physical handmade products never get stock/render/mockup recommended as proof of the real item. Digital products get screenshots/previews, never "photos", and never packaging.
+
 Output rules:
 - Return exactly 3 next_steps.
 - priority_action: imperative, max 12 words. Make it a scannable command.
@@ -201,6 +259,8 @@ Output rules:
 Invalid-input JSON:
 {
   "upload_kind": "invalid",
+  "checklist_category": "other",
+  "supporting_photo_checklist": [],
   "detected_category": "other",
   "overall_score": 0.0,
   "pillars": { "thumbnail": 0, "lighting": 0, "background": 0, "click_appeal": 0 },
@@ -221,6 +281,8 @@ Invalid-input JSON:
 Valid JSON shape:
 {
   "upload_kind": "physical_product" | "digital_product" | "invalid",
+  "checklist_category": string (checklist routing category, or "other"),
+  "supporting_photo_checklist": [] for invalid, otherwise exactly 5 items each { "rank": 1-5, "shot_id": string, "title": string, "reason": string, "how_to": string, "buyer_question": string, "answers_doubt": "identity"|"scale"|"quality"|"fit"|"completeness"|"risk"|"desire", "priority": "critical"|"recommended", "avoid": string, "feasible_because": string },
   "overall_score": number 0-10 (one decimal),
   "pillars": {
     "thumbnail": integer 0-10,
@@ -241,6 +303,8 @@ Valid JSON shape:
 
 export const INVALID_RESPONSE: RubricJson = {
   upload_kind: "invalid",
+  checklist_category: "other",
+  supporting_photo_checklist: [],
   detected_category: "other",
   overall_score: 0.0,
   pillars: { thumbnail: 0, lighting: 0, background: 0, click_appeal: 0 },
@@ -295,6 +359,11 @@ export function isRubricJson(x: unknown): x is RubricJson {
   ) {
     return false;
   }
+  if (typeof r.checklist_category !== "string") return false;
+  if (!Array.isArray(r.supporting_photo_checklist)) return false;
+  for (const item of r.supporting_photo_checklist) {
+    if (!isChecklistItem(item)) return false;
+  }
   if (!isFiniteNumberInRange(r.overall_score, 0, 10)) return false;
   if (!r.pillars || typeof r.pillars !== "object") return false;
   const p = r.pillars as Record<string, unknown>;
@@ -341,6 +410,36 @@ function isIntegerInRange(
   max: number
 ): value is number {
   return Number.isInteger(value) && isFiniteNumberInRange(value, min, max);
+}
+
+const CHECKLIST_DOUBTS = [
+  "identity",
+  "scale",
+  "quality",
+  "fit",
+  "completeness",
+  "risk",
+  "desire",
+];
+
+function isChecklistItem(x: unknown): x is SupportingPhotoChecklistItem {
+  if (!x || typeof x !== "object") return false;
+  const i = x as Record<string, unknown>;
+  if (typeof i.rank !== "number") return false;
+  for (const key of [
+    "shot_id",
+    "title",
+    "reason",
+    "how_to",
+    "buyer_question",
+    "avoid",
+    "feasible_because",
+  ]) {
+    if (typeof i[key] !== "string") return false;
+  }
+  if (!CHECKLIST_DOUBTS.includes(String(i.answers_doubt))) return false;
+  if (!["critical", "recommended"].includes(String(i.priority))) return false;
+  return true;
 }
 
 function isCropSuggestion(

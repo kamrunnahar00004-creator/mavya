@@ -57,6 +57,20 @@ Digital advice must be digital-specific (e.g. "Show the planner on an iPad mocku
 
 Digital products route to the existing audit UI (same score data) with a "Digital Etsy product detected. Experimental" banner. The improve button still uses the physical generation pipeline, honestly labeled experimental. Deferred: a dedicated digital-product screen, a "this is a physical product" misclassification override, and a category-specific digital mockup compositor. No moderation/safety gate this pass.
 
+## Supporting Photo Checklist
+
+Added 2026-07-05. Every valid audit also returns `checklist_category` and a `supporting_photo_checklist` (top 5), generated in the SAME scoring vision call (zero extra API call). Invalid uploads return `checklist_category: "other"` and `supporting_photo_checklist: []`. Supporting photos (extra mode / general rubric) always return `[]`.
+
+Core principle: it is a **buyer-objection removal engine, not photography education**. Each item kills one specific buyer doubt for THIS product; every `reason` and `feasible_because` must name a visible product attribute, or the feature has failed.
+
+- **`checklist_category`** — a wider taxonomy (candles, jewelry, apparel, mugs, ..., digital_planner, spreadsheet, ...) used ONLY to route the shot pool. Separate from `detected_category` (which stays the 5+other scoring enum). Does not expand the scoring enum.
+- **Pool:** `src/data/photo-checklist-pool.ts` holds the vetted candidate shots per category (physical + digital) + universal fallbacks + `ALL_SHOT_IDS`. The model re-ranks the pool + writes product-anchored reasons + drops infeasible items; it may not invent off-pool shots.
+- **Validation** (`score-photo.ts`): each item's `shot_id` must be in `ALL_SHOT_IDS` AND allowed by `poolFor(upload_kind, checklist_category)` — so a digital planner cannot return a physical shot like `lit_glow`. Off-pool items are dropped.
+- **Item shape:** `{ rank, shot_id, title (≤4w), reason (≤15w, names an attribute), how_to (≤15w), buyer_question, answers_doubt (identity|scale|quality|fit|completeness|risk|desire), priority (critical|recommended), avoid, feasible_because }`.
+- **Main-photo adaptation:** weak main photo → item 1 is a corrected main-product shot; strong → item 1 is the biggest remaining buyer doubt.
+- **Score is unaffected.** The checklist is advice; it never changes the pillar or overall scores.
+- **UI:** collapsed panel below the audit, payload button ("N photos this listing is missing"), critical items first / recommended below, doubt chip per row, `how_to` + `avoid` behind a "Tip" tap, subtle placeholder rows (upload-against-slot deferred).
+
 ## Visible Pillars (shown in UI)
 
 Main photos use the search-thumbnail pillar labels below:

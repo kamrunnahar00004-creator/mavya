@@ -6,6 +6,8 @@
  * matching the same shape (see docs/PHOTO_AUDIT_PROMPT_V0.md output schema).
  */
 
+import type { SupportingPhotoChecklistItem } from "@/lib/rubric";
+
 export type PillarKey = "thumbnail" | "lighting" | "background" | "click_appeal";
 
 export type Pillar = {
@@ -66,6 +68,8 @@ export type DemoState = {
   /** fidelity warning returned by the live scorer before generation */
   generationRisk?: "standard" | "review_text" | "unsupported";
   generationRiskReason?: string;
+  /** Top-5 supporting-photo checklist for this product (empty for demos/invalid). */
+  supportingChecklist?: SupportingPhotoChecklistItem[];
 };
 
 export const WEAK_DEMO: DemoState = {

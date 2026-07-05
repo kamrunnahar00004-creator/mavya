@@ -5,6 +5,7 @@ import {
   type RubricJson,
 } from "@/lib/rubric";
 import { visionScoreCall } from "@/lib/openai";
+import { ALL_SHOT_IDS, poolFor } from "@/data/photo-checklist-pool";
 
 export class ScorePhotoError extends Error {
   constructor(message: string, readonly code: "vision_failed" | "bad_ai_response") {
@@ -54,6 +55,20 @@ export async function scorePhoto(args: {
   // printables, templates) from being treated as non-products.
   const isInvalid = parsed.upload_kind === "invalid";
   parsed.overall_score = isInvalid ? 0 : computeOverall(parsed.pillars);
+
+  // Checklist safety: invalid uploads carry no checklist. Otherwise keep only shots
+  // that are valid for THIS category's pool — a digital planner must not return a
+  // physical shot like `lit_glow`, even though that id exists globally.
+  if (isInvalid || parsed.upload_kind === "invalid") {
+    parsed.supporting_photo_checklist = [];
+  } else {
+    const allowed = new Set(
+      poolFor(parsed.upload_kind, parsed.checklist_category).map((s) => s.shot_id)
+    );
+    parsed.supporting_photo_checklist = parsed.supporting_photo_checklist.filter(
+      (item) => ALL_SHOT_IDS.has(item.shot_id) && allowed.has(item.shot_id)
+    );
+  }
 
   return parsed;
 }

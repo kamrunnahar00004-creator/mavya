@@ -113,9 +113,13 @@ Output rules:
 - generation_risk: "unsupported" for personalized/engraved/one-of-one/art-print/sticker/branded-apparel items, "review_text" when visible text/pattern must be checked carefully, otherwise "standard".
 - generation_risk_reason: one short sentence.
 
+Supporting photos do NOT get a checklist. Always return checklist_category "other" and supporting_photo_checklist [] (empty).
+
 Invalid-input JSON:
 {
   "upload_kind": "invalid",
+  "checklist_category": "other",
+  "supporting_photo_checklist": [],
   "detected_category": "other",
   "overall_score": 0.0,
   "pillars": { "thumbnail": 0, "lighting": 0, "background": 0, "click_appeal": 0 },
@@ -136,6 +140,8 @@ Invalid-input JSON:
 Valid JSON shape:
 {
   "upload_kind": "physical_product" | "digital_product" | "invalid",
+  "checklist_category": "other",
+  "supporting_photo_checklist": [],
   "overall_score": number 0-10 (one decimal),
   "pillars": { "thumbnail": integer 0-10, "lighting": integer 0-10, "background": integer 0-10, "click_appeal": integer 0-10 },
   "detected_category": "jewelry" | "candles" | "crochet_plush" | "soap" | "mugs" | "other",

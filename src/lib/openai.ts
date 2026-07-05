@@ -16,6 +16,8 @@ const RUBRIC_RESPONSE_SCHEMA = {
     additionalProperties: false,
     required: [
       "upload_kind",
+      "checklist_category",
+      "supporting_photo_checklist",
       "overall_score",
       "pillars",
       "detected_category",
@@ -32,6 +34,49 @@ const RUBRIC_RESPONSE_SCHEMA = {
       upload_kind: {
         type: "string",
         enum: ["physical_product", "digital_product", "invalid"],
+      },
+      checklist_category: { type: "string" },
+      supporting_photo_checklist: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "rank",
+            "shot_id",
+            "title",
+            "reason",
+            "how_to",
+            "buyer_question",
+            "answers_doubt",
+            "priority",
+            "avoid",
+            "feasible_because",
+          ],
+          properties: {
+            rank: { type: "integer", minimum: 1, maximum: 5 },
+            shot_id: { type: "string" },
+            title: { type: "string" },
+            reason: { type: "string" },
+            how_to: { type: "string" },
+            buyer_question: { type: "string" },
+            answers_doubt: {
+              type: "string",
+              enum: [
+                "identity",
+                "scale",
+                "quality",
+                "fit",
+                "completeness",
+                "risk",
+                "desire",
+              ],
+            },
+            priority: { type: "string", enum: ["critical", "recommended"] },
+            avoid: { type: "string" },
+            feasible_because: { type: "string" },
+          },
+        },
       },
       overall_score: { type: "number", minimum: 0, maximum: 10 },
       pillars: {

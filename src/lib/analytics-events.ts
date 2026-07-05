@@ -5,6 +5,8 @@ export const FUNNEL_EVENTS = [
   "audit_completed",
   "improve_clicked",
   "improve_completed",
+  "edit_clicked",
+  "edit_completed",
   "download_clicked",
   "checkout_started",
   "payment_verified",

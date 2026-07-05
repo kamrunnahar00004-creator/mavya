@@ -27,6 +27,8 @@ import { ComparisonPreview } from "./comparison-preview";
 import { ScoreVerdict } from "./score-verdict";
 import { PillarScores } from "./pillar-scores";
 import { NextSteps } from "./next-steps";
+import { EditPhotoModal } from "./edit-photo-modal";
+import { PhotoChecklistPanel } from "./photo-checklist-panel";
 
 const IMPROVE_STATUSES = [
   "Analyzing fixes…",
@@ -70,6 +72,13 @@ type Props = {
   onCheckout?: (email?: string) => void;
   checkoutLoading?: boolean;
   checkoutError?: string;
+  /** Plain-language edit. When provided, an "Edit photo" button opens the edit modal. Physical products only. */
+  onEdit?: (
+    instruction: string,
+    source: "original" | "preview"
+  ) => Promise<void> | void;
+  /** One-step revert to the pre-edit version. Shown only when a snapshot exists. */
+  onRevert?: () => void;
   /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
   panelMode?: "main" | "extra";
   /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
@@ -100,6 +109,8 @@ export function AuditWorkspace({
   onCheckout,
   checkoutLoading = false,
   checkoutError,
+  onEdit,
+  onRevert,
   panelMode = "main",
   slots,
   onSelectSlot,
@@ -111,6 +122,7 @@ export function AuditWorkspace({
 }: Props) {
   const isExtra = panelMode === "extra";
   const [revealed, setRevealed] = useState(!animate);
+  const [editModalOpen, setEditModalOpen] = useState(false);
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);
   const [analyzingIdx, setAnalyzingIdx] = useState(0);
@@ -140,6 +152,14 @@ export function AuditWorkspace({
     hasImprovement &&
     previewUnlocked &&
     activeTab === "preview";
+  const editSource =
+    activeTab === "preview" && hasImprovement && improvedSrc
+      ? "preview"
+      : "original";
+  const editImageSrc =
+    editSource === "preview" && improvedSrc
+      ? improvedSrc
+      : uploadedSrc ?? state.imageSrc;
   const activeAudit =
     previewActive && state.improvedAudit ? state.improvedAudit : state;
 
@@ -236,24 +256,34 @@ export function AuditWorkspace({
           aria-label="Submitted photo and previews"
           className="flex flex-col gap-4"
         >
-          <MediaProofPanel
-            src={state.imageSrc}
-            overrideSrc={
-              activeTab === "preview" && hasImprovement && improvedSrc
-                ? improvedSrc
-                : uploadedSrc
-            }
-            alt={state.imageAlt}
-            placeholderLabel={state.imageSrc.split("/").pop()}
-            placeholderSub={
-              isStrong
-                ? "model-worn initial earring (strong demo)"
-                : isWeak
-                ? "teacup candle (weak demo)"
-                : undefined
-            }
-            contain
-          />
+          <div className="relative">
+            <MediaProofPanel
+              src={state.imageSrc}
+              overrideSrc={
+                editSource === "preview" && improvedSrc ? improvedSrc : uploadedSrc
+              }
+              alt={state.imageAlt}
+              placeholderLabel={state.imageSrc.split("/").pop()}
+              placeholderSub={
+                isStrong
+                  ? "model-worn initial earring (strong demo)"
+                  : isWeak
+                  ? "teacup candle (weak demo)"
+                  : undefined
+              }
+              contain
+            />
+            {onEdit && !improveLoading && editImageSrc && (
+              <button
+                type="button"
+                onClick={() => setEditModalOpen(true)}
+                className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-full bg-[rgba(25,23,20,0.78)] px-4 py-2 text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(25,23,20,0.20)] backdrop-blur-sm transition-all hover:bg-[rgba(25,23,20,0.9)]"
+              >
+                <Wrench className="h-4 w-4" aria-hidden="true" />
+                Edit
+              </button>
+            )}
+          </div>
 
           {canShowImprovement && hasImprovement && improvedSrc && previewUnlocked && (
             <ComparisonPreview
@@ -364,6 +394,15 @@ export function AuditWorkspace({
               band={bandForScore(activeAudit.overallScore)}
             />
           </div>
+
+          {!isExtra && state.supportingChecklist && state.supportingChecklist.length > 0 && (
+            <div className="reveal-item" data-reveal-order="3">
+              <PhotoChecklistPanel
+                checklist={state.supportingChecklist}
+                score={state.overallScore}
+              />
+            </div>
+          )}
 
           {/* Improve flow: main uses the hero rubric, extra the supporting rubric. */}
           {(
@@ -491,6 +530,29 @@ export function AuditWorkspace({
                     </button>
                   </div>
                 )}
+                {(onEdit || onRevert) && !improveLoading && (
+                  <div className="flex flex-wrap items-center gap-3">
+                    {onEdit && (
+                      <button
+                        type="button"
+                        onClick={() => setEditModalOpen(true)}
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                      >
+                        <Wrench className="h-4 w-4" aria-hidden="true" />
+                        Edit photo
+                      </button>
+                    )}
+                    {onRevert && (
+                      <button
+                        type="button"
+                        onClick={onRevert}
+                        className="text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
+                      >
+                        Revert last edit
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -541,6 +603,25 @@ export function AuditWorkspace({
                           ? "Create improved supporting photo"
                           : state.ctaLabel}
                       </PrimaryButton>
+                      {onEdit && !improveLoading && (
+                        <button
+                          type="button"
+                          onClick={() => setEditModalOpen(true)}
+                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                        >
+                          <Wrench className="h-4 w-4" aria-hidden="true" />
+                          Edit photo
+                        </button>
+                      )}
+                      {onRevert && !improveLoading && (
+                        <button
+                          type="button"
+                          onClick={onRevert}
+                          className="text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
+                        >
+                          Revert last edit
+                        </button>
+                      )}
                       {improveLoading && (
                         <span
                           className="text-[12.5px] text-[var(--color-ink-soft)]"
@@ -559,6 +640,20 @@ export function AuditWorkspace({
           )}
         </section>
       </div>
+
+      {editModalOpen && onEdit && editImageSrc && (
+        <EditPhotoModal
+          imageSrc={editImageSrc}
+          loading={improveLoading}
+          onClose={() => setEditModalOpen(false)}
+          onSubmit={(instruction) => {
+            setEditModalOpen(false);
+            setPreviewUnlocked(true);
+            setActiveTab("preview");
+            void onEdit(instruction, editSource);
+          }}
+        />
+      )}
     </main>
   );
 }

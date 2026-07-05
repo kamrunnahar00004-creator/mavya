@@ -237,6 +237,7 @@ export function rubricToSupportingState(args: {
     thumbnailSub: "",
     generationRisk: args.rubric.generation_risk,
     generationRiskReason: args.rubric.generation_risk_reason,
+    supportingChecklist: args.rubric.supporting_photo_checklist,
   };
 }
 
@@ -266,5 +267,6 @@ export function rubricToDemoState(args: {
     thumbnailSub: audit.thumbnailSub,
     generationRisk: args.rubric.generation_risk,
     generationRiskReason: args.rubric.generation_risk_reason,
+    supportingChecklist: args.rubric.supporting_photo_checklist,
   };
 }
