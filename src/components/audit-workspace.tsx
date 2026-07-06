@@ -29,6 +29,7 @@ import { PillarScores } from "./pillar-scores";
 import { NextSteps } from "./next-steps";
 import { EditPhotoModal } from "./edit-photo-modal";
 import { PhotoChecklistPanel } from "./photo-checklist-panel";
+import { SUPPORTING_ROLE_LABELS } from "@/lib/audit-mapping";
 
 const IMPROVE_STATUSES = [
   "Analyzing fixes…",
@@ -254,7 +255,7 @@ export function AuditWorkspace({
         {/* LEFT: MEDIA */}
         <section
           aria-label="Submitted photo and previews"
-          className="flex flex-col gap-4"
+          className="flex flex-col gap-3"
         >
           <div className="relative">
             <MediaProofPanel
@@ -361,6 +362,26 @@ export function AuditWorkspace({
               heading={isExtra ? "Supporting photo grade" : "Main photo score"}
               animate={animate}
             />
+            {isExtra && state.supportingRole && state.supportingRole !== "other" && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--color-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--color-primary)]">
+                  {SUPPORTING_ROLE_LABELS[state.supportingRole] ?? "Supporting photo"} · detected
+                </span>
+                {state.buyerQuestion && (
+                  <span className="text-[13px] text-[var(--color-ink-muted)]">
+                    Answers:{" "}
+                    <span className="font-semibold text-[var(--color-ink)]">
+                      &ldquo;{state.buyerQuestion}&rdquo;
+                    </span>
+                  </span>
+                )}
+                {state.supportingVerdictText && (
+                  <span className="text-[13px] text-[var(--color-ink)]">
+                    {state.supportingVerdictText}
+                  </span>
+                )}
+              </div>
+            )}
             {previewActive && (
               <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12.5px]">
                 <span className="inline-flex items-center gap-1.5 font-semibold text-[var(--color-ink-muted)]">

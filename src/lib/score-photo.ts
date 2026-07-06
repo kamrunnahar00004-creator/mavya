@@ -1,9 +1,11 @@
 import {
   RUBRIC_PROMPT,
   computeOverall,
+  computeSupportingOverall,
   isRubricJson,
   type RubricJson,
 } from "@/lib/rubric";
+import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 import { visionScoreCall } from "@/lib/openai";
 import { ALL_SHOT_IDS, poolFor } from "@/data/photo-checklist-pool";
 
@@ -53,8 +55,15 @@ export async function scorePhoto(args: {
   // Invalid is now an explicit model classification (upload_kind), not inferred
   // from "other + all-zero pillars". This stops digital Etsy products (planners,
   // printables, templates) from being treated as non-products.
+  // Supporting photos (graded with the general rubric) use their own 35/30/20/15
+  // weights; main photos use the locked 40/25/20/15.
+  const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
   const isInvalid = parsed.upload_kind === "invalid";
-  parsed.overall_score = isInvalid ? 0 : computeOverall(parsed.pillars);
+  parsed.overall_score = isInvalid
+    ? 0
+    : supporting
+    ? computeSupportingOverall(parsed.pillars)
+    : computeOverall(parsed.pillars);
 
   // Checklist safety: invalid uploads carry no checklist. Otherwise keep only shots
   // that are valid for THIS category's pool — a digital planner must not return a

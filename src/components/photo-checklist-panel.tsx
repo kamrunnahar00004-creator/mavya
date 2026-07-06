@@ -57,7 +57,7 @@ export function PhotoChecklistPanel({ checklist }: Props) {
           <ListChecks className="h-[18px] w-[18px]" aria-hidden="true" />
         </span>
         <span className="min-w-0 flex-1">
-          <span className="block font-display text-[18px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+          <span className="block text-[15.5px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
             Supporting Photo Checklist
           </span>
           <span className="block text-[13px] text-[var(--color-ink-muted)]">

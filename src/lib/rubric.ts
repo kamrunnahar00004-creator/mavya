@@ -15,6 +15,59 @@ export const PILLAR_WEIGHTS: Record<PillarKey, number> = {
   click_appeal: 0.15,
 };
 
+// Supporting photos are judged on a different job (reduce buyer doubt), so they use
+// their own weights. The 4 pillar KEYS are reused but relabeled in the UI:
+//   thumbnail -> Buyer Confidence (35), lighting -> Clarity (30),
+//   background -> Accuracy & Specificity (20), click_appeal -> Presentation (15).
+export const SUPPORTING_PILLAR_WEIGHTS: Record<PillarKey, number> = {
+  thumbnail: 0.35,
+  lighting: 0.3,
+  background: 0.2,
+  click_appeal: 0.15,
+};
+
+/** The 18 supporting-photo roles + "other". Scoring is conditioned on the role. */
+export type SupportingPhotoRole =
+  | "detail_closeup"
+  | "scale_reference"
+  | "alternate_angle"
+  | "in_use"
+  | "packaging"
+  | "whats_included"
+  | "feature_spec"
+  | "care_instruction"
+  | "variation"
+  | "digital_preview"
+  | "process"
+  | "size_chart"
+  | "ingredients_materials"
+  | "bundle_layout"
+  | "printed_example"
+  | "device_mockup"
+  | "planner_preview"
+  | "other";
+
+export const SUPPORTING_PHOTO_ROLES: SupportingPhotoRole[] = [
+  "detail_closeup",
+  "scale_reference",
+  "alternate_angle",
+  "in_use",
+  "packaging",
+  "whats_included",
+  "feature_spec",
+  "care_instruction",
+  "variation",
+  "digital_preview",
+  "process",
+  "size_chart",
+  "ingredients_materials",
+  "bundle_layout",
+  "printed_example",
+  "device_mockup",
+  "planner_preview",
+  "other",
+];
+
 export type RubricCategory =
   | "jewelry"
   | "candles"
@@ -50,6 +103,12 @@ export type RubricJson = {
   /** Wider taxonomy used ONLY to route the supporting-photo checklist pool. Separate from detected_category. */
   checklist_category: string;
   supporting_photo_checklist: SupportingPhotoChecklistItem[];
+  /** Detected role of a SUPPORTING photo. "other" for main photos and unknown. */
+  supporting_photo_role: SupportingPhotoRole;
+  /** The one buyer question this supporting photo answers. Empty for main photos. */
+  buyer_question_answered: string;
+  /** One-line supporting-photo verdict. Empty for main photos. */
+  supporting_verdict: string;
   overall_score: number;
   pillars: {
     thumbnail: number;
@@ -243,6 +302,8 @@ Checklist rules:
 - Feasibility: never recommend on_model_worn for a non-wearable, lit_glow for a non-candle, ingredients_safety unless it touches skin / is burned / is baby-adjacent, packaging_gift unless packaging is plausibly provided, or condition_flaws except for vintage/used items.
 - Policy (do not violate): personalized products get a finished-example shot, never a "Your Text Here" blank. Physical handmade products never get stock/render/mockup recommended as proof of the real item. Digital products get screenshots/previews, never "photos", and never packaging.
 
+Main-photo only fields: this prompt grades a MAIN listing photo, not a supporting photo. Always return supporting_photo_role: "other", buyer_question_answered: "", and supporting_verdict: "". Those three fields are only populated when a supporting photo is graded.
+
 Output rules:
 - Return exactly 3 next_steps.
 - priority_action: imperative, max 12 words. Make it a scannable command.
@@ -261,6 +322,9 @@ Invalid-input JSON:
   "upload_kind": "invalid",
   "checklist_category": "other",
   "supporting_photo_checklist": [],
+  "supporting_photo_role": "other",
+  "buyer_question_answered": "",
+  "supporting_verdict": "",
   "detected_category": "other",
   "overall_score": 0.0,
   "pillars": { "thumbnail": 0, "lighting": 0, "background": 0, "click_appeal": 0 },
@@ -283,6 +347,9 @@ Valid JSON shape:
   "upload_kind": "physical_product" | "digital_product" | "invalid",
   "checklist_category": string (checklist routing category, or "other"),
   "supporting_photo_checklist": [] for invalid, otherwise exactly 5 items each { "rank": 1-5, "shot_id": string, "title": string, "reason": string, "how_to": string, "buyer_question": string, "answers_doubt": "identity"|"scale"|"quality"|"fit"|"completeness"|"risk"|"desire", "priority": "critical"|"recommended", "avoid": string, "feasible_because": string },
+  "supporting_photo_role": "other" (main photos always return "other"),
+  "buyer_question_answered": "" (empty for main photos),
+  "supporting_verdict": "" (empty for main photos),
   "overall_score": number 0-10 (one decimal),
   "pillars": {
     "thumbnail": integer 0-10,
@@ -305,6 +372,9 @@ export const INVALID_RESPONSE: RubricJson = {
   upload_kind: "invalid",
   checklist_category: "other",
   supporting_photo_checklist: [],
+  supporting_photo_role: "other",
+  buyer_question_answered: "",
+  supporting_verdict: "",
   detected_category: "other",
   overall_score: 0.0,
   pillars: { thumbnail: 0, lighting: 0, background: 0, click_appeal: 0 },
@@ -349,6 +419,20 @@ export function computeOverall(pillars: RubricJson["pillars"]): number {
   return pillars.click_appeal < 5 ? Math.min(weighted, 6.9) : weighted;
 }
 
+/**
+ * Supporting-photo overall using SUPPORTING_PILLAR_WEIGHTS (35/30/20/15). No
+ * click_appeal cap here: for supporting photos click_appeal maps to Presentation
+ * (only 15% weight), so a low value must not cap the whole score.
+ */
+export function computeSupportingOverall(pillars: RubricJson["pillars"]): number {
+  const raw =
+    pillars.thumbnail * SUPPORTING_PILLAR_WEIGHTS.thumbnail +
+    pillars.lighting * SUPPORTING_PILLAR_WEIGHTS.lighting +
+    pillars.background * SUPPORTING_PILLAR_WEIGHTS.background +
+    pillars.click_appeal * SUPPORTING_PILLAR_WEIGHTS.click_appeal;
+  return Math.round(raw * 10) / 10;
+}
+
 export function isRubricJson(x: unknown): x is RubricJson {
   if (!x || typeof x !== "object") return false;
   const r = x as Record<string, unknown>;
@@ -364,6 +448,11 @@ export function isRubricJson(x: unknown): x is RubricJson {
   for (const item of r.supporting_photo_checklist) {
     if (!isChecklistItem(item)) return false;
   }
+  if (!SUPPORTING_PHOTO_ROLES.includes(r.supporting_photo_role as SupportingPhotoRole)) {
+    return false;
+  }
+  if (typeof r.buyer_question_answered !== "string") return false;
+  if (typeof r.supporting_verdict !== "string") return false;
   if (!isFiniteNumberInRange(r.overall_score, 0, 10)) return false;
   if (!r.pillars || typeof r.pillars !== "object") return false;
   const p = r.pillars as Record<string, unknown>;

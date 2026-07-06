@@ -79,59 +79,69 @@ Main photos use the search-thumbnail pillar labels below:
 Thumbnail / Lighting / Background / Click Appeal
 ```
 
-Supporting photos (Photo 2+) reuse the same backend JSON keys and weights, but the
-UI and prompt reinterpret the visible labels as:
+Supporting photos (Photo 2+) reuse the same backend JSON keys, but they do **not**
+reuse the main-thumbnail weights or buyer-click rubric. The UI and prompt reinterpret
+the visible labels as:
 
 ```text
-Clarity / Lighting / Background / Detail & Trust
+Buyer Confidence / Clarity / Accuracy & Specificity / Presentation Quality
 ```
 
-`Detail & Trust` judges visible product detail, texture, material, finish, label or
-design clarity, craftsmanship, and whether the photo feels like a real trustworthy
-product image. It should penalize visible AI-looking artifacts, fake mockups,
-composited products, warped details, cheap template graphics, and distracting text
-overlays. It should not infer broad listing strategy or whether this is the perfect
-supporting-photo type for the listing.
+Supporting-photo weights:
 
-#### Supporting-Photo Calibration (2026-06-04)
+```text
+Buyer Confidence 35 / Clarity 30 / Accuracy & Specificity 20 / Presentation Quality 15
+```
+
+`Buyer Confidence` asks whether this photo answers a real pre-purchase doubt. A clear
+duplicate angle can score low if it adds no new confidence. A packaging photo,
+size chart, spec sheet, ingredient/material shot, included-items layout, process shot,
+or care-instruction image can score high when that is the right supporting role.
+
+`Clarity` asks whether the information in this specific supporting photo is readable,
+sharp, well framed, and understandable.
+
+`Accuracy & Specificity` asks whether the photo gives specific, truthful information
+about this product: dimensions, texture, material, packaging, included items, digital
+file contents, compatibility, personalization examples, or scale.
+
+`Presentation Quality` asks whether the photo feels intentional, trustworthy, and
+consistent with the listing without distracting from its informational job.
+
+#### Supporting-Photo Calibration (2026-07-06)
 
 Source of truth: `src/lib/general-rubric.ts`. Supporting photos grade the uploaded
-image ONLY — they never infer what other listing photos are missing.
+image ONLY, but they classify the photo's role first. The role changes what "good"
+means.
 
-- **Clear is not enough.** A clear product on an ugly/dirty/cheap background is NOT
-  strong. Clarity must not carry the whole score.
-- **Background strictness.** Score Background 3-5 when the surface looks dirty,
-  stained, grimy, wrinkled, linty, dusty, cheap, careless, like a casual snapshot, or
-  when a loud/busy texture competes with the product. Reserve 6 for mediocre-but-clean.
-  Do NOT punish texture itself — clean intentional surfaces (linen, raw silk, velvet,
-  marble, wood, slate, acrylic stand, jewelry card, clean burlap, clean soft fabric)
-  score high. If the textile/yarn IS the product, do not treat it as bad background.
-- **Detail & Trust cap.** If the product is clear but presentation feels cheap,
-  careless, dirty, or like a quick snapshot, cap this pillar at 7.
-- **Strong gate.** 8.0+ requires clean, intentional, trustworthy presentation in
-  addition to clarity/lighting. If background/presentation is a main problem,
-  priority_action names it and the photo is not called strong.
+- **Purpose leads.** A supporting photo should answer a buyer question before they
+  buy. If the photo does not add new confidence beyond the main photo, it is not
+  strong even if it is sharp.
+- **Do not punish correct supporting roles.** Packaging, size charts, spec sheets,
+  feature callouts, ingredient lists, care cards, bundle layouts, digital previews,
+  planner screenshots, device mockups, and printed examples are valid supporting
+  photos when they answer the right question.
+- **Clear is not enough.** Clarity matters, but it is not the whole score. A perfect
+  fifth angle of the same product is redundant; a less glamorous but readable size
+  chart may be more useful.
+- **Strong gate.** 8.0+ requires a clear buyer-confidence job, readable execution,
+  specific information, and intentional presentation.
 - **Advice is this-photo only.** Weak/mid next_steps are edits/reshoot guidance for
-  THIS photo ("use a cleaner background", "reduce glare"). Strong next_steps describe
-  what works in THIS photo. Supporting photos NEVER say "add a separate scale /
-  packaging / macro / in-hand / angle photo" — that is main-photo "Build on this"
-  behavior, not supporting.
+  THIS photo. Strong next_steps describe what works in THIS photo. Supporting-photo
+  audits do not say "add a separate scale / packaging / macro photo" because the
+  checklist owns missing-photo recommendations.
 - **UI labels:** supporting strong next-steps heading = `What works well`; weak/mid =
-  `Improve this photo`. (Main keeps `Build on this`.)
+  `Improve this photo`. Main-photo audits keep `Build on this`.
 
-Category notes: jewelry/candles/soap are clean-sensitive (penalize dirty/cheap
-surfaces hard); plush/crochet allow clean soft fabric but penalize messy/linty;
-mugs penalize text overlays + cluttered graphic backgrounds.
+Category notes: jewelry/candles/soap are detail- and trust-sensitive; plush/crochet
+may need texture, seams, scale, and care proof; apparel may need size/fit/fabric
+information; mugs may need print-detail, scale, packaging, and dishwasher/microwave
+proof; digital products may need previews, device mockups, printed examples, page
+coverage, compatibility, and "what files are included" proof.
 
-Anchor: jewelry necklace on rough gray wrinkled fabric → Clarity 8-9, Lighting 7-8,
-Background 4-5, Detail & Trust 6-7, Overall ~6.8-7.5, priority names the background.
-A good detail macro on clean styled linen/wood/burlap can still be 8+ — do not
-over-punish clean intentional texture.
-
-Enforcement note: do NOT prompt "cap overall if background < 7" — the backend
-recomputes overall from pillars and overrides it. Instead the prompt drives Background
-to 3-5 and dents Detail & Trust ≤7, so the weighted math lands mid without any
-scoring-math change.
+Enforcement note: backend recomputes supporting-photo overall from the four pillars
+using the supporting weights above. The model should drive pillar values according to
+the role; it must not invent a separate overall score.
 
 ### 1. Thumbnail (weight 40)
 

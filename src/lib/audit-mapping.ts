@@ -119,11 +119,33 @@ export function rubricToAuditResult(rubric: RubricJson): AuditResult {
 }
 
 const SUPPORTING_PILLAR_LABELS = {
-  thumbnail: "Clarity",
-  lighting: "Lighting",
-  background: "Background",
-  click_appeal: "Detail & Trust",
+  thumbnail: "Buyer Confidence",
+  lighting: "Clarity",
+  background: "Accuracy & Specificity",
+  click_appeal: "Presentation Quality",
 } as const;
+
+/** Human-readable label for a detected supporting-photo role. */
+export const SUPPORTING_ROLE_LABELS: Record<string, string> = {
+  detail_closeup: "Detail close-up",
+  scale_reference: "Scale reference",
+  alternate_angle: "Alternate angle",
+  in_use: "In-use / lifestyle",
+  packaging: "Packaging",
+  whats_included: "What's included",
+  feature_spec: "Feature / spec",
+  care_instruction: "Care / instruction",
+  variation: "Variation",
+  digital_preview: "Digital preview",
+  process: "Process / handmade proof",
+  size_chart: "Size chart",
+  ingredients_materials: "Ingredients / materials",
+  bundle_layout: "Bundle layout",
+  printed_example: "Printed example",
+  device_mockup: "Device mockup",
+  planner_preview: "Planner preview",
+  other: "Supporting photo",
+};
 
 function supportingVerdict(score: number): string {
   if (score <= 0) return "Not a product photo";
@@ -140,9 +162,8 @@ function supportingNextStepsLabel(score: number): string {
 
 /**
  * Map a general (supporting-photo) rubric result into a DemoState for the audit
- * panel. The four pillars are relabeled Clarity/Lighting/Background/Detail & Trust
- * and no Etsy thumbnail copy is produced (the extra panel hides the search
- * preview). Scores are read, never altered.
+ * panel. The four pillars are relabeled Buyer Confidence/Clarity/
+ * Accuracy & Specificity/Presentation Quality. Scores are read, never altered.
  */
 /**
  * Map a general (supporting) rubric result into an AuditResult — used for the
@@ -238,6 +259,9 @@ export function rubricToSupportingState(args: {
     generationRisk: args.rubric.generation_risk,
     generationRiskReason: args.rubric.generation_risk_reason,
     supportingChecklist: args.rubric.supporting_photo_checklist,
+    supportingRole: args.rubric.supporting_photo_role,
+    buyerQuestion: args.rubric.buyer_question_answered,
+    supportingVerdictText: args.rubric.supporting_verdict,
   };
 }
 
