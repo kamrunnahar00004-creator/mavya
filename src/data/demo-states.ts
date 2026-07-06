@@ -263,6 +263,17 @@ export const VERIFY_AMBER_DEMO: DemoState = {
 
 export type DemoStateId = DemoState["id"];
 
+export type SupportingSlotStatus = "empty" | "scoring" | "ready" | "error";
+
+/** Session state for one supporting-photo checklist slot (upload + score). */
+export type SupportingSlotState = {
+  imageUrl?: string;
+  fileName?: string;
+  status: SupportingSlotStatus;
+  audit?: DemoState;
+  error?: string;
+};
+
 export const DEMO_STATES: Record<DemoStateId, DemoState> = {
   weak: WEAK_DEMO,
   strong: STRONG_DEMO,

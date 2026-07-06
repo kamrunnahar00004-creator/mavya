@@ -12,7 +12,7 @@ import {
   WandSparkles,
   Wrench,
 } from "lucide-react";
-import type { DemoState } from "@/data/demo-states";
+import type { DemoState, SupportingSlotState } from "@/data/demo-states";
 import {
   bandColors,
   bandForScore,
@@ -80,6 +80,10 @@ type Props = {
   ) => Promise<void> | void;
   /** One-step revert to the pre-edit version. Shown only when a snapshot exists. */
   onRevert?: () => void;
+  /** Supporting-photo checklist slot states (session), keyed by checklist item index. */
+  supportingSlots?: Record<number, SupportingSlotState>;
+  /** Upload a supporting photo into a checklist slot. */
+  onUploadSlot?: (index: number, file: File) => void;
   /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
   panelMode?: "main" | "extra";
   /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
@@ -112,6 +116,8 @@ export function AuditWorkspace({
   checkoutError,
   onEdit,
   onRevert,
+  supportingSlots,
+  onUploadSlot,
   panelMode = "main",
   slots,
   onSelectSlot,
@@ -320,7 +326,11 @@ export function AuditWorkspace({
           {!isExtra &&
             state.supportingChecklist &&
             state.supportingChecklist.length > 0 && (
-              <PhotoChecklistPanel checklist={state.supportingChecklist} />
+              <PhotoChecklistPanel
+                checklist={state.supportingChecklist}
+                slots={supportingSlots}
+                onUpload={onUploadSlot}
+              />
             )}
 
           {slots && onSelectSlot && onAddPhoto && (

@@ -594,6 +594,12 @@ test only: added photos live in component state, are never uploaded, scored, or
 persisted, and the check mark means "added", not "approved". No completeness score is
 faked. No persistence, dashboard, bulk upload, or secondary-photo audits yet.
 
+Update 2026-07-07: the checklist is now an actionable session-only supporting-photo
+workspace under the Etsy Search Preview. Each recommended supporting shot can accept
+one upload, send it through `/api/score` with `mode=extra`, and show a role-aware
+supporting-photo audit inline. Supporting uploads remain local browser state only:
+no persistence, database, dashboard, bulk upload, or subscription system is implied.
+
 ## 19. Multi-Photo Workspace, Stage 1A (2026-06-02)
 
 The named listing checklist is replaced by a visual multi-photo workspace. First
@@ -606,3 +612,10 @@ separate prompt over the same JSON contract; the hero rubric is unchanged. Activ
 slot drives the viewer + audit panel. Local-session only. No extra-photo improvement
 or AI-generation-from-empty-slot in 1A; those are deferred. The earlier row checklist
 component is deleted.
+
+Update 2026-07-07: current direction replaces the unnamed `[+]` extra-photo tray with
+checklist-driven supporting slots tied to one product/listing. Main photo remains the
+hero flow. Checklist slots use the supporting rubric:
+Buyer Confidence / Clarity / Accuracy & Specificity / Presentation Quality. The
+active implementation is inline inside each checklist card; supporting-photo
+AI improve/edit and role-preserving generation prompts are Phase 2.

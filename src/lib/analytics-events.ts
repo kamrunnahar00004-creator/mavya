@@ -10,6 +10,13 @@ export const FUNNEL_EVENTS = [
   "download_clicked",
   "checkout_started",
   "payment_verified",
+  // Supporting-photo workspace (kept separate so main-photo metrics stay clean).
+  "supporting_photo_uploaded",
+  "supporting_audit_completed",
+  "supporting_improve_clicked",
+  "supporting_improve_completed",
+  "supporting_edit_clicked",
+  "supporting_edit_completed",
 ] as const;
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number];
