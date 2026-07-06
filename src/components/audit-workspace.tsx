@@ -316,6 +316,12 @@ export function AuditWorkspace({
             />
           )}
 
+          {!isExtra &&
+            state.supportingChecklist &&
+            state.supportingChecklist.length > 0 && (
+              <PhotoChecklistPanel checklist={state.supportingChecklist} />
+            )}
+
           {slots && onSelectSlot && onAddPhoto && (
             <PhotoSlotStrip
               slots={slots}
@@ -395,14 +401,6 @@ export function AuditWorkspace({
             />
           </div>
 
-          {!isExtra && state.supportingChecklist && state.supportingChecklist.length > 0 && (
-            <div className="reveal-item" data-reveal-order="3">
-              <PhotoChecklistPanel
-                checklist={state.supportingChecklist}
-                score={state.overallScore}
-              />
-            </div>
-          )}
 
           {/* Improve flow: main uses the hero rubric, extra the supporting rubric. */}
           {(
