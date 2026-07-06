@@ -69,7 +69,7 @@ Core principle: it is a **buyer-objection removal engine, not photography educat
 - **Item shape:** `{ rank, shot_id, title (≤4w), reason (≤15w, names an attribute), how_to (≤15w), buyer_question, answers_doubt (identity|scale|quality|fit|completeness|risk|desire), priority (critical|recommended), avoid, feasible_because }`.
 - **Main-photo adaptation:** weak main photo → item 1 is a corrected main-product shot; strong → item 1 is the biggest remaining buyer doubt.
 - **Score is unaffected.** The checklist is advice; it never changes the pillar or overall scores.
-- **UI:** full checklist panel below the Etsy Search Preview in the media column, neutral title ("Supporting Photo Checklist"), critical items first / recommended below, doubt chip per row, inline `reason` + `how_to`, and local tick-off state with a progress counter. Do not use negative "missing photos" framing, dashed placeholder upload boxes, or repeated "Tip" toggles.
+- **UI:** collapsible checklist panel below the Etsy Search Preview in the media column, neutral title ("Supporting Photo Checklist"), collapsed header with progress counter, critical items first / recommended below, doubt chip per row, inline `reason` + `how_to` when expanded, and local tick-off state. Do not use negative "missing photos" framing, dashed placeholder upload boxes, or repeated "Tip" toggles.
 
 ## Visible Pillars (shown in UI)
 
