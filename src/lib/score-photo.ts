@@ -21,14 +21,21 @@ export async function scorePhoto(args: {
   /** System prompt to use. Defaults to the main hero/thumbnail rubric. Pass the
    *  general supporting-photo prompt for extra photos. Same JSON contract. */
   systemPrompt?: string;
+  /** Descriptive main-listing product (e.g. "pink candle in a glass cup with a
+   *  leaf design"). Only used when scoring a SUPPORTING photo, for relevance. */
+  mainProductContext?: string;
 }): Promise<RubricJson> {
   const dataUrl = `data:${args.imageMimeType};base64,${args.imageBuffer.toString("base64")}`;
+
+  const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
 
   let raw: string;
   try {
     raw = await visionScoreCall({
       imageDataUrl: dataUrl,
       systemPrompt: args.systemPrompt ?? RUBRIC_PROMPT,
+      // Relevance context is only meaningful for supporting photos.
+      mainProductContext: supporting ? args.mainProductContext : undefined,
     });
   } catch (error) {
     console.error("[score-photo] vision call failed:", error);
@@ -57,7 +64,6 @@ export async function scorePhoto(args: {
   // printables, templates) from being treated as non-products.
   // Supporting photos (graded with the general rubric) use their own 35/30/20/15
   // weights; main photos use the locked 40/25/20/15.
-  const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
   const isInvalid = parsed.upload_kind === "invalid";
   parsed.overall_score = isInvalid
     ? 0

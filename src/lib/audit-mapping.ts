@@ -144,6 +144,7 @@ export const SUPPORTING_ROLE_LABELS: Record<string, string> = {
   printed_example: "Printed example",
   device_mockup: "Device mockup",
   planner_preview: "Planner preview",
+  unrelated_or_wrong_product: "Different product",
   other: "Supporting photo",
 };
 
@@ -292,5 +293,6 @@ export function rubricToDemoState(args: {
     generationRisk: args.rubric.generation_risk,
     generationRiskReason: args.rubric.generation_risk_reason,
     supportingChecklist: args.rubric.supporting_photo_checklist,
+    productSummary: args.rubric.product_summary,
   };
 }

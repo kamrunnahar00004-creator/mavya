@@ -45,6 +45,7 @@ export type SupportingPhotoRole =
   | "printed_example"
   | "device_mockup"
   | "planner_preview"
+  | "unrelated_or_wrong_product"
   | "other";
 
 export const SUPPORTING_PHOTO_ROLES: SupportingPhotoRole[] = [
@@ -65,6 +66,7 @@ export const SUPPORTING_PHOTO_ROLES: SupportingPhotoRole[] = [
   "printed_example",
   "device_mockup",
   "planner_preview",
+  "unrelated_or_wrong_product",
   "other",
 ];
 
@@ -103,6 +105,8 @@ export type RubricJson = {
   /** Wider taxonomy used ONLY to route the supporting-photo checklist pool. Separate from detected_category. */
   checklist_category: string;
   supporting_photo_checklist: SupportingPhotoChecklistItem[];
+  /** Short descriptive summary of the main product, e.g. "pink candle in a glass cup with leaf design". Used as listing context for supporting-photo relevance. Empty for supporting/invalid. */
+  product_summary: string;
   /** Detected role of a SUPPORTING photo. "other" for main photos and unknown. */
   supporting_photo_role: SupportingPhotoRole;
   /** The one buyer question this supporting photo answers. Empty for main photos. */
@@ -302,6 +306,8 @@ Checklist rules:
 - Feasibility: never recommend on_model_worn for a non-wearable, lit_glow for a non-candle, ingredients_safety unless it touches skin / is burned / is baby-adjacent, packaging_gift unless packaging is plausibly provided, or condition_flaws except for vintage/used items.
 - Policy (do not violate): personalized products get a finished-example shot, never a "Your Text Here" blank. Physical handmade products never get stock/render/mockup recommended as proof of the real item. Digital products get screenshots/previews, never "photos", and never packaging.
 
+product_summary: a short, specific description of the main product for listing context, e.g. "pink candle in a glass cup with a green leaf design", "gold-plated name necklace on a chain", "printable weekly budget planner". 4-12 words, name the concrete product and its distinctive visible features (color, material, shape, design). For an invalid upload use "".
+
 Main-photo only fields: this prompt grades a MAIN listing photo, not a supporting photo. Always return supporting_photo_role: "other", buyer_question_answered: "", and supporting_verdict: "". Those three fields are only populated when a supporting photo is graded.
 
 Output rules:
@@ -322,6 +328,7 @@ Invalid-input JSON:
   "upload_kind": "invalid",
   "checklist_category": "other",
   "supporting_photo_checklist": [],
+  "product_summary": "",
   "supporting_photo_role": "other",
   "buyer_question_answered": "",
   "supporting_verdict": "",
@@ -347,6 +354,7 @@ Valid JSON shape:
   "upload_kind": "physical_product" | "digital_product" | "invalid",
   "checklist_category": string (checklist routing category, or "other"),
   "supporting_photo_checklist": [] for invalid, otherwise exactly 5 items each { "rank": 1-5, "shot_id": string, "title": string, "reason": string, "how_to": string, "buyer_question": string, "answers_doubt": "identity"|"scale"|"quality"|"fit"|"completeness"|"risk"|"desire", "priority": "critical"|"recommended", "avoid": string, "feasible_because": string },
+  "product_summary": string (short specific description of the main product, or "" for invalid),
   "supporting_photo_role": "other" (main photos always return "other"),
   "buyer_question_answered": "" (empty for main photos),
   "supporting_verdict": "" (empty for main photos),
@@ -372,6 +380,7 @@ export const INVALID_RESPONSE: RubricJson = {
   upload_kind: "invalid",
   checklist_category: "other",
   supporting_photo_checklist: [],
+  product_summary: "",
   supporting_photo_role: "other",
   buyer_question_answered: "",
   supporting_verdict: "",
@@ -448,6 +457,7 @@ export function isRubricJson(x: unknown): x is RubricJson {
   for (const item of r.supporting_photo_checklist) {
     if (!isChecklistItem(item)) return false;
   }
+  if (typeof r.product_summary !== "string") return false;
   if (!SUPPORTING_PHOTO_ROLES.includes(r.supporting_photo_role as SupportingPhotoRole)) {
     return false;
   }

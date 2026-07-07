@@ -14,7 +14,6 @@ import {
   type AuditResult,
   type DemoState,
   type DemoStateId,
-  type SupportingSlotState,
 } from "@/data/demo-states";
 import {
   rubricToAuditResult,
@@ -56,12 +55,12 @@ const KEY_MAP: Record<string, Mode> = {
   "5": "verify",
 };
 
-// V0 focus: the single main-photo loop only (upload -> grade -> Etsy preview ->
-// improve -> download). The multi-photo workspace (tray, supporting photos,
-// supporting grade/improve) is hidden behind this flag — code stays dormant and
-// reversible. Flip to true to bring the photo tray back. The main thumbnail
-// rubric, scoring, generation, and result UI are unaffected either way.
-const MULTI_PHOTO_ENABLED = false;
+// Listing Photo Workspace: one product, a square photo strip below the Etsy
+// preview. The first upload is the Main photo (hero/thumbnail rubric + Etsy
+// preview + improve/download). Additional photos are graded with the supporting
+// rubric; selecting a slot switches the whole workspace. Supporting Improve/Edit
+// is gated OFF until a role-preserving supporting generation prompt exists.
+const MULTI_PHOTO_ENABLED = true;
 
 type SlotKind = "main" | "extra";
 
@@ -191,21 +190,12 @@ export default function Page() {
 
   const [scoreError, setScoreError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  // Supporting-photo checklist slots (session only), keyed by checklist item index.
-  const [supportingSlots, setSupportingSlots] = useState<
-    Record<number, SupportingSlotState>
-  >({});
-  const supportingSlotsRef = useRef<Record<number, SupportingSlotState>>({});
 
   const activeSlot = slots.find((s) => s.id === activeSlotId) ?? null;
 
   useEffect(() => {
     slotsRef.current = slots;
   }, [slots]);
-
-  useEffect(() => {
-    supportingSlotsRef.current = supportingSlots;
-  }, [supportingSlots]);
 
   // Hidden demo route: ?state=weak|strong|invalid|analyzing|upload|verify.
   useEffect(() => {
@@ -246,9 +236,6 @@ export default function Page() {
   useEffect(() => {
     return () => {
       slotsRef.current.forEach((s) => URL.revokeObjectURL(s.originalUrl));
-      Object.values(supportingSlotsRef.current).forEach((s) => {
-        if (s.imageUrl) URL.revokeObjectURL(s.imageUrl);
-      });
     };
   }, []);
 
@@ -275,12 +262,6 @@ export default function Page() {
       const url = URL.createObjectURL(file);
       const id = makeId();
       const previousActiveSlotId = activeSlotId;
-      if (kind === "main") {
-        Object.values(supportingSlotsRef.current).forEach((s) => {
-          if (s.imageUrl) URL.revokeObjectURL(s.imageUrl);
-        });
-        setSupportingSlots({});
-      }
       const label =
         kind === "main"
           ? "Main photo"
@@ -309,7 +290,14 @@ export default function Page() {
       try {
         const form = new FormData();
         form.set("image", file);
-        if (kind === "extra") form.set("mode", "extra");
+        if (kind === "extra") {
+          form.set("mode", "extra");
+          // Descriptive main-listing product, so the supporting rubric judges
+          // "same listing evidence" and can flag an unrelated / wrong product.
+          const mainSlot = slotsRef.current.find((s) => s.kind === "main");
+          const context = mainSlot?.audit?.productSummary?.trim();
+          if (context) form.set("main_product_context", context);
+        }
         const res = await fetch("/api/score", { method: "POST", body: form });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as
@@ -676,70 +664,6 @@ export default function Page() {
     );
   }, [activeSlotId]);
 
-  // Supporting-photo workspace: upload a photo into a checklist slot and score it
-  // with the supporting rubric (mode=extra). Session-only; separate metrics.
-  const handleSupportingUpload = useCallback(
-    async (index: number, file: File) => {
-      const prepared = await prepareUploadImage(file);
-      const url = URL.createObjectURL(prepared);
-      const existingUrl = supportingSlotsRef.current[index]?.imageUrl;
-      if (existingUrl) URL.revokeObjectURL(existingUrl);
-      setSupportingSlots((prev) => ({
-        ...prev,
-        [index]: { imageUrl: url, fileName: file.name, status: "scoring" },
-      }));
-      trackClientEvent("supporting_photo_uploaded");
-      try {
-        const form = new FormData();
-        form.set("image", prepared);
-        form.set("mode", "extra");
-        const res = await fetch("/api/score", { method: "POST", body: form });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as
-            | { error?: string }
-            | null;
-          throw new Error(
-            (body && typeof body.error === "string" && body.error) ||
-              `Score failed (${res.status})`
-          );
-        }
-        const data = (await res.json()) as { rubric: RubricJson };
-        if (data.rubric.upload_kind === "invalid") {
-          setSupportingSlots((prev) => ({
-            ...prev,
-            [index]: {
-              ...prev[index],
-              status: "error",
-              error: "That image is not a product photo.",
-            },
-          }));
-          return;
-        }
-        const audit = rubricToSupportingState({
-          rubric: data.rubric,
-          imageSrc: url,
-          imageAlt: file.name,
-        });
-        setSupportingSlots((prev) => ({
-          ...prev,
-          [index]: { imageUrl: url, fileName: file.name, status: "ready", audit },
-        }));
-        trackClientEvent("supporting_audit_completed");
-      } catch (err) {
-        setSupportingSlots((prev) => ({
-          ...prev,
-          [index]: {
-            ...prev[index],
-            status: "error",
-            error:
-              err instanceof Error ? err.message : "Score failed. Try again.",
-          },
-        }));
-      }
-    },
-    []
-  );
-
   // Validation MVP: the clean preview is already visible. Download click opens
   // Stripe, and the success page downloads the generated image from this tab's
   // IndexedDB after payment.
@@ -801,11 +725,7 @@ export default function Page() {
 
   const reset = useCallback(() => {
     slotsRef.current.forEach((s) => URL.revokeObjectURL(s.originalUrl));
-    Object.values(supportingSlotsRef.current).forEach((s) => {
-      if (s.imageUrl) URL.revokeObjectURL(s.imageUrl);
-    });
     setSlots([]);
-    setSupportingSlots({});
     setActiveSlotId(null);
     setPendingUrl(undefined);
     setScoreError(null);
@@ -885,9 +805,11 @@ export default function Page() {
           }
           notice={notice ?? undefined}
           onCta={reset}
-          onImprove={handleImprove}
+          onImprove={activeSlot.kind === "extra" ? undefined : handleImprove}
           onRetryImprove={
-            activeSlot.canRetryImprove ? handleRetryImprove : undefined
+            activeSlot.kind !== "extra" && activeSlot.canRetryImprove
+              ? handleRetryImprove
+              : undefined
           }
           improveLoading={activeSlot.improveStatus === "generating"}
           improveStartedAt={activeSlot.improveStartedAt}
@@ -899,10 +821,12 @@ export default function Page() {
           onCheckout={handleCheckout}
           checkoutLoading={activeSlot.checkoutLoading ?? false}
           checkoutError={activeSlot.checkoutError}
-          onEdit={activeSlot.isDigital ? undefined : handleEdit}
+          onEdit={
+            activeSlot.isDigital || activeSlot.kind === "extra"
+              ? undefined
+              : handleEdit
+          }
           onRevert={activeSlot.revertSnapshot ? handleRevert : undefined}
-          supportingSlots={supportingSlots}
-          onUploadSlot={handleSupportingUpload}
         />
       )}
 

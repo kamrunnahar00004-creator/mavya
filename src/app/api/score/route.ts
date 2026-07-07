@@ -89,6 +89,14 @@ export async function POST(req: NextRequest) {
   }
   const systemPrompt = mode === "extra" ? GENERAL_RUBRIC_PROMPT : undefined;
 
+  // Descriptive main-listing product, threaded only for supporting photos so the
+  // rubric can judge "same listing evidence" and flag a wrong/unrelated product.
+  const rawContext = form.get("main_product_context");
+  const mainProductContext =
+    mode === "extra" && typeof rawContext === "string"
+      ? rawContext.trim().slice(0, 200)
+      : undefined;
+
   const buffer = Buffer.from(await file.arrayBuffer());
   let rubric;
   try {
@@ -96,6 +104,7 @@ export async function POST(req: NextRequest) {
       imageBuffer: buffer,
       imageMimeType: file.type,
       systemPrompt,
+      mainProductContext,
     });
   } catch (err) {
     const error =

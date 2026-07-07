@@ -12,7 +12,7 @@ import {
   WandSparkles,
   Wrench,
 } from "lucide-react";
-import type { DemoState, SupportingSlotState } from "@/data/demo-states";
+import type { DemoState } from "@/data/demo-states";
 import {
   bandColors,
   bandForScore,
@@ -80,10 +80,6 @@ type Props = {
   ) => Promise<void> | void;
   /** One-step revert to the pre-edit version. Shown only when a snapshot exists. */
   onRevert?: () => void;
-  /** Supporting-photo checklist slot states (session), keyed by checklist item index. */
-  supportingSlots?: Record<number, SupportingSlotState>;
-  /** Upload a supporting photo into a checklist slot. */
-  onUploadSlot?: (index: number, file: File) => void;
   /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
   panelMode?: "main" | "extra";
   /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
@@ -116,8 +112,6 @@ export function AuditWorkspace({
   checkoutError,
   onEdit,
   onRevert,
-  supportingSlots,
-  onUploadSlot,
   panelMode = "main",
   slots,
   onSelectSlot,
@@ -323,16 +317,8 @@ export function AuditWorkspace({
             />
           )}
 
-          {!isExtra &&
-            state.supportingChecklist &&
-            state.supportingChecklist.length > 0 && (
-              <PhotoChecklistPanel
-                checklist={state.supportingChecklist}
-                slots={supportingSlots}
-                onUpload={onUploadSlot}
-              />
-            )}
-
+          {/* Square photo strip sits directly below the Etsy preview: upload
+              supporting photos, switch the whole workspace between them. */}
           {slots && onSelectSlot && onAddPhoto && (
             <PhotoSlotStrip
               slots={slots}
@@ -340,6 +326,12 @@ export function AuditWorkspace({
               onAdd={onAddPhoto}
             />
           )}
+
+          {!isExtra &&
+            state.supportingChecklist &&
+            state.supportingChecklist.length > 0 && (
+              <PhotoChecklistPanel checklist={state.supportingChecklist} />
+            )}
         </section>
 
         {/* RIGHT: AUDIT */}
@@ -375,7 +367,7 @@ export function AuditWorkspace({
             {isExtra && state.supportingRole && state.supportingRole !== "other" && (
               <div className="mt-3 flex flex-col gap-1.5">
                 <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--color-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--color-primary)]">
-                  {SUPPORTING_ROLE_LABELS[state.supportingRole] ?? "Supporting photo"} · detected
+                  {SUPPORTING_ROLE_LABELS[state.supportingRole] ?? "Supporting photo"} - detected
                 </span>
                 {state.buyerQuestion && (
                   <span className="text-[13px] text-[var(--color-ink-muted)]">

@@ -588,17 +588,17 @@ threshold. The improve flow now returns three honest classes:
   or missing details, collage/duplicate, incomplete product). The generated image is
   never shown. Honest reason-specific copy plus a retry.
 
-A local listing-photo checklist (hero score + four addable local slots: in-context,
-scale, detail, packaging) sits below the Etsy Search Preview. It is an educational V0
-test only: added photos live in component state, are never uploaded, scored, or
-persisted, and the check mark means "added", not "approved". No completeness score is
-faked. No persistence, dashboard, bulk upload, or secondary-photo audits yet.
+A local listing-photo checklist sits below the Etsy Search Preview. It is advisory:
+it recommends the supporting photos that would answer buyer doubts for this product,
+but checklist rows are not upload targets and do not own scores.
 
-Update 2026-07-07: the checklist is now an actionable session-only supporting-photo
-workspace under the Etsy Search Preview. Each recommended supporting shot can accept
-one upload, send it through `/api/score` with `mode=extra`, and show a role-aware
-supporting-photo audit inline. Supporting uploads remain local browser state only:
-no persistence, database, dashboard, bulk upload, or subscription system is implied.
+Update 2026-07-07: the actionable upload surface is now the square listing photo
+strip below the Etsy Search Preview. The first slot is the main thumbnail photo.
+Extra slots accept arbitrary supporting listing photos and send them through
+`/api/score` with `mode=extra`, using the role-aware supporting rubric. Selecting a
+slot switches the whole workspace to that photo. Supporting uploads remain local
+browser state only: no persistence, database, dashboard, bulk upload, or subscription
+system is implied.
 
 ## 19. Multi-Photo Workspace, Stage 1A (2026-06-02)
 
@@ -613,9 +613,9 @@ slot drives the viewer + audit panel. Local-session only. No extra-photo improve
 or AI-generation-from-empty-slot in 1A; those are deferred. The earlier row checklist
 component is deleted.
 
-Update 2026-07-07: current direction replaces the unnamed `[+]` extra-photo tray with
-checklist-driven supporting slots tied to one product/listing. Main photo remains the
-hero flow. Checklist slots use the supporting rubric:
-Buyer Confidence / Clarity / Accuracy & Specificity / Presentation Quality. The
-active implementation is inline inside each checklist card; supporting-photo
-AI improve/edit and role-preserving generation prompts are Phase 2.
+Update 2026-07-07: current direction keeps the visual photo strip as the upload and
+selection surface. The checklist is a recommendation layer only: it tells the seller
+what supporting photos would strengthen the listing, while the seller can upload any
+supporting photo into the strip. Supporting photos use the supporting rubric:
+Buyer Confidence / Clarity / Accuracy & Specificity / Presentation Quality.
+Supporting-photo AI improve/edit and role-preserving generation prompts are Phase 2.

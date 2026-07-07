@@ -18,6 +18,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
       "upload_kind",
       "checklist_category",
       "supporting_photo_checklist",
+      "product_summary",
       "supporting_photo_role",
       "buyer_question_answered",
       "supporting_verdict",
@@ -81,6 +82,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
           },
         },
       },
+      product_summary: { type: "string" },
       supporting_photo_role: {
         type: "string",
         enum: [
@@ -101,6 +103,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
           "printed_example",
           "device_mockup",
           "planner_preview",
+          "unrelated_or_wrong_product",
           "other",
         ],
       },
@@ -249,7 +252,13 @@ const FIDELITY_RESPONSE_SCHEMA = {
 export async function visionScoreCall(args: {
   imageDataUrl: string;
   systemPrompt: string;
+  /** Descriptive summary of the main listing product, used only for supporting-photo relevance. */
+  mainProductContext?: string;
 }): Promise<string> {
+  const ctx = args.mainProductContext?.trim();
+  const userText = ctx
+    ? `This is a SUPPORTING photo for an Etsy listing whose main product is: "${ctx}". Judge whether this photo is evidence for that SAME listing and score it. Return only the JSON object.`
+    : "Score this product photo. Return only the JSON object.";
   const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
     method: "POST",
     headers: {
@@ -270,7 +279,7 @@ export async function visionScoreCall(args: {
           content: [
             {
               type: "text",
-              text: "Score this product photo. Return only the JSON object.",
+              text: userText,
             },
             {
               type: "image_url",

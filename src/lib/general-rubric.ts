@@ -27,7 +27,14 @@ For a valid digital product supporting image, mockups, page previews, dashboards
 
 For a valid product photo, output only JSON. No markdown, no prose outside JSON.
 
-FIRST classify supporting_photo_role — the job this photo does. Choose the closest: detail_closeup, scale_reference, alternate_angle, in_use, packaging, whats_included, feature_spec, care_instruction, variation, digital_preview, process, size_chart, ingredients_materials, bundle_layout, printed_example, device_mockup, planner_preview, or other. Score the photo AGAINST ITS ROLE. A packaging shot, size chart, spec sheet, or digital page preview is doing a different job than a hero product shot and must be judged on that job.
+FIRST classify supporting_photo_role — the job this photo does. Choose the closest: detail_closeup, scale_reference, alternate_angle, in_use, packaging, whats_included, feature_spec, care_instruction, variation, digital_preview, process, size_chart, ingredients_materials, bundle_layout, printed_example, device_mockup, planner_preview, unrelated_or_wrong_product, or other. Score the photo AGAINST ITS ROLE. A packaging shot, size chart, spec sheet, or digital page preview is doing a different job than a hero product shot and must be judged on that job.
+
+THE HERO PRODUCT DOES NOT NEED TO BE VISIBLE. A supporting photo is valid even if the main product does not appear in it, as long as it answers a real buyer question about THIS listing: packaging, care card, ingredients/materials list, size chart, what's included, personalization/proof, digital page preview, use instructions, and similar. Do NOT penalize an informational or packaging photo for not showing the product. Judge whether it gives useful, honest evidence for its role.
+
+LISTING RELEVANCE (only when a main listing product is given in the user message). Ask: is this photo plausible EVIDENCE for that SAME listing? Evidence includes the product itself, its packaging, its included items, its materials/ingredients, its size chart, its care card, its digital pages, or the product in use. It does NOT need to picture the hero product directly.
+- If the photo is UNRELATED to the listing — a clearly different product, a different brand, or a random object that could not be part of this listing — classify supporting_photo_role "unrelated_or_wrong_product". Set buyer_question_answered "" and supporting_verdict a plain sentence like "This photo shows a different product, not the <listing item>." Score Buyer Confidence 0-1, and keep the other pillars low; the overall must land near 0 (weak band). priority_action tells the seller to upload a photo of the actual <listing item> or its packaging/details.
+- Product-ABSENCE is NOT wrong-product. A plain packaging box, a care card, an ingredients label, or a size chart for THIS listing is RELATED and must be judged normally on its role — never scored as unrelated just because the product is not in frame.
+- If no main listing product is given, skip this test and grade the photo on its own role.
 
 NON-PENALTY LIST — these can NEVER lower the score by themselves, because they are correct for their roles: a plain or neutral background, a tight crop showing only a detail, a text-heavy layout, an infographic/chart with no product hero, an honest but unglamorous packaging shot, a screenshot/page-preview for a digital product.
 
@@ -108,6 +115,7 @@ Invalid-input JSON:
   "upload_kind": "invalid",
   "checklist_category": "other",
   "supporting_photo_checklist": [],
+  "product_summary": "",
   "supporting_photo_role": "other",
   "buyer_question_answered": "",
   "supporting_verdict": "",
@@ -133,6 +141,7 @@ Valid JSON shape:
   "upload_kind": "physical_product" | "digital_product" | "invalid",
   "checklist_category": "other",
   "supporting_photo_checklist": [],
+  "product_summary": "",
   "supporting_photo_role": one of the role ids above (classify this photo's role),
   "buyer_question_answered": string (the one buyer question this photo answers, or ""),
   "supporting_verdict": string (one short honest verdict sentence),
