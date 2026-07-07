@@ -181,6 +181,61 @@ const RUBRIC_RESPONSE_SCHEMA = {
   },
 } as const;
 
+const CHECKLIST_RESPONSE_SCHEMA = {
+  name: "mavya_supporting_checklist",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["checklist_category", "supporting_photo_checklist"],
+    properties: {
+      checklist_category: { type: "string" },
+      supporting_photo_checklist: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: [
+            "rank",
+            "shot_id",
+            "title",
+            "reason",
+            "how_to",
+            "buyer_question",
+            "answers_doubt",
+            "priority",
+            "avoid",
+            "feasible_because",
+          ],
+          properties: {
+            rank: { type: "integer", minimum: 1, maximum: 5 },
+            shot_id: { type: "string" },
+            title: { type: "string" },
+            reason: { type: "string" },
+            how_to: { type: "string" },
+            buyer_question: { type: "string" },
+            answers_doubt: {
+              type: "string",
+              enum: [
+                "identity",
+                "scale",
+                "quality",
+                "fit",
+                "completeness",
+                "risk",
+                "desire",
+              ],
+            },
+            priority: { type: "string", enum: ["critical", "recommended"] },
+            avoid: { type: "string" },
+            feasible_because: { type: "string" },
+          },
+        },
+      },
+    },
+  },
+} as const;
+
 function getOpenAIKey(): string {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
@@ -294,6 +349,45 @@ export async function visionScoreCall(args: {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`OpenAI vision ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = (await res.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+/**
+ * Generate the supporting-photo checklist with a cheap, TEXT-ONLY chat call.
+ * No image is sent. The caller passes the product context extracted by the main
+ * score. Returns the raw JSON string (caller parses + validates + pool-filters).
+ */
+export async function checklistCall(args: {
+  systemPrompt: string;
+  userMessage: string;
+}): Promise<string> {
+  const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getOpenAIKey()}`,
+    },
+    body: JSON.stringify({
+      model: getVisionModel(),
+      response_format: {
+        type: "json_schema",
+        json_schema: CHECKLIST_RESPONSE_SCHEMA,
+      },
+      temperature: 0.3,
+      messages: [
+        { role: "system", content: args.systemPrompt },
+        { role: "user", content: args.userMessage },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OpenAI checklist ${res.status}: ${text.slice(0, 400)}`);
   }
   const data = (await res.json()) as {
     choices?: Array<{ message?: { content?: string } }>;

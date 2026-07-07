@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ChevronDown, ListChecks } from "lucide-react";
+import { ChevronDown, Circle, CircleCheck, Loader2 } from "lucide-react";
 import type { ChecklistDoubt, SupportingPhotoChecklistItem } from "@/lib/rubric";
 import { cn } from "@/lib/utils";
 
@@ -17,44 +17,81 @@ const DOUBT_LABEL: Record<ChecklistDoubt, string> = {
 
 type Props = {
   checklist: SupportingPhotoChecklistItem[];
+  /** True while the checklist hydrates in the background (score already shown). */
+  loading?: boolean;
 };
 
 /**
- * Supporting Photo Checklist — ADVISORY ONLY. A coverage map of the photos that
- * would answer real buyer questions for this product. It does NOT upload or score
- * anything: uploading + grading supporting photos happens in the photo strip below
- * the Etsy preview. Tone is "build a stronger listing", never "missing".
+ * Suggested supporting shots - a quiet, OPTIONAL note under the real workspace
+ * (the photo strip). It never uploads or scores anything. The checkmarks are a
+ * personal "I've covered this" satisfaction toggle, session-only, with no scoring
+ * and no pressure - a seller with no supporting photos never feels they failed.
  */
-export function PhotoChecklistPanel({ checklist }: Props) {
+export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
   const [open, setOpen] = useState(false);
+  // Session-only "I've covered this" state, keyed by shot id. No scoring.
+  const [checked, setChecked] = useState<Set<string>>(new Set());
 
-  if (!checklist.length) return null;
+  // Nothing to show and nothing coming: render nothing.
+  if (!checklist.length && !loading) return null;
+
+  // Score is already visible; the checklist is still hydrating in the background.
+  // Show a calm placeholder so the card is present but adds no friction.
+  if (!checklist.length && loading) {
+    return (
+      <div className="flex items-center gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-white/70 px-4 py-3">
+        <Loader2
+          className="h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-ink-soft)]"
+          aria-hidden="true"
+        />
+        <span className="min-w-0 flex-1">
+          <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)]">
+            Suggested supporting shots
+          </span>
+          <span className="mt-0.5 block text-[12px] text-[var(--color-ink-soft)]">
+            Preparing ideas for this product...
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  const toggle = (shotId: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(shotId)) next.delete(shotId);
+      else next.add(shotId);
+      return next;
+    });
 
   const critical = checklist.filter((item) => item.priority === "critical");
   const recommended = checklist.filter((item) => item.priority !== "critical");
 
   return (
-    <div className="rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white shadow-[var(--shadow-soft)]">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-white/70">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
-        className="flex w-full items-start gap-3 p-4 text-left sm:p-5"
+        className="flex w-full items-center gap-2.5 px-4 py-3 text-left"
       >
-        <span className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
-          <ListChecks className="h-[18px] w-[18px]" aria-hidden="true" />
-        </span>
+        <CircleCheck
+          className="h-4 w-4 flex-shrink-0 text-[var(--color-ink-soft)]"
+          aria-hidden="true"
+        />
         <span className="min-w-0 flex-1">
-          <span className="block text-[15.5px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
-            Supporting photo checklist
+          <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)]">
+            Suggested supporting shots
           </span>
-          <span className="block text-[13px] text-[var(--color-ink-muted)]">
-            The photos that answer buyer questions for this product.
-          </span>
+          {!open && (
+            <span className="mt-0.5 block text-[12px] text-[var(--color-ink-soft)]">
+              Optional ideas to make the listing clearer.
+            </span>
+          )}
         </span>
         <ChevronDown
           className={cn(
-            "mt-1 h-4 w-4 flex-shrink-0 text-[var(--color-ink-soft)] transition-transform",
+            "h-4 w-4 flex-shrink-0 text-[var(--color-ink-soft)] transition-transform",
             open && "rotate-180"
           )}
           aria-hidden="true"
@@ -62,31 +99,41 @@ export function PhotoChecklistPanel({ checklist }: Props) {
       </button>
 
       {open && (
-        <div className="border-t border-[var(--color-border-soft)] p-4 pt-4 sm:p-5">
-          <div className="flex flex-col gap-2.5">
+        <div className="border-t border-[var(--color-border-soft)] px-4 py-3.5">
+          <div className="flex flex-col gap-2">
             {critical.map((item, i) => (
-              <ChecklistRow key={`c-${i}`} item={item} />
+              <ChecklistRow
+                key={`c-${i}`}
+                item={item}
+                checked={checked.has(item.shot_id)}
+                onToggle={() => toggle(item.shot_id)}
+              />
             ))}
           </div>
 
           {recommended.length > 0 && (
             <>
-              <div className="my-3.5 flex items-center gap-2">
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--color-ink-soft)]">
+              <div className="my-3 flex items-center gap-2">
+                <span className="text-[10.5px] font-semibold uppercase tracking-wide text-[var(--color-ink-soft)]">
                   Nice to have
                 </span>
                 <span className="h-px flex-1 bg-[var(--color-border-soft)]" />
               </div>
-              <div className="flex flex-col gap-2.5">
+              <div className="flex flex-col gap-2">
                 {recommended.map((item, i) => (
-                  <ChecklistRow key={`r-${i}`} item={item} />
+                  <ChecklistRow
+                    key={`r-${i}`}
+                    item={item}
+                    checked={checked.has(item.shot_id)}
+                    onToggle={() => toggle(item.shot_id)}
+                  />
                 ))}
               </div>
             </>
           )}
 
-          <p className="mt-4 text-[12px] leading-snug text-[var(--color-ink-soft)]">
-            Upload any of these in the photo strip above to grade it.
+          <p className="mt-3.5 text-[11.5px] leading-snug text-[var(--color-ink-soft)]">
+            Use these as ideas for the next photos in your listing.
           </p>
         </div>
       )}
@@ -94,23 +141,60 @@ export function PhotoChecklistPanel({ checklist }: Props) {
   );
 }
 
-function ChecklistRow({ item }: { item: SupportingPhotoChecklistItem }) {
+function ChecklistRow({
+  item,
+  checked,
+  onToggle,
+}: {
+  item: SupportingPhotoChecklistItem;
+  checked: boolean;
+  onToggle: () => void;
+}) {
   return (
-    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-[14px] font-semibold text-[var(--color-ink)]">
-          {item.title}
-        </span>
-        <span className="rounded-full bg-[var(--color-page-deep)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink-muted)]">
-          {DOUBT_LABEL[item.answers_doubt]}
-        </span>
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={checked}
+      className="flex w-full gap-2.5 rounded-[var(--radius-md)] py-0.5 text-left transition-colors hover:bg-[var(--color-page-deep)]/40"
+    >
+      {checked ? (
+        <CircleCheck
+          className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-strong)]"
+          aria-hidden="true"
+        />
+      ) : (
+        <Circle
+          className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-border-strong)]"
+          aria-hidden="true"
+        />
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={cn(
+              "text-[13.5px] font-semibold",
+              checked
+                ? "text-[var(--color-ink-soft)] line-through"
+                : "text-[var(--color-ink)]"
+            )}
+          >
+            {item.title}
+          </span>
+          <span className="rounded-full bg-[var(--color-page-deep)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink-muted)]">
+            {DOUBT_LABEL[item.answers_doubt]}
+          </span>
+        </div>
+        {!checked && (
+          <>
+            <p className="mt-0.5 text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
+              {item.reason}
+            </p>
+            <p className="mt-0.5 text-[12px] leading-snug text-[var(--color-ink-soft)]">
+              Example: {item.how_to}
+            </p>
+          </>
+        )}
       </div>
-      <p className="mt-0.5 text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
-        {item.reason}
-      </p>
-      <p className="mt-1 text-[12px] leading-snug text-[var(--color-ink-soft)]">
-        Example: {item.how_to}
-      </p>
-    </div>
+    </button>
   );
 }

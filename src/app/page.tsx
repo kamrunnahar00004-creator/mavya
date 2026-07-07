@@ -21,7 +21,10 @@ import {
   rubricToSupportingState,
   rubricToSupportingAuditResult,
 } from "@/lib/audit-mapping";
-import type { RubricJson } from "@/lib/rubric";
+import type {
+  RubricJson,
+  SupportingPhotoChecklistItem,
+} from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import { savePendingDownload } from "@/lib/pending-download";
 import { trackClientEvent } from "@/lib/track-client";
@@ -74,6 +77,8 @@ type PhotoSlot = {
   audit: DemoState | null;
   /** True when the rubric classified this upload as a digital Etsy product. Edit is physical-only for v1. */
   isDigital?: boolean;
+  /** True while the supporting-photo checklist is hydrating in the background. */
+  checklistLoading?: boolean;
   /** Data URL of the generated preview shown before payment. */
   improvedDownloadUrl?: string;
   freePreview?: boolean;
@@ -247,6 +252,50 @@ export default function Page() {
     });
   }, []);
 
+  // Background supporting-photo checklist. Best-effort: on any failure the slot
+  // simply stops loading and shows no checklist card. Never blocks the audit.
+  const hydrateChecklist = useCallback(
+    async (slotId: string, rubric: RubricJson) => {
+      try {
+        const res = await fetch("/api/checklist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            upload_kind: rubric.upload_kind,
+            detected_category: rubric.detected_category,
+            product_summary: rubric.product_summary,
+            overall_score: rubric.overall_score,
+            priority_action: rubric.priority_action,
+          }),
+        });
+        const data = (await res.json().catch(() => null)) as
+          | { supporting_photo_checklist?: SupportingPhotoChecklistItem[] }
+          | null;
+        const checklist = Array.isArray(data?.supporting_photo_checklist)
+          ? data!.supporting_photo_checklist
+          : [];
+        setSlots((prev) =>
+          prev.map((s) =>
+            s.id === slotId && s.audit
+              ? {
+                  ...s,
+                  checklistLoading: false,
+                  audit: { ...s.audit, supportingChecklist: checklist },
+                }
+              : s
+          )
+        );
+      } catch {
+        setSlots((prev) =>
+          prev.map((s) =>
+            s.id === slotId ? { ...s, checklistLoading: false } : s
+          )
+        );
+      }
+    },
+    []
+  );
+
   const analyzePhoto = useCallback(
     async (inputFile: File, kind: SlotKind) => {
       if (!inputFile.type.startsWith("image/")) {
@@ -349,13 +398,28 @@ export default function Page() {
               });
 
         const isDigital = rubric.upload_kind === "digital_product";
+        // The main score no longer carries the supporting-photo checklist — it is
+        // hydrated by a separate, cheaper background call so the score shows
+        // instantly. Mark the slot loading; fill it in when the checklist lands.
+        const wantsChecklist = kind === "main" && !isInvalid;
         setSlots((prev) =>
           prev.map((s) =>
-            s.id === id ? { ...s, status: "graded", audit, isDigital } : s
+            s.id === id
+              ? {
+                  ...s,
+                  status: "graded",
+                  audit,
+                  isDigital,
+                  checklistLoading: wantsChecklist,
+                }
+              : s
           )
         );
         trackClientEvent("audit_completed");
         setMode("real");
+        if (wantsChecklist) {
+          void hydrateChecklist(id, rubric);
+        }
       } catch (err) {
         console.error("[page] score failed", err);
         removeSlot(id);
@@ -376,7 +440,7 @@ export default function Page() {
         }
       }
     },
-    [activeSlotId, removeSlot]
+    [activeSlotId, removeSlot, hydrateChecklist]
   );
 
   const handleFirstFile = useCallback(
@@ -827,6 +891,7 @@ export default function Page() {
               : handleEdit
           }
           onRevert={activeSlot.revertSnapshot ? handleRevert : undefined}
+          checklistLoading={activeSlot.checklistLoading ?? false}
         />
       )}
 

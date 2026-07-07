@@ -80,6 +80,8 @@ type Props = {
   ) => Promise<void> | void;
   /** One-step revert to the pre-edit version. Shown only when a snapshot exists. */
   onRevert?: () => void;
+  /** True while the supporting-photo checklist is still hydrating in the background. */
+  checklistLoading?: boolean;
   /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
   panelMode?: "main" | "extra";
   /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
@@ -112,6 +114,7 @@ export function AuditWorkspace({
   checkoutError,
   onEdit,
   onRevert,
+  checklistLoading = false,
   panelMode = "main",
   slots,
   onSelectSlot,
@@ -328,9 +331,13 @@ export function AuditWorkspace({
           )}
 
           {!isExtra &&
-            state.supportingChecklist &&
-            state.supportingChecklist.length > 0 && (
-              <PhotoChecklistPanel checklist={state.supportingChecklist} />
+            (checklistLoading ||
+              (state.supportingChecklist &&
+                state.supportingChecklist.length > 0)) && (
+              <PhotoChecklistPanel
+                checklist={state.supportingChecklist ?? []}
+                loading={checklistLoading}
+              />
             )}
         </section>
 

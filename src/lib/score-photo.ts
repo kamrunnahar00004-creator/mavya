@@ -2,17 +2,70 @@ import {
   RUBRIC_PROMPT,
   computeOverall,
   computeSupportingOverall,
+  isChecklistItem,
   isRubricJson,
   type RubricJson,
+  type SupportingPhotoChecklistItem,
 } from "@/lib/rubric";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
-import { visionScoreCall } from "@/lib/openai";
+import {
+  CHECKLIST_PROMPT,
+  checklistUserMessage,
+  type ChecklistGenInput,
+} from "@/lib/checklist-gen";
+import { checklistCall, visionScoreCall } from "@/lib/openai";
 import { ALL_SHOT_IDS, poolFor } from "@/data/photo-checklist-pool";
 
 export class ScorePhotoError extends Error {
   constructor(message: string, readonly code: "vision_failed" | "bad_ai_response") {
     super(message);
   }
+}
+
+/**
+ * Generate the supporting-photo checklist in a SEPARATE, text-only call. Runs in
+ * the background after the score renders. Returns pool-filtered items valid for
+ * this category, or [] on any failure (the checklist is optional; a failure
+ * must never block or error the main flow).
+ */
+export async function generateChecklist(
+  input: ChecklistGenInput
+): Promise<SupportingPhotoChecklistItem[]> {
+  let raw: string;
+  try {
+    raw = await checklistCall({
+      systemPrompt: CHECKLIST_PROMPT,
+      userMessage: checklistUserMessage(input),
+    });
+  } catch (error) {
+    console.error("[checklist] generation failed:", error);
+    return [];
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return [];
+  }
+  if (!parsed || typeof parsed !== "object") return [];
+  const obj = parsed as {
+    checklist_category?: unknown;
+    supporting_photo_checklist?: unknown;
+  };
+  const category =
+    typeof obj.checklist_category === "string" ? obj.checklist_category : "other";
+  if (!Array.isArray(obj.supporting_photo_checklist)) return [];
+
+  const allowed = new Set(
+    poolFor(input.upload_kind, category).map((s) => s.shot_id)
+  );
+  return obj.supporting_photo_checklist.filter(
+    (item): item is SupportingPhotoChecklistItem =>
+      isChecklistItem(item) &&
+      ALL_SHOT_IDS.has(item.shot_id) &&
+      allowed.has(item.shot_id)
+  );
 }
 
 export async function scorePhoto(args: {
@@ -72,7 +125,7 @@ export async function scorePhoto(args: {
     : computeOverall(parsed.pillars);
 
   // Checklist safety: invalid uploads carry no checklist. Otherwise keep only shots
-  // that are valid for THIS category's pool — a digital planner must not return a
+  // that are valid for THIS category's pool; a digital planner must not return a
   // physical shot like `lit_glow`, even though that id exists globally.
   if (isInvalid || parsed.upload_kind === "invalid") {
     parsed.supporting_photo_checklist = [];
