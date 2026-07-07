@@ -474,7 +474,16 @@ export default function Page() {
       if (!slot || !slot.audit) return;
       if (slot.improveStatus === "generating") return;
       const isEdit = Boolean(editInstruction);
-      trackClientEvent(isEdit ? "edit_clicked" : "improve_clicked");
+      const isSupporting = slot.kind === "extra";
+      trackClientEvent(
+        isSupporting
+          ? isEdit
+            ? "supporting_edit_clicked"
+            : "supporting_improve_clicked"
+          : isEdit
+          ? "edit_clicked"
+          : "improve_clicked"
+      );
       const startedAt = Date.now();
       // Snapshot the current improved version before an edit overwrites it, so the
       // seller can revert one step.
@@ -509,7 +518,14 @@ export default function Page() {
       try {
         const form = new FormData();
         form.set("image", slot.file);
-        if (slot.kind === "extra") form.set("mode", "extra");
+        if (slot.kind === "extra") {
+          form.set("mode", "extra");
+          // Same listing context used at grade time, so the re-score keeps the
+          // supporting role and can still flag a wrong/unrelated product.
+          const mainSlot = slotsRef.current.find((s) => s.kind === "main");
+          const context = mainSlot?.audit?.productSummary?.trim();
+          if (context) form.set("main_product_context", context);
+        }
         // Retry always builds from the current preview. An edit builds from the
         // image the seller selected in the UI: original or current preview.
         const useBase =
@@ -564,23 +580,24 @@ export default function Page() {
                       s.audit?.improvedSrc &&
                         typeof s.audit.improvedScore === "number"
                     );
-                    const hasExistingSub8Preview =
+                    const hasExistingRetryablePreview =
                       hasExistingPreview &&
-                      typeof s.audit?.improvedScore === "number" &&
-                      s.audit.improvedScore < 8;
+                      (Boolean(s.freePreview) ||
+                        (typeof s.audit?.improvedScore === "number" &&
+                          s.audit.improvedScore < 8));
                     return {
                       ...s,
                       improveStatus: hasExistingPreview ? "idle" : "error",
                       improveStartedAt: undefined,
                       improveError:
-                        hasExistingPreview && !hasExistingSub8Preview
+                        hasExistingPreview && !hasExistingRetryablePreview
                           ? undefined
                           : message,
                       keepNote: undefined,
                       unresolvedIssues:
                         unresolvedIssues ?? s.unresolvedIssues ?? null,
                       canRetryImprove: hasExistingPreview
-                        ? hasExistingSub8Preview
+                        ? hasExistingRetryablePreview
                         : retryableCodes.has(
                             body && body.ok === false ? body.code : ""
                           ),
@@ -598,7 +615,7 @@ export default function Page() {
             ? rubricToSupportingAuditResult(body.candidateAudit)
             : rubricToAuditResult(body.candidateAudit);
         const isFreePreview = body.outcome === "useful_free_preview";
-        const previewMessage = isFreePreview && improvedAudit.overallScore < 8
+        const previewMessage = isFreePreview
           ? freePreviewMessage(body.fidelity)
           : undefined;
 
@@ -615,12 +632,14 @@ export default function Page() {
                     typeof existingScore === "number" &&
                     improvedAudit.overallScore <= existingScore
                   ) {
+                    const existingRetryable =
+                      Boolean(s.freePreview) || existingScore < 8;
                     return {
                       ...s,
                       improveStatus: "idle",
                       improveStartedAt: undefined,
                       improveError: undefined,
-                      canRetryImprove: existingScore < 8,
+                      canRetryImprove: existingRetryable,
                       keepNote: undefined,
                     };
                   }
@@ -635,7 +654,8 @@ export default function Page() {
                     improveStatus: "idle",
                     improveStartedAt: undefined,
                     improveError: undefined,
-                    canRetryImprove: improvedAudit.overallScore < 8,
+                    canRetryImprove:
+                      isFreePreview || improvedAudit.overallScore < 8,
                     unresolvedIssues: null,
                     audit: {
                       ...s.audit,
@@ -650,7 +670,15 @@ export default function Page() {
               : s
           )
         );
-        trackClientEvent(isEdit ? "edit_completed" : "improve_completed");
+        trackClientEvent(
+          isSupporting
+            ? isEdit
+              ? "supporting_edit_completed"
+              : "supporting_improve_completed"
+            : isEdit
+            ? "edit_completed"
+            : "improve_completed"
+        );
         setInitialPreview(true);
       } catch (err) {
         console.error("[page] improve flow failed", err);
@@ -662,23 +690,24 @@ export default function Page() {
                     s.audit?.improvedSrc &&
                       typeof s.audit.improvedScore === "number"
                   );
-                  const hasExistingSub8Preview =
+                  const hasExistingRetryablePreview =
                     hasExistingPreview &&
-                    typeof s.audit?.improvedScore === "number" &&
-                    s.audit.improvedScore < 8;
+                    (Boolean(s.freePreview) ||
+                      (typeof s.audit?.improvedScore === "number" &&
+                        s.audit.improvedScore < 8));
                   return {
                     ...s,
                     improveStatus: hasExistingPreview ? "idle" : "error",
                     improveStartedAt: undefined,
                     improveError:
-                      hasExistingPreview && !hasExistingSub8Preview
+                      hasExistingPreview && !hasExistingRetryablePreview
                       ? undefined
                       : err instanceof Error
                       ? err.message
                       : "Generation failed. Try again.",
                     keepNote: undefined,
                     canRetryImprove: hasExistingPreview
-                      ? hasExistingSub8Preview
+                      ? hasExistingRetryablePreview
                       : true,
                   };
                 })()
@@ -869,9 +898,14 @@ export default function Page() {
           }
           notice={notice ?? undefined}
           onCta={reset}
-          onImprove={activeSlot.kind === "extra" ? undefined : handleImprove}
+          onImprove={
+            activeSlot.audit?.supportingRole === "unrelated_or_wrong_product"
+              ? undefined
+              : handleImprove
+          }
           onRetryImprove={
-            activeSlot.kind !== "extra" && activeSlot.canRetryImprove
+            activeSlot.audit?.supportingRole !== "unrelated_or_wrong_product" &&
+            activeSlot.canRetryImprove
               ? handleRetryImprove
               : undefined
           }
@@ -886,7 +920,11 @@ export default function Page() {
           checkoutLoading={activeSlot.checkoutLoading ?? false}
           checkoutError={activeSlot.checkoutError}
           onEdit={
-            activeSlot.isDigital || activeSlot.kind === "extra"
+            // Main digital products keep Edit disabled (physical-only pipeline).
+            // Supporting photos (including digital previews) can be edited, except
+            // a wrong/unrelated product which has nothing to preserve.
+            (activeSlot.kind === "main" && activeSlot.isDigital) ||
+            activeSlot.audit?.supportingRole === "unrelated_or_wrong_product"
               ? undefined
               : handleEdit
           }

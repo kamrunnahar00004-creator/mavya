@@ -66,6 +66,45 @@ reason: 1-2 short sentences honestly summarizing the verdict.
 
 Return only the JSON object.`;
 
+/**
+ * SUPPORTING-photo fidelity prompt. A supporting photo (packaging, size chart,
+ * care card, ingredients, scale, close-up, in-use, digital preview, alternate
+ * angle) is judged by whether the improved version preserved its ROLE and its
+ * CONTENT while improving presentation. It is NOT judged as a hero thumbnail, so
+ * "full product visible" is reinterpreted as "the supporting photo still does its
+ * job and lost nothing essential". Text/number fidelity is the strictest check.
+ * The JSON shape is identical to FidelityReport so the pipeline is unchanged.
+ */
+export const SUPPORTING_FIDELITY_PROMPT = `You are Mavya fidelity evaluator for SUPPORTING listing photos. Compare an ORIGINAL supporting photo (image 1) with an AI-IMPROVED candidate (image 2). This is NOT a hero/thumbnail. Decide whether the candidate improved presentation WITHOUT changing the photo's job or its content.
+
+What a supporting photo does: it answers a buyer question (packaging, what's included, size chart, care/spec sheet, ingredients/materials, scale reference, detail close-up, in-use, alternate angle, digital preview/mockup). A good improvement makes it clearer, better lit, and more readable while keeping the SAME role and the SAME content.
+
+Decline-first rules:
+- If the candidate looks AI-generated, synthetic, rendered, or fake, set ai_looking = true. publishable must be false.
+- If ANY visible text, number, measurement, size, price, ingredient, chart row, table value, label, or on-screen text changed, was invented, re-typeset into different wording, or removed, set text_or_pattern_drift = true. publishable must be false. This is the most important check: a size chart or spec whose numbers or words changed is a serious failure.
+- If informational content or shown items were invented or removed (added chart rows, extra pages, new ingredients, extra product pieces, fabricated packaging text, or dropped elements the original showed), set invented_or_missing_details = true. publishable must be false.
+- If the candidate is a collage, or duplicates the subject, set collage_or_duplicate_product = true. publishable must be false.
+- ROLE/CONTENT PRESERVED maps to full_product_visible: set full_product_visible = true only if the candidate keeps the SAME role and the SAME essential content as the original (e.g. packaging stayed packaging, the chart stayed the same chart, the close-up stayed a close-up, the scale reference is still present). If the candidate changed the photo's job, converted it into a clean hero product shot, or dropped the informational content, set full_product_visible = false. publishable must be false.
+
+Do NOT require a full, centered hero product. A tight close-up, a plain document, a packaging box, or a screenshot is CORRECT for a supporting photo and must not be penalized for not showing a full styled product.
+
+Scoring rules:
+- fidelity_score 0-10: how faithfully the candidate preserved the original's role, content, text, numbers, and shown items. 10 = same role and content, only presentation improved; 0 = different content or a different kind of photo.
+- authenticity_score 0-10: how like a real photograph or real screenshot the candidate looks. 10 = indistinguishable from a real photo/screen capture; 0 = obvious AI render.
+- publishable = true requires: fidelity_score >= 7, authenticity_score >= 6, and every declination flag above is false.
+
+Recommended next action:
+- "deliver" only when publishable is true.
+- "deterministic_finish" when only gentle exposure or warmth would resolve the remaining issue without redrawing anything.
+- "regenerate" when the candidate changed the role, changed text/numbers, invented or dropped content, looks AI-generated, or is a collage.
+- "request_clearer_source" when the original supporting photo is too unclear for any candidate to honestly improve.
+
+remaining_issues: short bullet phrases, each 12 words or fewer.
+
+reason: 1-2 short sentences honestly summarizing the verdict.
+
+Return only the JSON object.`;
+
 export class FidelityError extends Error {
   constructor(
     message: string,
@@ -126,7 +165,15 @@ export async function evaluateFidelity(args: {
   originalMimeType: string;
   candidateBase64: string;
   candidateMimeType: string;
+  /** Override the compare prompt (e.g. the supporting-photo fidelity prompt). */
+  systemPrompt?: string;
+  /** Minimum fidelity_score for publishable (hero 7.5, supporting 7). */
+  minFidelity?: number;
+  /** Minimum authenticity_score for publishable (hero 7.5, supporting 6). */
+  minAuthenticity?: number;
 }): Promise<FidelityReport> {
+  const minFidelity = args.minFidelity ?? 7.5;
+  const minAuthenticity = args.minAuthenticity ?? 7.5;
   const originalDataUrl = `data:${args.originalMimeType};base64,${args.originalBuffer.toString(
     "base64"
   )}`;
@@ -137,7 +184,7 @@ export async function evaluateFidelity(args: {
     raw = await visionCompareCall({
       originalDataUrl,
       candidateDataUrl,
-      systemPrompt: FIDELITY_PROMPT,
+      systemPrompt: args.systemPrompt ?? FIDELITY_PROMPT,
     });
   } catch (err) {
     console.error("[fidelity] compare call failed:", err);
@@ -172,8 +219,8 @@ export async function evaluateFidelity(args: {
     report.invented_or_missing_details ||
     report.collage_or_duplicate_product ||
     !report.full_product_visible ||
-    report.fidelity_score < 7.5 ||
-    report.authenticity_score < 7.5
+    report.fidelity_score < minFidelity ||
+    report.authenticity_score < minAuthenticity
   ) {
     report.publishable = false;
   }
@@ -197,5 +244,31 @@ export function passesDeliveryGate(args: {
   if (args.fidelity.fidelity_score < 7.5) return false;
   if (args.fidelity.authenticity_score < 7.5) return false;
   if (args.candidateScore < 8.0) return false;
+  return true;
+}
+
+/**
+ * SUPPORTING-photo delivery gate. Unlike the hero gate, it does NOT require an 8+
+ * score or a full centered product. A supporting improvement is delivered when
+ * every trust check passes (role + content preserved, no text/number drift, no
+ * invented content, not AI-looking, not a collage) AND the improved supporting
+ * score is a real gain over the original. Thresholds are lower and role-aware.
+ */
+export function passesSupportingDeliveryGate(args: {
+  fidelity: FidelityReport;
+  originalScore: number;
+  candidateScore: number;
+}): boolean {
+  if (!args.fidelity.publishable) return false;
+  if (args.fidelity.ai_looking) return false;
+  if (args.fidelity.text_or_pattern_drift) return false;
+  if (args.fidelity.invented_or_missing_details) return false;
+  if (args.fidelity.collage_or_duplicate_product) return false;
+  // full_product_visible == role/content preserved for supporting photos.
+  if (!args.fidelity.full_product_visible) return false;
+  if (args.fidelity.fidelity_score < 7) return false;
+  if (args.fidelity.authenticity_score < 6) return false;
+  // Must be a genuine improvement over the original supporting photo.
+  if (args.candidateScore < args.originalScore + 0.3) return false;
   return true;
 }

@@ -39,7 +39,7 @@ export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
   // Show a calm placeholder so the card is present but adds no friction.
   if (!checklist.length && loading) {
     return (
-      <div className="flex items-center gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-white/70 px-4 py-3">
+      <div className="flex items-center gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-primary)] bg-white/70 px-4 py-3">
         <Loader2
           className="h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-ink-soft)]"
           aria-hidden="true"
@@ -68,7 +68,7 @@ export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
   const recommended = checklist.filter((item) => item.priority !== "critical");
 
   return (
-    <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-white/70">
+    <div className="rounded-[var(--radius-lg)] border border-[var(--color-primary)] bg-white/70">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}

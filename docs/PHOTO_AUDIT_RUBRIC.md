@@ -150,6 +150,36 @@ Enforcement note: backend recomputes supporting-photo overall from the four pill
 using the supporting weights above. The model should drive pillar values according to
 the role; it must not invent a separate overall score.
 
+#### Supporting-Photo Improve + Edit (2026-07-07)
+
+Supporting photos can be AI-improved and edited, using a SEPARATE role-preserving
+pipeline. The main-photo generation prompt and gate are untouched.
+
+- **Role-preserving generation.** `SUPPORTING_IMPROVE_PROMPT` (`src/lib/improve-photo.ts`)
+  improves the supporting photo's JOB, never converting it into a hero shot. A
+  per-role clause preserves the specific role: packaging stays packaging, a size
+  chart / spec / care / ingredients sheet stays a readable document, a close-up
+  stays a close-up, a scale photo keeps its reference object, a digital preview
+  keeps its pages, an in-use / alternate-angle photo keeps its context/angle.
+- **Text is sacred.** Every visible word, number, measurement, and chart value must
+  stay identical. No inventing pages, rows, ingredients, or packaging text.
+- **Supporting fidelity gate.** `SUPPORTING_FIDELITY_PROMPT` + `passesSupportingDeliveryGate`
+  (`src/lib/fidelity.ts`) judge role/content preservation, not hero framing.
+  `full_product_visible` is reinterpreted as "role + content preserved." Thresholds
+  are lower and gain-based (fidelity ≥ 7, authenticity ≥ 6, improved score ≥
+  original + 0.3); there is no 8.0 hero requirement.
+- **Strict on documents.** Severe text/number drift on a chart/spec (fidelity < 6),
+  invented/removed content, collage, or a changed role are blocked. Moderate text
+  drift delivers as a labeled "verify the details before publishing" preview.
+- **Wrong product is not improvable.** A supporting photo classified
+  `unrelated_or_wrong_product` is refused server-side (`/api/generate` returns
+  `wrong_product`) and grade-only in the UI. The listing context (main product
+  `product_summary`) is threaded to the re-score so this stays detectable.
+- **UI + metrics.** Supporting photos show the same Create-improved / Edit buttons,
+  loading, before/after toggle, and download path as the main photo, with
+  supporting-specific copy. Metrics are separate: `supporting_improve_clicked`,
+  `supporting_improve_completed`, `supporting_edit_clicked`, `supporting_edit_completed`.
+
 ### 1. Thumbnail (weight 40)
 
 Question:

@@ -461,7 +461,23 @@ export function AuditWorkspace({
                 )}
               </div>
             )}
-            {previewActive ? (
+            {improveLoading && !previewActive ? (
+              // Generating with no preview yet (fresh improve OR an edit from the
+              // original). Show the SAME prominent countdown as the AI-improve
+              // button, not just the small spinner on the image.
+              <div className="flex flex-wrap items-center gap-3">
+                <PrimaryButton onClick={() => undefined} variant="primary" disabled>
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  {improveCountdown}
+                </PrimaryButton>
+                <span
+                  className="text-[12.5px] text-[var(--color-ink-soft)]"
+                  aria-live="polite"
+                >
+                  {improveStatus}
+                </span>
+              </div>
+            ) : previewActive ? (
               <div className="flex flex-col items-start gap-3">
                 {scoreDeltaLabel && (
                   <div className="rounded-full bg-[var(--color-strong-soft)] px-3 py-1 text-[13px] font-bold text-[var(--color-strong)]">
@@ -673,6 +689,7 @@ export function AuditWorkspace({
         <EditPhotoModal
           imageSrc={editImageSrc}
           loading={improveLoading}
+          mode={isExtra ? "extra" : "main"}
           onClose={() => setEditModalOpen(false)}
           onSubmit={(instruction) => {
             setEditModalOpen(false);

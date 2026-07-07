@@ -125,6 +125,14 @@ export async function POST(req: NextRequest) {
   const mode = form.get("mode") === "extra" ? "extra" : "main";
   const systemPrompt = mode === "extra" ? GENERAL_RUBRIC_PROMPT : undefined;
 
+  // Descriptive main-listing product, threaded only for supporting photos so the
+  // re-score keeps role + relevance and a wrong/unrelated product is detected.
+  const rawContext = form.get("main_product_context");
+  const mainProductContext =
+    mode === "extra" && typeof rawContext === "string"
+      ? rawContext.trim().slice(0, 200)
+      : undefined;
+
   const buffer = Buffer.from(await file.arrayBuffer());
   const originalMimeType = file.type as "image/png" | "image/jpeg";
 
@@ -136,6 +144,7 @@ export async function POST(req: NextRequest) {
       imageBuffer: buffer,
       imageMimeType: originalMimeType,
       systemPrompt,
+      mainProductContext,
     });
   } catch (err) {
     const error =
@@ -155,6 +164,24 @@ export async function POST(req: NextRequest) {
         code: "unsupported_product",
         message:
           "AI improvement is not supported for this product yet because exact product details may change. Your free audit is still ready above.",
+      },
+      { status: 422 }
+    );
+  }
+
+  // A supporting photo that shows a DIFFERENT product than the listing must never
+  // be "improved" — there is nothing to preserve, and hero-ifying it would
+  // fabricate the wrong item. Keep it grade-only with an honest message.
+  if (
+    mode === "extra" &&
+    originalAudit.supporting_photo_role === "unrelated_or_wrong_product"
+  ) {
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "wrong_product",
+        message:
+          "This photo shows a different product than your listing, so it cannot be improved. Upload a photo of the actual product or its packaging, details, or size.",
       },
       { status: 422 }
     );
@@ -193,6 +220,7 @@ export async function POST(req: NextRequest) {
         imageBuffer: baseBuffer,
         imageMimeType: baseMimeType,
         systemPrompt,
+        mainProductContext,
       });
     } catch (err) {
       console.error("[generate] retry base scoring failed:", err);
@@ -210,6 +238,7 @@ export async function POST(req: NextRequest) {
     baseMimeType,
     promptAudit,
     extraConstraints,
+    mainProductContext,
     mode,
     editInstruction,
   });

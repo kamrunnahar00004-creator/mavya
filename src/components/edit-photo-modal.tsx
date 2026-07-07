@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 
 const MAX_EDIT_LEN = 300;
 
-const EXAMPLE_CHIPS = [
+const MAIN_CHIPS = [
   "Cleaner background",
   "Make it brighter",
   "Remove the clutter",
@@ -14,19 +14,38 @@ const EXAMPLE_CHIPS = [
   "Make it look less AI",
 ];
 
+// Supporting chips avoid hero-conversion language; they target readability and
+// presentation of the supporting photo's existing content.
+const SUPPORTING_CHIPS = [
+  "Make it brighter",
+  "Sharper and clearer",
+  "Cleaner background",
+  "Make the text easier to read",
+  "Straighten it",
+];
+
 type Props = {
   imageSrc: string;
   onSubmit: (instruction: string) => Promise<void> | void;
   onClose: () => void;
   loading?: boolean;
+  /** "extra" swaps in supporting-photo example chips. */
+  mode?: "main" | "extra";
 };
 
 /**
  * Plain-language edit modal. No tools, no layers — the seller describes the change
  * in words and Mavya applies it (product-preservation is enforced server-side).
  */
-export function EditPhotoModal({ imageSrc, onSubmit, onClose, loading = false }: Props) {
+export function EditPhotoModal({
+  imageSrc,
+  onSubmit,
+  onClose,
+  loading = false,
+  mode = "main",
+}: Props) {
   const [text, setText] = useState("");
+  const exampleChips = mode === "extra" ? SUPPORTING_CHIPS : MAIN_CHIPS;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -69,7 +88,7 @@ export function EditPhotoModal({ imageSrc, onSubmit, onClose, loading = false }:
         className="mx-auto w-full max-w-[720px] px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
       >
         <div className="mb-2 flex flex-wrap gap-2">
-          {EXAMPLE_CHIPS.map((chip) => (
+          {exampleChips.map((chip) => (
             <button
               key={chip}
               type="button"
