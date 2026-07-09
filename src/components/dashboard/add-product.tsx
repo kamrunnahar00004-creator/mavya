@@ -7,6 +7,7 @@ import { AlertCircle, ImageUp, Loader2, Plus, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { prepareUploadImage } from "@/lib/client-image";
 import { cn } from "@/lib/utils";
+import { AnalyzingState } from "@/components/analyzing-state";
 import type { RubricJson } from "@/lib/rubric";
 
 type Step = "idle" | "scoring" | "saving";
@@ -139,7 +140,19 @@ export function AddProductCard() {
         <span className="text-[13.5px] font-semibold">Add product</span>
       </button>
 
+      {/* While scoring/saving, take over the full screen with the same analyzing
+          experience as the landing, then navigate to the product page. */}
+      {busy &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-50 overflow-auto bg-[var(--color-page)]">
+            <AnalyzingState imageSrc={previewUrl ?? undefined} imageAlt="" />
+          </div>,
+          document.body
+        )}
+
       {open &&
+        !busy &&
         typeof document !== "undefined" &&
         createPortal(
           <div

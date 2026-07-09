@@ -78,7 +78,7 @@ function ThumbnailImage({
       fill
       className={contain ? "object-contain" : "object-cover"}
       sizes="96px"
-      unoptimized={src.startsWith("blob:")}
+      unoptimized={!src.startsWith("/")}
       onError={() => setFailed(true)}
     />
   );

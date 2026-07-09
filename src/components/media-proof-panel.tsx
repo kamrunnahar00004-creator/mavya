@@ -69,7 +69,9 @@ function MediaAsset({
       className={cn(contain ? "object-contain" : "object-cover")}
       sizes="(max-width: 1280px) 540px, 580px"
       priority
-      unoptimized={src.startsWith("blob:")}
+      // Local /public demo assets get optimized; blob URLs and remote signed
+      // (Supabase Storage) URLs are served raw — the optimizer can't fetch them.
+      unoptimized={!src.startsWith("/")}
       onError={() => setFailed(true)}
     />
   );
