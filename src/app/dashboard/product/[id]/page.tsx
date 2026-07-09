@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { ProductAuditView } from "@/components/dashboard/product-audit-view";
+import { ProductWorkspace } from "@/components/dashboard/product-workspace";
 import { rubricToDemoState } from "@/lib/audit-mapping";
 import type { RubricJson } from "@/lib/rubric";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
@@ -58,11 +58,18 @@ export default async function ProductPage({
     .createSignedUrl(photo.storage_path, 3600);
   const imageSrc = signed?.signedUrl ?? "";
 
+  const rubric = audit.rubric as RubricJson;
   const state = rubricToDemoState({
-    rubric: audit.rubric as RubricJson,
+    rubric,
     imageSrc,
     imageAlt: product.name || "Product photo",
   });
 
-  return <ProductAuditView state={state} imageSrc={imageSrc} />;
+  return (
+    <ProductWorkspace
+      state={state}
+      imageSrc={imageSrc}
+      isDigital={rubric.upload_kind === "digital_product"}
+    />
+  );
 }
