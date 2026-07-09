@@ -6,7 +6,13 @@ import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/serve
 
 export const dynamic = "force-dynamic";
 
-type PhotoRow = { storage_path: string; role: string; created_at: string };
+type AuditRow = { overall_score: number | null; created_at: string };
+type PhotoRow = {
+  storage_path: string;
+  role: string;
+  created_at: string;
+  audits: AuditRow[] | null;
+};
 type ProductRow = {
   id: string;
   name: string | null;
@@ -27,7 +33,9 @@ export default async function DashboardPage() {
   const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("products")
-    .select("id, name, position, created_at, photos(storage_path, role, created_at)")
+    .select(
+      "id, name, position, created_at, photos(storage_path, role, created_at, audits(overall_score, created_at))"
+    )
     .order("position", { ascending: true })
     .order("created_at", { ascending: true });
 
@@ -38,16 +46,22 @@ export default async function DashboardPage() {
     products.map(async (p, index) => {
       const main = (p.photos ?? []).find((ph) => ph.role === "main");
       let thumbnailUrl: string | null = null;
+      let score: number | null = null;
       if (main) {
         const { data: signed } = await supabase.storage
           .from("product-photos")
           .createSignedUrl(main.storage_path, 3600);
         thumbnailUrl = signed?.signedUrl ?? null;
+        const latest = [...(main.audits ?? [])].sort((a, b) =>
+          b.created_at.localeCompare(a.created_at)
+        )[0];
+        score = typeof latest?.overall_score === "number" ? latest.overall_score : null;
       }
       return {
         id: p.id,
         name: p.name?.trim() || `Product ${index + 1}`,
         thumbnailUrl,
+        score,
       };
     })
   );
@@ -70,6 +84,7 @@ export default async function DashboardPage() {
               id={c.id}
               name={c.name}
               thumbnailUrl={c.thumbnailUrl}
+              score={c.score}
             />
           ))}
           <AddProductCard />

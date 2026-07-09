@@ -19,14 +19,21 @@ type Props = {
   id: string;
   name: string;
   thumbnailUrl: string | null;
+  score: number | null;
 };
+
+function scoreColors(score: number): { bg: string; fg: string } {
+  if (score >= 8) return { bg: "var(--color-strong-soft)", fg: "var(--color-strong)" };
+  if (score >= 6) return { bg: "var(--color-mid-soft)", fg: "var(--color-mid)" };
+  return { bg: "var(--color-weak-soft)", fg: "var(--color-weak)" };
+}
 
 /**
  * One product tile in the dashboard grid. Thumbnail + name link to the product's
  * rating; a hover kebab menu offers Rename (inline) and Delete (confirmed,
  * danger-styled). All writes run under the user's RLS.
  */
-export function ProductCard({ id, name, thumbnailUrl }: Props) {
+export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -100,12 +107,12 @@ export function ProductCard({ id, name, thumbnailUrl }: Props) {
   }
 
   return (
-    <div className="group relative flex flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[0_1px_2px_rgba(25,23,20,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-soft-strong)]">
+    <div className="group relative flex flex-col rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[0_1px_2px_rgba(25,23,20,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-soft-strong)]">
       <Link
         href={href}
         prefetch
         aria-label={`Open ${name}`}
-        className="relative block aspect-square w-full overflow-hidden bg-[var(--color-page-deep)]"
+        className="relative block aspect-square w-full overflow-hidden rounded-t-[var(--radius-xl)] bg-[var(--color-page-deep)]"
       >
         {thumbnailUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -119,9 +126,20 @@ export function ProductCard({ id, name, thumbnailUrl }: Props) {
             <ImageOff className="h-6 w-6" aria-hidden="true" />
           </span>
         )}
+        {typeof score === "number" && (
+          <span
+            className="absolute left-2 top-2 inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums shadow-[0_1px_3px_rgba(25,23,20,0.15)]"
+            style={{
+              background: scoreColors(score).bg,
+              color: scoreColors(score).fg,
+            }}
+          >
+            {score.toFixed(1)}
+          </span>
+        )}
       </Link>
 
-      <div className="flex items-center gap-1 px-3 py-2.5">
+      <div className="flex items-center gap-1 rounded-b-[var(--radius-xl)] bg-white px-3 py-2.5">
         {renaming ? (
           <input
             ref={inputRef}
@@ -173,7 +191,7 @@ export function ProductCard({ id, name, thumbnailUrl }: Props) {
             className="fixed inset-0 z-10 cursor-default"
             onClick={() => setMenuOpen(false)}
           />
-          <div className="absolute right-2 top-[calc(100%-46px)] z-20 w-40 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-soft-strong)]">
+          <div className="absolute right-2 top-full z-30 mt-1 w-40 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-soft-strong)]">
             <button
               type="button"
               onClick={() => {
