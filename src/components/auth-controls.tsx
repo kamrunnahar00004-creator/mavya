@@ -89,6 +89,12 @@ export function AuthControls() {
       {signedIn ? (
         <>
           <Link
+            href="/feedback"
+            className="hidden rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] sm:inline-flex"
+          >
+            Feedback
+          </Link>
+          <Link
             href="/dashboard"
             prefetch
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
