@@ -90,6 +90,7 @@ export function AuthControls() {
         <>
           <Link
             href="/feedback"
+            prefetch
             className="hidden rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] sm:inline-flex"
           >
             Feedback

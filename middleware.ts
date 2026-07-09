@@ -6,10 +6,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Run on page routes to refresh the session + guard /dashboard. Exclude API
-  // routes (they add their own auth in Phase 4 and don't need a session-refresh
-  // round-trip on every score/generate call) and static assets.
-  matcher: [
-    "/((?!api|_next/static|_next/image|favicon.ico|assets/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
-  ],
+  // Only /dashboard needs the server-side session guard, so run there only. The
+  // browser Supabase client auto-refreshes the session on other pages, and the
+  // header reads auth client-side — so landing/feedback/etc. no longer pay a
+  // Supabase auth round-trip on every navigation.
+  matcher: ["/dashboard/:path*"],
 };

@@ -31,12 +31,14 @@ export default function FeedbackPage() {
     (async () => {
       try {
         const supabase = createSupabaseBrowserClient();
+        // getSession reads the local cookie (no network) — fine for deciding what
+        // UI to show. The insert itself is still enforced by RLS server-side.
         const {
-          data: { user },
-        } = await supabase.auth.getUser();
+          data: { session },
+        } = await supabase.auth.getSession();
         if (!alive) return;
-        setAuthState(user ? "in" : "out");
-        if (user?.email) setEmail(user.email);
+        setAuthState(session?.user ? "in" : "out");
+        if (session?.user?.email) setEmail(session.user.email);
       } catch {
         if (alive) setAuthState("out");
       }
