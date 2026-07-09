@@ -20,7 +20,6 @@ export function AddProductCard() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [step, setStep] = useState<Step>("idle");
@@ -35,16 +34,16 @@ export function AddProductCard() {
       return;
     }
     setError(null);
-    setFile(f);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return URL.createObjectURL(f);
     });
+    // One-step like the landing: uploading the photo runs the rating immediately.
+    void handleCreate(f);
   }
 
   function reset() {
     setName("");
-    setFile(null);
     setPreviewUrl((old) => {
       if (old) URL.revokeObjectURL(old);
       return null;
@@ -60,11 +59,11 @@ export function AddProductCard() {
     setOpen(false);
   }
 
-  async function handleCreate() {
-    if (!file || busy) return;
+  async function handleCreate(f: File) {
+    if (busy) return;
     setError(null);
     try {
-      const prepared = await prepareUploadImage(file);
+      const prepared = await prepareUploadImage(f);
 
       // 1. Score with the existing pipeline. Reject invalid before creating anything.
       setStep("scoring");
@@ -216,23 +215,21 @@ export function AddProductCard() {
                     busy && "pointer-events-none opacity-70"
                   )}
                 >
-                  {previewUrl ? (
+                  {busy ? (
                     <>
-                      <span className="h-28 w-28 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] shadow-[var(--shadow-soft)]">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={previewUrl}
-                          alt=""
-                          className="h-full w-full object-cover"
-                        />
-                      </span>
-                      <span className="truncate text-[13px] font-medium text-[var(--color-ink-muted)]">
-                        {file?.name}
-                      </span>
-                      <span
-                        className="rounded-full border border-[var(--color-border)] bg-white px-5 py-2 text-[13.5px] font-semibold text-[var(--color-ink)] transition-colors group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"
-                      >
-                        Change photo
+                      {previewUrl && (
+                        <span className="h-28 w-28 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] shadow-[var(--shadow-soft)]">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={previewUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        </span>
+                      )}
+                      <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-[var(--color-ink)]">
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        {step === "saving" ? "Saving…" : "Rating photo…"}
                       </span>
                     </>
                   ) : (
@@ -279,20 +276,6 @@ export function AddProductCard() {
                   <span>{error}</span>
                 </div>
               )}
-
-              <button
-                type="button"
-                onClick={handleCreate}
-                disabled={!file || busy}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                {step === "scoring"
-                  ? "Rating photo…"
-                  : step === "saving"
-                  ? "Saving…"
-                  : "Rate & save"}
-              </button>
             </div>
           </div>,
           document.body
