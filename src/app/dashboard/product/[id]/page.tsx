@@ -1,15 +1,27 @@
 import { redirect } from "next/navigation";
-import { ProductWorkspace } from "@/components/dashboard/product-workspace";
-import { rubricToDemoState } from "@/lib/audit-mapping";
+import {
+  ProductWorkspace,
+  type InitialPhoto,
+} from "@/components/dashboard/product-workspace";
 import type { RubricJson } from "@/lib/rubric";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+type AuditRow = { rubric: RubricJson; created_at: string };
+type PhotoRow = {
+  id: string;
+  role: "main" | "supporting";
+  storage_path: string;
+  position: number;
+  created_at: string;
+  audits: AuditRow[] | null;
+};
+
 /**
- * Per-product workspace. Phase 2: loads the saved main photo + its latest audit
- * from the DB and renders the rating read-only. Phase 3 adds improve/edit +
- * supporting photos + persistence here.
+ * Per-product workspace. Loads the saved main + supporting photos with their
+ * latest audits and signed URLs, then renders the interactive workspace
+ * (One-click fix, Edit, supporting strip, checklist) seeded from the DB.
  */
 export default async function ProductPage({
   params,
@@ -29,47 +41,43 @@ export default async function ProductPage({
     .single();
   if (!product) redirect("/dashboard");
 
-  const { data: photo } = await supabase
+  const { data: photoData } = await supabase
     .from("photos")
-    .select("id, storage_path")
+    .select("id, role, storage_path, position, created_at, audits(rubric, created_at)")
     .eq("product_id", product.id)
-    .eq("role", "main")
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .order("role", { ascending: true }) // 'main' < 'supporting'
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true });
 
-  const { data: audit } = photo
-    ? await supabase
-        .from("audits")
-        .select("rubric")
-        .eq("photo_id", photo.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle()
-    : { data: null };
+  const rows = (photoData as PhotoRow[] | null) ?? [];
 
-  if (!photo || !audit) {
-    // Product exists but has no scored photo yet (edge case). Send back.
-    redirect("/dashboard");
+  const initialPhotos: InitialPhoto[] = [];
+  for (const row of rows) {
+    const latest = [...(row.audits ?? [])].sort((a, b) =>
+      b.created_at.localeCompare(a.created_at)
+    )[0];
+    if (!latest?.rubric) continue;
+    const { data: signed } = await supabase.storage
+      .from("product-photos")
+      .createSignedUrl(row.storage_path, 3600);
+    if (!signed?.signedUrl) continue;
+    initialPhotos.push({
+      id: row.id,
+      role: row.role,
+      imageSrc: signed.signedUrl,
+      rubric: latest.rubric,
+    });
   }
 
-  const { data: signed } = await supabase.storage
-    .from("product-photos")
-    .createSignedUrl(photo.storage_path, 3600);
-  const imageSrc = signed?.signedUrl ?? "";
-
-  const rubric = audit.rubric as RubricJson;
-  const state = rubricToDemoState({
-    rubric,
-    imageSrc,
-    imageAlt: product.name || "Product photo",
-  });
+  // No scored main photo yet (edge case) — back to dashboard.
+  if (!initialPhotos.some((p) => p.role === "main")) redirect("/dashboard");
 
   return (
     <ProductWorkspace
-      state={state}
-      imageSrc={imageSrc}
-      isDigital={rubric.upload_kind === "digital_product"}
+      productId={product.id}
+      userId={user.id}
+      productName={product.name}
+      initialPhotos={initialPhotos}
     />
   );
 }

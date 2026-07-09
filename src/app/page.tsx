@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AppHeader } from "@/components/app-header";
 import { UploadWorkspace } from "@/components/upload-workspace";
 import { ProductProofSection } from "@/components/product-proof-section";
@@ -180,6 +182,7 @@ function freePreviewMessage(fidelity: FidelityReport): string {
 }
 
 export default function Page() {
+  const router = useRouter();
   const [mode, setMode] = useState<Mode>("upload");
   const [staticRender, setStaticRender] = useState(false);
   const [initialPreview, setInitialPreview] = useState(false);
@@ -379,6 +382,51 @@ export default function Page() {
           return;
         }
 
+        // Logged-in users: a landing upload becomes a SAVED product opened in the
+        // dashboard (so everything you scan while logged in is kept). Logged-out
+        // users fall through to the session-only demo below.
+        if (kind === "main") {
+          try {
+            const supabase = createSupabaseBrowserClient();
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (user) {
+              const { data: product } = await supabase
+                .from("products")
+                .insert({ user_id: user.id, name: null })
+                .select("id")
+                .single();
+              if (product) {
+                const ext = file.type === "image/png" ? "png" : "jpg";
+                const photoId = makeId();
+                const path = `${user.id}/${product.id}/${photoId}.${ext}`;
+                await supabase.storage
+                  .from("product-photos")
+                  .upload(path, file, { contentType: file.type });
+                await supabase.from("photos").insert({
+                  id: photoId,
+                  product_id: product.id,
+                  role: "main",
+                  storage_path: path,
+                  mime: file.type,
+                });
+                await supabase.from("audits").insert({
+                  photo_id: photoId,
+                  kind: "main",
+                  rubric,
+                  overall_score: rubric.overall_score,
+                });
+                trackClientEvent("audit_completed");
+                router.push(`/dashboard/product/${product.id}`);
+                return;
+              }
+            }
+          } catch {
+            // Not logged in or persist failed → session-only demo below.
+          }
+        }
+
         // Digital Etsy products are valid. They share the audit UI for now, with a
         // detection banner and an honest "experimental" note (the improve pipeline
         // is still the physical one until a digital mockup pass is built).
@@ -440,7 +488,7 @@ export default function Page() {
         }
       }
     },
-    [activeSlotId, removeSlot, hydrateChecklist]
+    [activeSlotId, removeSlot, hydrateChecklist, router]
   );
 
   const handleFirstFile = useCallback(
