@@ -134,10 +134,14 @@ export function AddProductCard() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="flex aspect-square w-full flex-col items-center justify-center gap-2 rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] text-[var(--color-ink-soft)] transition-colors hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)] hover:text-[var(--color-primary)]"
+        className="group flex aspect-square w-full flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] bg-white/40 text-[var(--color-ink-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)] hover:shadow-[var(--shadow-soft)]"
       >
-        <Plus className="h-7 w-7" aria-hidden="true" />
-        <span className="text-[13.5px] font-semibold">Add product</span>
+        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
+          <Plus className="h-6 w-6" aria-hidden="true" />
+        </span>
+        <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)] group-hover:text-[var(--color-primary)]">
+          Add product
+        </span>
       </button>
 
       {/* While scoring/saving, take over the full screen with the same analyzing
