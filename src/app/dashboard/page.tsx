@@ -77,18 +77,33 @@ export default async function DashboardPage() {
           Each product is one Etsy listing. Add a product to rate its listing thumbnail.
         </p>
 
-        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
-          {cards.map((c) => (
-            <ProductCard
-              key={c.id}
-              id={c.id}
-              name={c.name}
-              thumbnailUrl={c.thumbnailUrl}
-              score={c.score}
-            />
-          ))}
-          <AddProductCard />
-        </div>
+        {cards.length === 0 ? (
+          <div className="mx-auto mt-12 flex max-w-[420px] flex-col items-center text-center">
+            <h2 className="text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+              No products yet
+            </h2>
+            <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
+              Add your first Etsy listing to rate its thumbnail and see what buyers
+              see in search.
+            </p>
+            <div className="mt-6 w-full max-w-[240px]">
+              <AddProductCard />
+            </div>
+          </div>
+        ) : (
+          <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
+            {cards.map((c) => (
+              <ProductCard
+                key={c.id}
+                id={c.id}
+                name={c.name}
+                thumbnailUrl={c.thumbnailUrl}
+                score={c.score}
+              />
+            ))}
+            <AddProductCard />
+          </div>
+        )}
       </main>
     </>
   );

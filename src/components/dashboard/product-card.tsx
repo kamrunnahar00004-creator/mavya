@@ -28,6 +28,12 @@ function scoreColors(score: number): { bg: string; fg: string } {
   return { bg: "var(--color-weak-soft)", fg: "var(--color-weak)" };
 }
 
+function scoreBand(score: number): string {
+  if (score >= 8) return "Strong";
+  if (score >= 6) return "Almost there";
+  return "Needs work";
+}
+
 /**
  * One product tile in the dashboard grid. Thumbnail + name link to the product's
  * rating; a hover kebab menu offers Rename (inline) and Delete (confirmed,
@@ -152,13 +158,23 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
             className="min-w-0 flex-1 rounded-[var(--radius-md)] border border-[var(--color-primary)] bg-white px-2 py-1 text-[14px] font-semibold text-[var(--color-ink)] outline-none"
           />
         ) : (
-          <Link
-            href={href}
-            prefetch
-            className="min-w-0 flex-1 truncate text-[14px] font-semibold text-[var(--color-ink)] hover:text-[var(--color-primary)]"
-          >
-            {name}
-          </Link>
+          <div className="min-w-0 flex-1">
+            <Link
+              href={href}
+              prefetch
+              className="block truncate text-[14px] font-semibold text-[var(--color-ink)] hover:text-[var(--color-primary)]"
+            >
+              {name}
+            </Link>
+            {typeof score === "number" && (
+              <span
+                className="text-[11.5px] font-medium"
+                style={{ color: scoreColors(score).fg }}
+              >
+                {scoreBand(score)}
+              </span>
+            )}
+          </div>
         )}
 
         {!renaming && (
@@ -227,27 +243,23 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
             role="dialog"
             aria-modal="true"
             aria-label="Delete product"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,13,11,0.55)] px-4 backdrop-blur-sm"
+            className="dialog-overlay fixed inset-0 z-50 flex items-center justify-center bg-[rgba(20,18,16,0.5)] px-4"
             onClick={() => !busy && setConfirming(false)}
           >
             <div
-              className="w-full max-w-[380px] rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-soft-strong)]"
+              className="dialog-pop w-full max-w-[400px] rounded-[var(--radius-2xl)] bg-white p-7 shadow-[var(--shadow-soft-strong)]"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-start gap-3">
-                <span className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-weak-soft)] text-[var(--color-weak)]">
-                  <Trash2 className="h-5 w-5" aria-hidden="true" />
-                </span>
-                <div>
-                  <h2 className="text-[17px] font-bold text-[var(--color-ink)]">
-                    Delete {name}?
-                  </h2>
-                  <p className="mt-1 text-[13.5px] leading-snug text-[var(--color-ink-muted)]">
-                    This removes the product, its photo, and its rating. This cannot
-                    be undone.
-                  </p>
-                </div>
-              </div>
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-weak-soft)] text-[var(--color-weak)]">
+                <Trash2 className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden="true" />
+              </span>
+              <h2 className="mt-4 text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+                Delete {name}?
+              </h2>
+              <p className="mt-1.5 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
+                This permanently removes the product, its photo, and its rating.
+                This cannot be undone.
+              </p>
 
               {error && (
                 <div
@@ -259,12 +271,12 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
                 </div>
               )}
 
-              <div className="mt-5 flex justify-end gap-2.5">
+              <div className="mt-6 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => setConfirming(false)}
                   disabled={busy}
-                  className="rounded-full px-4 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] disabled:opacity-50"
+                  className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -272,10 +284,10 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
                   type="button"
                   onClick={handleDelete}
                   disabled={busy}
-                  className="inline-flex items-center gap-2 rounded-full bg-[var(--color-weak)] px-5 py-2 text-[14px] font-semibold text-white transition-colors hover:brightness-95 disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-weak)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_12px_rgba(189,64,52,0.28)] transition-all hover:brightness-95 active:translate-y-[1px] disabled:opacity-60"
                 >
                   {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                  Delete
+                  Delete product
                 </button>
               </div>
             </div>

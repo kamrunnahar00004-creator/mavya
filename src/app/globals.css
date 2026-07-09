@@ -134,6 +134,15 @@
     background: var(--color-tint) !important;
   }
 
+  /* Dialog / modal entrance */
+  .dialog-overlay { animation: dialog-overlay-in 160ms ease-out both; }
+  @keyframes dialog-overlay-in { from { opacity: 0; } to { opacity: 1; } }
+  .dialog-pop { animation: dialog-pop 200ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+  @keyframes dialog-pop {
+    0%   { opacity: 0; transform: translateY(8px) scale(0.97); }
+    100% { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
   /* Calm indeterminate progress bar for wait states */
   .progress-track {
     position: relative;
@@ -167,6 +176,7 @@
     transform: none !important;
   }
   .gauge-pop { animation: none; opacity: 1; transform: none; }
+  .dialog-pop, .dialog-overlay { animation: none; opacity: 1; transform: none; }
   .skeleton-shimmer { animation: none; }
   .progress-indeterminate { animation: none; left: 0; width: 100%; opacity: 0.4; }
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
