@@ -1,22 +1,56 @@
 import { redirect } from "next/navigation";
 import { AppHeader } from "@/components/app-header";
-import { getSessionUser } from "@/lib/supabase/server";
+import { AddProductCard } from "@/components/dashboard/add-product";
+import { ProductCard } from "@/components/dashboard/product-card";
+import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 
+type PhotoRow = { storage_path: string; role: string; created_at: string };
+type ProductRow = {
+  id: string;
+  name: string | null;
+  position: number;
+  created_at: string;
+  photos: PhotoRow[] | null;
+};
+
 /**
- * Dashboard shell (Phase 1). Protected by middleware + this server-side guard.
- * Phase 2 fills this with the product grid + Add product; Phase 3 links each card
- * to /dashboard/product/[id].
+ * Dashboard: the seller's products as a grid of cards. Each card shows the main
+ * photo thumbnail (signed URL, private bucket) + name (or "Product N"). Clicking
+ * opens /dashboard/product/[id]. The Add card runs the existing rating pipeline.
  */
 export default async function DashboardPage() {
   const user = await getSessionUser();
   if (!user) redirect("/?auth=login");
 
-  const displayName =
-    (user.user_metadata?.username as string | undefined) ||
-    user.email ||
-    "there";
+  const supabase = await createSupabaseServerClient();
+  const { data } = await supabase
+    .from("products")
+    .select("id, name, position, created_at, photos(storage_path, role, created_at)")
+    .order("position", { ascending: true })
+    .order("created_at", { ascending: true });
+
+  const products = (data as ProductRow[] | null) ?? [];
+
+  // Build a signed thumbnail URL for each product's main photo.
+  const cards = await Promise.all(
+    products.map(async (p, index) => {
+      const main = (p.photos ?? []).find((ph) => ph.role === "main");
+      let thumbnailUrl: string | null = null;
+      if (main) {
+        const { data: signed } = await supabase.storage
+          .from("product-photos")
+          .createSignedUrl(main.storage_path, 3600);
+        thumbnailUrl = signed?.signedUrl ?? null;
+      }
+      return {
+        id: p.id,
+        name: p.name?.trim() || `Product ${index + 1}`,
+        thumbnailUrl,
+      };
+    })
+  );
 
   return (
     <>
@@ -26,16 +60,19 @@ export default async function DashboardPage() {
           Your products
         </h1>
         <p className="mt-1 text-[15px] text-[var(--color-ink-muted)]">
-          Welcome, {displayName}. Your listings will appear here.
+          Each product is one Etsy listing. Add a product to rate its main photo.
         </p>
 
-        <div className="mt-8 rounded-[var(--radius-2xl)] border border-dashed border-[var(--color-border-strong)] bg-white/50 p-10 text-center">
-          <p className="text-[15px] font-semibold text-[var(--color-ink)]">
-            No products yet.
-          </p>
-          <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
-            The product grid and Add product flow land here next (Phase 2).
-          </p>
+        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {cards.map((c) => (
+            <ProductCard
+              key={c.id}
+              id={c.id}
+              name={c.name}
+              thumbnailUrl={c.thumbnailUrl}
+            />
+          ))}
+          <AddProductCard />
         </div>
       </main>
     </>
