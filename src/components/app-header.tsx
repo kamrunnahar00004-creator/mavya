@@ -2,6 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AuthControls } from "./auth-controls";
 
 type Props = {
   showNewAudit?: boolean;
@@ -26,19 +27,22 @@ export function AppHeader({ showNewAudit = false, onNewAudit }: Props) {
             Mavya
           </span>
         </div>
-        {showNewAudit && (
-          <button
-            type="button"
-            onClick={onNewAudit}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)]",
-              "transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
-            )}
-          >
-            <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-            New audit
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {showNewAudit && (
+            <button
+              type="button"
+              onClick={onNewAudit}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)]",
+                "transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
+              )}
+            >
+              <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
+              New audit
+            </button>
+          )}
+          <AuthControls />
+        </div>
       </div>
     </header>
   );

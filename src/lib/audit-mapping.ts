@@ -52,7 +52,9 @@ function priorityLabelForScore(score: number): string {
 }
 
 function nextStepsLabelForScore(score: number): string {
-  if (score >= 8) return "Add next";
+  // Strong main photos now praise what works (the Supporting Photo Checklist owns
+  // "add more photos"), so the heading mirrors the strong supporting label.
+  if (score >= 8) return "What works well";
   if (score >= 6) return "Next steps";
   return "Also improve";
 }

@@ -4,10 +4,7 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
-  Download,
   Loader2,
-  Lock,
-  RefreshCw,
   Sparkles,
   WandSparkles,
   Wrench,
@@ -105,13 +102,9 @@ export function AuditWorkspace({
   improveLoading = false,
   improveStartedAt,
   improveError,
-  improvedDownloadUrl,
   freePreview = false,
   freePreviewMessage,
   keepNote,
-  onCheckout,
-  checkoutLoading = false,
-  checkoutError,
   onEdit,
   onRevert,
   checklistLoading = false,
@@ -172,6 +165,9 @@ export function AuditWorkspace({
       ? `${state.overallScore.toFixed(1)} -> ${activeAudit.overallScore.toFixed(1)}`
       : "";
   const previewBelowPublishReady = previewActive && activeAudit.overallScore < 8;
+  // On the AI-improved view: a strong (8+) preview greys out the One-click fix
+  // ("Preview generated"); a sub-8 preview keeps it active to regenerate.
+  const oneClickFixDisabled = previewActive && activeAudit.overallScore >= 8;
 
   useEffect(() => {
     if (!canShowImprovement || !improvedSrc) return;
@@ -494,19 +490,10 @@ export function AuditWorkspace({
                     {keepNote}
                   </div>
                 )}
-                {checkoutError && (
-                  <div
-                    role="alert"
-                    className="flex items-start gap-2 rounded-[var(--radius-lg)] border border-[var(--color-weak)] bg-[var(--color-weak-soft)] px-3 py-2 text-[13px] text-[var(--color-ink)]"
-                  >
-                    <AlertCircle
-                      className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-weak)]"
-                      strokeWidth={2}
-                      aria-hidden="true"
-                    />
-                    <span>{checkoutError}</span>
-                  </div>
-                )}
+                {/* One-click fix on the AI-improved view. Below 8 it stays active
+                    and regenerates from the current improved image; at 8+ it is
+                    greyed out ("Preview generated"). No paywall/download here —
+                    downloads are deferred to the later monetization gate. */}
                 {improveLoading ? (
                   <div className="flex flex-wrap items-center gap-3">
                     <PrimaryButton
@@ -527,52 +514,15 @@ export function AuditWorkspace({
                       {improveStatus}
                     </span>
                   </div>
-                ) : onCheckout && improvedDownloadUrl ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <PrimaryButton
-                      onClick={() => onCheckout()}
-                      variant="primary"
-                      disabled={checkoutLoading}
-                    >
-                      {checkoutLoading ? (
-                        <Loader2
-                          className="h-4 w-4 animate-spin"
-                          aria-hidden="true"
-                        />
-                      ) : (
-                        <Lock className="h-4 w-4" aria-hidden="true" />
-                      )}
-                      {checkoutLoading
-                        ? "Opening checkout..."
-                        : "Download photo, $4.99"}
-                    </PrimaryButton>
-                    <span className="text-[12.5px] text-[var(--color-ink-soft)]">
-                      Secure checkout opens before download.
-                    </span>
-                  </div>
-                ) : improvedDownloadUrl ? (
-                  <a
-                    href={improvedDownloadUrl}
-                    download="mavya-improved.png"
-                    className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] hover:shadow-[0_6px_16px_rgba(216,91,44,0.36)] active:translate-y-[1px]"
+                ) : (
+                  <PrimaryButton
+                    onClick={() => onRetryImprove?.()}
+                    variant={oneClickFixDisabled ? "neutral" : "primary"}
+                    disabled={oneClickFixDisabled || !onRetryImprove}
                   >
-                    <Download className="h-4 w-4" aria-hidden="true" />
-                    Download photo
-                  </a>
-                ) : null}
-                {onRetryImprove &&
-                  (previewBelowPublishReady || freePreview) &&
-                  !improveLoading && (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={onRetryImprove}
-                      className="inline-flex items-center gap-2 text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <RefreshCw className="h-3.5 w-3.5" aria-hidden="true" />
-                      Generate another version
-                    </button>
-                  </div>
+                    <WandSparkles className="h-4 w-4" aria-hidden="true" />
+                    {oneClickFixDisabled ? "Preview generated" : "One-click fix"}
+                  </PrimaryButton>
                 )}
                 {(onEdit || onRevert) && !improveLoading && (
                   <div className="flex flex-wrap items-center gap-3">
@@ -643,9 +593,7 @@ export function AuditWorkspace({
                           ? improveCountdown
                           : generatedPreviewExists
                           ? "Preview generated"
-                          : isExtra
-                          ? "Create improved supporting photo"
-                          : state.ctaLabel}
+                          : "One-click fix"}
                       </PrimaryButton>
                       {onEdit && !improveLoading && (
                         <button

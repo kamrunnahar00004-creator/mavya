@@ -129,31 +129,31 @@ export const WEAK_DEMO: DemoState = {
     overallScore: 9.0,
     verdict: "Strong main photo",
     priorityLabel: "Keep This Photo",
-    priorityAction: "Keep this. Add separate packaging photo.",
+    priorityAction: "Keep this as your main photo.",
     priorityObservation:
-      "The candle now reads clearly at Etsy thumbnail size, and the clean backdrop keeps attention on the jar. Keep this as the hero image, then use another photo to confirm the packaging details.",
+      "The candle now reads clearly at Etsy thumbnail size, and the clean backdrop keeps attention on the jar. This works well as the main listing photo.",
     pillars: [
       { key: "thumbnail", label: "Thumbnail", value: 9 },
       { key: "lighting", label: "Lighting", value: 9 },
       { key: "background", label: "Background", value: 9 },
       { key: "click_appeal", label: "Click Appeal", value: 9 },
     ],
-    nextStepsLabel: "Add next",
+    nextStepsLabel: "What works well",
     nextSteps: [
       {
         observation:
-          "The hero photo is strong, but buyers may still want to confirm the physical packaging. Add a separate packaging photo with the label fully readable before publishing.",
-        action: "Add separate packaging photo.",
+          "The candle jar and FIRE WOOD label read clearly at search-thumbnail size, so buyers instantly understand the product and are drawn to click.",
+        action: "Clear candle thumbnail.",
       },
       {
         observation:
-          "The lit wooden wick helps sell the candle mood, but its material detail is small in the hero image. Add a separate closeup so buyers can inspect the wick and wax surface.",
-        action: "Add separate wick closeup photo.",
+          "The soft, even lighting shows the wax color and wooden wick accurately, so buyers trust the candle will look like the photo.",
+        action: "Accurate, even lighting.",
       },
       {
         observation:
-          "The clean hero image does not show the candle's physical scale. Add a separate size-reference photo so buyers understand the jar dimensions before ordering.",
-        action: "Add separate scale photo.",
+          "The clean, simple backdrop separates the jar from the background and makes the listing feel polished and trustworthy.",
+        action: "Clean, trustworthy background.",
       },
     ],
     thumbnailHeadline: "This is what buyers see in Etsy search.",
@@ -171,31 +171,31 @@ export const STRONG_DEMO: DemoState = {
   overallScore: 8.2,
   verdict: "Strong main photo",
   priorityLabel: "Keep This Photo",
-  priorityAction: "Keep this. Add separate product-only photo.",
+  priorityAction: "Keep this as your main photo.",
   priorityObservation:
-    "The earrings read clearly on the model and the lighting feels polished. Keep this as the hero image, then add a separate product-only photo so buyers can inspect exactly what is included.",
+    "The earrings read clearly on the model and the lighting feels polished. This works well as the main listing photo and search thumbnail.",
   pillars: [
     { key: "thumbnail", label: "Thumbnail", value: 8 },
     { key: "lighting", label: "Lighting", value: 9 },
     { key: "background", label: "Background", value: 9 },
     { key: "click_appeal", label: "Click Appeal", value: 7 },
   ],
-  nextStepsLabel: "Add next",
+  nextStepsLabel: "What works well",
   nextSteps: [
     {
       observation:
-        "The styled hero image shows several earrings, so buyers may not know which pieces are included. Add a separate product-only photo that shows the exact set on a clean surface.",
-      action: "Add separate included-pieces photo.",
+        "The initial stud earrings read clearly on the model, so buyers instantly understand the product at search-thumbnail size. That clarity earns the click.",
+      action: "Clear product thumbnail.",
     },
     {
       observation:
-        "The initial stud is visible, but its small design is difficult to inspect at search size. Add a separate macro photo so buyers can see the letter shape and finish clearly.",
-      action: "Add separate macro detail photo.",
+        "The soft, even lighting shows the metal finish and letter shape accurately, so buyers trust the earrings will match what arrives.",
+      action: "Accurate, flattering lighting.",
     },
     {
       observation:
-        "The model photo gives a general sense of scale but not an exact measurement. Add a separate measurement photo so buyers can judge the stud size before ordering.",
-      action: "Add separate measurement photo.",
+        "The clean, uncluttered background keeps all attention on the earrings and makes the listing feel professional and trustworthy.",
+      action: "Clean, trustworthy background.",
     },
   ],
   ctaLabel: "Score another photo",

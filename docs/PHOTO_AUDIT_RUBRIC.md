@@ -512,22 +512,15 @@ priority_action: This main photo is working.
 
 `priority_explanation`: 2-3 sentences explaining WHY this photo works (thumbnail clarity, lighting, background, buyer trust) and that it is worth keeping as the main photo.
 
-For 8+ photos, all three `next_steps` are SEPARATE complementary listing photos to ADD — never edits to this photo:
+For 8+ photos, all three `next_steps` PRAISE this photo and explain what works and why it works as the main listing / search thumbnail (updated 2026-07-08). They are NOT edits and NOT recommendations to add another photo — the Supporting Photo Checklist owns "what other photos to add", so repeating it here is redundant and forbidden.
 
-- The `action` must include "separate", "additional", or "second" and name a distinct type, e.g. "Add a separate size-reference photo."
-- The `observation` is 2-3 concrete sentences: first affirm keeping the current main photo ("Keep this main photo as the search thumbnail."), then explain exactly how to take the separate photo — placement, props, light, angle — as actionable as a weak-photo fix.
-- Pick three different types from scale / detail-macro / in-context / packaging. Never imply the current photo is missing something or needs editing.
+- The `action` is a short POSITIVE heading (max 12 words) naming one specific strength, e.g. "Clear product thumbnail.", "Accurate, even lighting.", "Clean, trustworthy background."
+- The `observation` is 2-3 concrete sentences explaining WHY that strength helps the listing (buyer comprehension, clicks, trust) at search-thumbnail size. Name the real product noun.
+- Each of the three covers a DIFFERENT strength dimension (thumbnail clarity, lighting, background/separation, product detail, trust). No two praise the same dimension.
+- Never imply the photo is missing something, and never mention taking or adding another photo.
+- UI label for strong main next_steps = `What works well` (mirrors strong supporting).
 
-Use the category menu and keep descriptions concrete and product-specific:
-
-- crochet_plush: in-hand/scale photo; texture/stitching close-up; packaging/gift photo
-- jewelry: worn/in-hand scale; macro detail; packaging/gift photo
-- candles: label/detail close-up; lit mood/context; size or packaging photo
-- soap: texture/detail; in-hand/scale; packaging/use-context photo
-- mugs: full design/handle angle; in-hand/scale; packaging/gift photo
-
-Do not invent flaws just because the schema asks for `next_steps`. A high-scoring photo should feel affirmed.
-Every support-shot action must name it as an added or separate photo. Never let it sound like an edit to the scored hero photo.
+Do not invent flaws just because the schema asks for `next_steps`. A high-scoring photo should feel affirmed. The category supporting-photo menu is used only for a mid-band (6-7.9) remaining support-shot suggestion, never for strong photos.
 
 ### Anti-Duplication Rule (all bands)
 
