@@ -51,23 +51,29 @@ export default async function ProductPage({
 
   const rows = (photoData as PhotoRow[] | null) ?? [];
 
-  const initialPhotos: InitialPhoto[] = [];
-  for (const row of rows) {
-    const latest = [...(row.audits ?? [])].sort((a, b) =>
-      b.created_at.localeCompare(a.created_at)
-    )[0];
-    if (!latest?.rubric) continue;
-    const { data: signed } = await supabase.storage
-      .from("product-photos")
-      .createSignedUrl(row.storage_path, 3600);
-    if (!signed?.signedUrl) continue;
-    initialPhotos.push({
-      id: row.id,
-      role: row.role,
-      imageSrc: signed.signedUrl,
-      rubric: latest.rubric,
-    });
-  }
+  // Sign all photo URLs in parallel (was sequential — a lag source with several
+  // supporting photos).
+  const signed = await Promise.all(
+    rows.map(async (row) => {
+      const latest = [...(row.audits ?? [])].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at)
+      )[0];
+      if (!latest?.rubric) return null;
+      const { data } = await supabase.storage
+        .from("product-photos")
+        .createSignedUrl(row.storage_path, 3600);
+      if (!data?.signedUrl) return null;
+      return {
+        id: row.id,
+        role: row.role,
+        imageSrc: data.signedUrl,
+        rubric: latest.rubric,
+      } satisfies InitialPhoto;
+    })
+  );
+  const initialPhotos: InitialPhoto[] = signed.filter(
+    (p): p is InitialPhoto => p !== null
+  );
 
   // No scored main photo yet (edge case) — back to dashboard.
   if (!initialPhotos.some((p) => p.role === "main")) redirect("/dashboard");
