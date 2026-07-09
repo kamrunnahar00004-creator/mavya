@@ -122,6 +122,9 @@ export function AddProductCard() {
       });
       if (aErr) throw new Error(aErr.message);
 
+      // Invalidate the dashboard's Router Cache so the new product shows when the
+      // user navigates back, then open the product.
+      router.refresh();
       router.push(`/dashboard/product/${product.id}`);
     } catch (err) {
       setStep("idle");
