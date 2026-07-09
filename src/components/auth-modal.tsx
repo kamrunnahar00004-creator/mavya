@@ -170,7 +170,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                autoComplete="username"
+                autoComplete="off"
                 className={inputClass}
                 placeholder="yourshopname"
               />
