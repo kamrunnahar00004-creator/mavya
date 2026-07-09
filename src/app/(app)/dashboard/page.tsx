@@ -1,5 +1,4 @@
 import { redirect } from "next/navigation";
-import { AppHeader } from "@/components/app-header";
 import { AddProductCard } from "@/components/dashboard/add-product";
 import { ProductCard } from "@/components/dashboard/product-card";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
@@ -67,9 +66,7 @@ export default async function DashboardPage() {
   );
 
   return (
-    <>
-      <AppHeader />
-      <main className="mx-auto max-w-[1200px] px-6 py-10">
+    <main className="mx-auto max-w-[1200px] px-6 py-10">
         <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
           Your products
         </h1>
@@ -104,7 +101,6 @@ export default async function DashboardPage() {
             <AddProductCard />
           </div>
         )}
-      </main>
-    </>
+    </main>
   );
 }

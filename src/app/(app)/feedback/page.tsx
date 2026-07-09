@@ -3,7 +3,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { AlertCircle, CheckCircle2, Loader2 } from "lucide-react";
-import { AppHeader } from "@/components/app-header";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
 
@@ -78,9 +77,7 @@ export default function FeedbackPage() {
   }
 
   return (
-    <>
-      <AppHeader />
-      <main className="mx-auto max-w-[560px] px-6 py-12">
+    <main className="mx-auto max-w-[560px] px-6 py-12">
         <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
           Send feedback
         </h1>
@@ -198,7 +195,6 @@ export default function FeedbackPage() {
             </button>
           </form>
         )}
-      </main>
-    </>
+    </main>
   );
 }

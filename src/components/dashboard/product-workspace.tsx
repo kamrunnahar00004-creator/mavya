@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { AppHeader } from "@/components/app-header";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import type { SlotView } from "@/components/photo-slot-strip";
 import {
@@ -501,12 +500,9 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
 
   if (!active) {
     return (
-      <>
-        <AppHeader />
-        <main className="mx-auto max-w-[1200px] px-6 py-10 text-[15px] text-[var(--color-ink-muted)]">
-          This product has no photo yet.
-        </main>
-      </>
+      <main className="mx-auto max-w-[1200px] px-6 py-10 text-[15px] text-[var(--color-ink-muted)]">
+        This product has no photo yet.
+      </main>
     );
   }
 
@@ -522,7 +518,6 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
 
   return (
     <>
-      <AppHeader />
       <input
         ref={extraInputRef}
         type="file"
