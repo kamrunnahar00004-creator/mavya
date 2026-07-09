@@ -151,7 +151,7 @@ export function AddProductCard() {
             onClick={close}
           >
             <div
-              className="relative w-full max-w-[440px] rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-soft-strong)]"
+              className="relative w-full max-w-[480px] rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-7 shadow-[var(--shadow-soft-strong)] sm:p-8"
               onClick={(e) => e.stopPropagation()}
             >
               <button
@@ -167,11 +167,11 @@ export function AddProductCard() {
               <h2 className="text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
                 Add a product
               </h2>
-              <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
+              <p className="mt-1.5 text-[14px] text-[var(--color-ink-muted)]">
                 Name it and upload the listing thumbnail.
               </p>
 
-              <label className="mt-5 block">
+              <label className="mt-6 block">
                 <span className="mb-1.5 block text-[12.5px] font-semibold text-[var(--color-ink-muted)]">
                   Name (optional)
                 </span>
@@ -185,7 +185,7 @@ export function AddProductCard() {
                 />
               </label>
 
-              <div className="mt-4">
+              <div className="mt-5">
                 <div
                   role="button"
                   tabIndex={0}
@@ -210,7 +210,7 @@ export function AddProductCard() {
                     if (f) chooseFile(f);
                   }}
                   className={cn(
-                    "group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-5 py-6 text-center shadow-[var(--shadow-soft)] transition-all",
+                    "group flex min-h-[232px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-6 py-8 text-center shadow-[var(--shadow-soft)] transition-all",
                     "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
                     dragActive && "dropzone-active",
                     busy && "pointer-events-none opacity-70"
@@ -218,7 +218,7 @@ export function AddProductCard() {
                 >
                   {previewUrl ? (
                     <>
-                      <span className="h-24 w-24 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]">
+                      <span className="h-28 w-28 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] shadow-[var(--shadow-soft)]">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={previewUrl}
@@ -226,22 +226,30 @@ export function AddProductCard() {
                           className="h-full w-full object-cover"
                         />
                       </span>
-                      <span className="text-[13px] font-semibold text-[var(--color-primary)]">
-                        Change thumbnail
+                      <span className="truncate text-[13px] font-medium text-[var(--color-ink-muted)]">
+                        {file?.name}
+                      </span>
+                      <span
+                        className="rounded-full border border-[var(--color-border)] bg-white px-5 py-2 text-[13.5px] font-semibold text-[var(--color-ink)] transition-colors group-hover:border-[var(--color-primary)] group-hover:text-[var(--color-primary)]"
+                      >
+                        Change photo
                       </span>
                     </>
                   ) : (
                     <>
-                      <span className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+                      <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
                         <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
                       </span>
                       <span>
                         <span className="block text-[16px] font-semibold text-[var(--color-ink)]">
                           Drop your listing thumbnail
                         </span>
-                        <span className="mt-0.5 block text-[13px] text-[var(--color-ink-muted)]">
+                        <span className="mt-1 block text-[13px] text-[var(--color-ink-muted)]">
                           JPG or PNG
                         </span>
+                      </span>
+                      <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+                        Upload photo
                       </span>
                     </>
                   )}
@@ -276,7 +284,7 @@ export function AddProductCard() {
                 type="button"
                 onClick={handleCreate}
                 disabled={!file || busy}
-                className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                 {step === "scoring"
