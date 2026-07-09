@@ -2,6 +2,7 @@
 
 import { useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   AlertCircle,
@@ -100,8 +101,9 @@ export function ProductCard({ id, name, thumbnailUrl }: Props) {
 
   return (
     <div className="group relative flex flex-col overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[0_1px_2px_rgba(25,23,20,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-soft-strong)]">
-      <a
+      <Link
         href={href}
+        prefetch
         aria-label={`Open ${name}`}
         className="relative block aspect-square w-full overflow-hidden bg-[var(--color-page-deep)]"
       >
@@ -117,7 +119,7 @@ export function ProductCard({ id, name, thumbnailUrl }: Props) {
             <ImageOff className="h-6 w-6" aria-hidden="true" />
           </span>
         )}
-      </a>
+      </Link>
 
       <div className="flex items-center gap-1 px-3 py-2.5">
         {renaming ? (
@@ -132,12 +134,13 @@ export function ProductCard({ id, name, thumbnailUrl }: Props) {
             className="min-w-0 flex-1 rounded-[var(--radius-md)] border border-[var(--color-primary)] bg-white px-2 py-1 text-[14px] font-semibold text-[var(--color-ink)] outline-none"
           />
         ) : (
-          <a
+          <Link
             href={href}
+            prefetch
             className="min-w-0 flex-1 truncate text-[14px] font-semibold text-[var(--color-ink)] hover:text-[var(--color-primary)]"
           >
             {name}
-          </a>
+          </Link>
         )}
 
         {!renaming && (

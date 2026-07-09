@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { LayoutGrid, LogOut } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -76,17 +77,25 @@ export function AuthControls() {
     router.refresh();
   }, [router]);
 
+  // While the auth state is still unknown, render an empty slot instead of the
+  // logged-out buttons — otherwise the orange "Sign up" flashes on every
+  // authenticated page load before getUser() resolves.
+  if (signedIn === null) {
+    return <div className="h-9" aria-hidden="true" />;
+  }
+
   return (
     <div className="flex items-center gap-2">
       {signedIn ? (
         <>
-          <a
+          <Link
             href="/dashboard"
+            prefetch
             className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
           >
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Dashboard
-          </a>
+          </Link>
           <button
             type="button"
             onClick={handleLogout}
