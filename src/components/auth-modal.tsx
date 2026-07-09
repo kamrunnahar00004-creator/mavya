@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -110,7 +111,11 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
     }
   }
 
-  return (
+  // The header's backdrop-filter makes it a containing block for position:fixed
+  // descendants, so portal the overlay to <body> to cover the full viewport.
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       role="dialog"
       aria-modal="true"
@@ -258,7 +263,8 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
           </button>
         </p>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
