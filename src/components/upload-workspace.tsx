@@ -91,7 +91,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
 
           <div className="text-center">
             <div className="text-[17px] font-semibold text-[var(--color-ink)]">
-              Drop your first listing photo
+              Drop your listing thumbnail
             </div>
             <div className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
               JPG or PNG

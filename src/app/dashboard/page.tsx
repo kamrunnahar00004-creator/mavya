@@ -60,7 +60,7 @@ export default async function DashboardPage() {
           Your products
         </h1>
         <p className="mt-1 text-[15px] text-[var(--color-ink-muted)]">
-          Each product is one Etsy listing. Add a product to rate its main photo.
+          Each product is one Etsy listing. Add a product to rate its listing thumbnail.
         </p>
 
         <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">

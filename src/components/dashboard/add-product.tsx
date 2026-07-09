@@ -1,11 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ImageUp, Loader2, Plus, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { prepareUploadImage } from "@/lib/client-image";
+import { cn } from "@/lib/utils";
 import type { RubricJson } from "@/lib/rubric";
 
 type Step = "idle" | "scoring" | "saving";
@@ -20,15 +21,35 @@ export function AddProductCard() {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const busy = step !== "idle";
 
+  function chooseFile(f: File) {
+    if (!f.type.startsWith("image/")) {
+      setError("Choose an image file (JPG or PNG).");
+      return;
+    }
+    setError(null);
+    setFile(f);
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return URL.createObjectURL(f);
+    });
+  }
+
   function reset() {
     setName("");
     setFile(null);
+    setPreviewUrl((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+    setDragActive(false);
     setStep("idle");
     setError(null);
   }
@@ -143,11 +164,11 @@ export function AddProductCard() {
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
 
-              <h2 className="text-[20px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+              <h2 className="text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
                 Add a product
               </h2>
-              <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
-                Name it and upload the main listing photo. We rate it right away.
+              <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
+                Name it and upload the listing thumbnail.
               </p>
 
               <label className="mt-5 block">
@@ -165,20 +186,66 @@ export function AddProductCard() {
               </label>
 
               <div className="mt-4">
-                <span className="mb-1.5 block text-[12.5px] font-semibold text-[var(--color-ink-muted)]">
-                  Main photo
-                </span>
-                <button
-                  type="button"
-                  onClick={() => inputRef.current?.click()}
-                  disabled={busy}
-                  className="flex w-full items-center gap-3 rounded-[var(--radius-lg)] border border-dashed border-[var(--color-border-strong)] px-3.5 py-3 text-left text-[14px] text-[var(--color-ink-muted)] hover:border-[var(--color-primary)] disabled:opacity-50"
+                <div
+                  role="button"
+                  tabIndex={0}
+                  aria-label="Upload listing thumbnail"
+                  onClick={() => !busy && inputRef.current?.click()}
+                  onKeyDown={(e) => {
+                    if ((e.key === "Enter" || e.key === " ") && !busy) {
+                      e.preventDefault();
+                      inputRef.current?.click();
+                    }
+                  }}
+                  onDragOver={(e: DragEvent<HTMLDivElement>) => {
+                    e.preventDefault();
+                    if (!busy) setDragActive(true);
+                  }}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={(e: DragEvent<HTMLDivElement>) => {
+                    e.preventDefault();
+                    setDragActive(false);
+                    if (busy) return;
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) chooseFile(f);
+                  }}
+                  className={cn(
+                    "group flex cursor-pointer flex-col items-center justify-center gap-3 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-5 py-6 text-center shadow-[var(--shadow-soft)] transition-all",
+                    "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
+                    dragActive && "dropzone-active",
+                    busy && "pointer-events-none opacity-70"
+                  )}
                 >
-                  <ImageUp className="h-5 w-5 flex-shrink-0" aria-hidden="true" />
-                  <span className="truncate">
-                    {file ? file.name : "Choose a JPG or PNG"}
-                  </span>
-                </button>
+                  {previewUrl ? (
+                    <>
+                      <span className="h-24 w-24 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={previewUrl}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      </span>
+                      <span className="text-[13px] font-semibold text-[var(--color-primary)]">
+                        Change thumbnail
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+                        <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
+                      </span>
+                      <span>
+                        <span className="block text-[16px] font-semibold text-[var(--color-ink)]">
+                          Drop your listing thumbnail
+                        </span>
+                        <span className="mt-0.5 block text-[13px] text-[var(--color-ink-muted)]">
+                          JPG or PNG
+                        </span>
+                      </span>
+                    </>
+                  )}
+                </div>
                 <input
                   ref={inputRef}
                   type="file"
@@ -186,7 +253,7 @@ export function AddProductCard() {
                   hidden
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) setFile(f);
+                    if (f) chooseFile(f);
                     e.target.value = "";
                   }}
                 />
