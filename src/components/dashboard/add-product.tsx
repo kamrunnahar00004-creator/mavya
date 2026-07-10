@@ -141,7 +141,7 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
           className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_14px_rgba(232,107,57,0.32)] transition-all hover:bg-[var(--color-primary-hover)] hover:shadow-[0_8px_20px_rgba(216,91,44,0.36)] active:translate-y-[1px]"
         >
           <Plus className="h-5 w-5" aria-hidden="true" />
-          Add your first product
+          Rate my thumbnail
         </button>
       ) : (
         <button

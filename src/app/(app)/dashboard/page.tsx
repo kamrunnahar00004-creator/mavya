@@ -73,10 +73,10 @@ export default async function DashboardPage() {
           <ImageUp className="h-11 w-11" strokeWidth={1.5} aria-hidden="true" />
         </span>
         <h1 className="mt-7 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
-          Rate your first listing
+          Rate your first product thumbnail
         </h1>
         <p className="mt-3 max-w-[400px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-          Upload your main photo and see its score at a glance.
+          Get an instant score, then improve it in one click.
         </p>
         <div className="mt-7">
           <AddProductCard variant="hero" />
