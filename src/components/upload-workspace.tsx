@@ -28,23 +28,21 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
     <main className="flex min-h-[calc(78dvh-64px)] flex-col items-center justify-start px-4 pb-7 pt-7 sm:min-h-[calc(82dvh-64px)] sm:px-6 sm:pb-10 sm:pt-[5vh]">
       <div className="mx-auto max-w-[1040px] text-center">
         <h1 className="font-display text-[28px] sm:text-[36px] md:text-[42px] font-bold tracking-[-0.02em] leading-[1.1] text-[var(--color-ink)]">
-          Rate your{" "}
-          <span
-            className="italic"
-            style={{ color: "var(--color-primary)", marginRight: "0.08em" }}
-          >
-            Etsy
-          </span>{" "}
-          listing photo
+          Your{" "}
+          <span style={{ color: "var(--color-primary)" }}>Etsy</span> listing
+          thumbnail decides how much you sell
         </h1>
         <p className="mx-auto mt-3 text-[17px] sm:mt-4 sm:text-[22px] font-medium leading-snug text-[var(--color-ink)]">
-          Find out why it’s not getting clicks.{" "}
+          Upload your listing thumbnail and get an instant, honest audit.
+          <br className="hidden sm:block" /> See exactly what’s costing you
+          clicks. Fix it in{" "}
           <span
             className="font-extrabold"
             style={{ color: "var(--color-primary)" }}
           >
-            Free.
+            one click
           </span>
+          .
         </p>
 
         {errorBanner && (
