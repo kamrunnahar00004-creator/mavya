@@ -32,14 +32,13 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
 
   return (
     <main className="px-6 py-12 sm:py-16 lg:py-[7vh]">
-      <div className="mx-auto grid max-w-[1120px] grid-cols-1 items-center gap-10 lg:grid-cols-[1fr_1fr] lg:gap-16">
+      <div className="mx-auto grid max-w-[1120px] grid-cols-1 items-center gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-14">
         {/* LEFT — message */}
         <div className="text-center lg:text-left">
-          <span className="eyebrow">Etsy thumbnail audit</span>
-          <h1 className="mt-3.5 font-display text-[40px] font-bold leading-[1.05] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[52px] lg:text-[56px]">
-            Your{" "}
-            <span style={{ color: "var(--color-primary)" }}>Etsy</span> thumbnail
-            decides who clicks
+          <h1 className="font-display text-[38px] font-bold leading-[1.06] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[46px] lg:text-[50px]">
+            Find out why your{" "}
+            <span style={{ color: "var(--color-primary)" }}>Etsy</span> photo
+            isn&rsquo;t getting clicks
           </h1>
           <p className="mx-auto mt-5 max-w-[460px] text-[17px] leading-relaxed text-[var(--color-ink-muted)] sm:text-[19px] lg:mx-0">
             Upload your thumbnail for an instant, honest audit.
