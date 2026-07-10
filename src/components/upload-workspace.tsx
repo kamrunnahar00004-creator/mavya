@@ -36,9 +36,9 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
         {/* LEFT — message */}
         <div className="text-center lg:text-left">
           <h1 className="font-display text-[38px] font-bold leading-[1.06] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[46px] lg:text-[50px]">
-            Find out why your{" "}
-            <span style={{ color: "var(--color-primary)" }}>Etsy</span> photo
-            isn&rsquo;t getting clicks
+            Your{" "}
+            <span style={{ color: "var(--color-primary)" }}>Etsy</span> thumbnail
+            decides how much you sell
           </h1>
           <p className="mx-auto mt-5 max-w-[460px] text-[17px] leading-relaxed text-[var(--color-ink-muted)] sm:text-[19px] lg:mx-0">
             Upload your thumbnail for an instant, honest audit.
