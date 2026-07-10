@@ -17,7 +17,7 @@ type Step = "idle" | "scoring" | "saving";
  * EXISTING scoring pipeline (/api/score), then persists product + main photo
  * (Storage) + audit under the user's RLS, and opens the new product.
  */
-export function AddProductCard() {
+export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -134,18 +134,29 @@ export function AddProductCard() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="group flex aspect-square w-full flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] bg-white/40 text-[var(--color-ink-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)] hover:shadow-[var(--shadow-soft)]"
-      >
-        <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
-          <Plus className="h-6 w-6" aria-hidden="true" />
-        </span>
-        <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)] group-hover:text-[var(--color-primary)]">
-          Add product
-        </span>
-      </button>
+      {variant === "hero" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_14px_rgba(232,107,57,0.32)] transition-all hover:bg-[var(--color-primary-hover)] hover:shadow-[0_8px_20px_rgba(216,91,44,0.36)] active:translate-y-[1px]"
+        >
+          <Plus className="h-5 w-5" aria-hidden="true" />
+          Add your first product
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="group flex aspect-square w-full flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] bg-white/40 text-[var(--color-ink-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)] hover:shadow-[var(--shadow-soft)]"
+        >
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
+            <Plus className="h-6 w-6" aria-hidden="true" />
+          </span>
+          <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)] group-hover:text-[var(--color-primary)]">
+            Add product
+          </span>
+        </button>
+      )}
 
       {/* While scoring/saving, take over the full screen with the same analyzing
           experience as the landing, then navigate to the product page. */}
