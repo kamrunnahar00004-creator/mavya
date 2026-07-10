@@ -21,13 +21,16 @@ export function ProductProofSection() {
       className="border-t border-[var(--color-border-soft)] bg-[var(--color-page-deep)]"
     >
       <div className="mx-auto max-w-[1200px] px-4 pb-12 pt-4 sm:px-6 sm:pb-16 sm:pt-10 lg:pb-20 lg:pt-12">
-        <div className="mx-auto max-w-[700px] text-center">
+        <div className="mx-auto max-w-[640px] text-center">
           <h2
             id="product-proof-heading"
             className="font-display text-[28px] font-bold leading-tight text-[var(--color-ink)] sm:text-[38px]"
           >
-            What buyers see
+            Before they read your title, they see your photo
           </h2>
+          <p className="mx-auto mt-3 max-w-[480px] text-[15px] leading-relaxed text-[var(--color-ink-muted)] sm:text-[16px]">
+            Toggle before and after to see what a one-click fix changes.
+          </p>
         </div>
 
         <div
