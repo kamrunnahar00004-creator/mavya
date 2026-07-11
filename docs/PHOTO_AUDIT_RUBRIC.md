@@ -1,5 +1,46 @@
 # Mavya Photo Audit Rubric
 
+## Taxonomy + evaluation harness (2026-07-11, rubric main-v4 / supporting-v3)
+
+**Canonical taxonomy:** `src/lib/taxonomy.ts` is the single source of truth for
+product categories (14 physical + 11 digital + `other`). The scoring schema
+enum, classifier prompt block, per-category scoring notes, checklist pool
+routing (pool keys === category ids; the model's `checklist_category` is now
+ignored), and generation guidance are all generated from it. Legacy audits used
+a 6-value subset of the same ids, so old rows read without migration.
+
+**Priority fields:** the rubric now returns `priority_pillar` (the pillar the
+priority_action addresses) and `priority_issue_family`
+(identity/lighting/background/framing/trust/clarity/other). The server
+recomputes the overall score as before, logs (does not override) pillar
+contradictions, and the generation delivery check prefers the explicit
+priority_pillar over the weakest-pillar heuristic.
+
+**Eval harness:** `eval/` contains the golden-set fixtures
+(`eval/golden-set.json`, schema in `eval/fixture-schema.ts`, provenance =
+founder-locked golds in this repo's CALIBRATION_LOG), the runner
+(`eval/harness.ts`), and reports (`eval/reports/`, baseline never silently
+overwritten). Commands: `npm test` (deterministic, free), `npm run eval:live`
+(paid, requires RUN_LIVE_AI_EVALS=true), `npm run eval:consistency` (3x repeat
+subset). Baseline (main-v3): 10/10 hard pass, repeat spread 0.0. Post-taxonomy
+(main-v4): 10/10 hard pass, spread 0.2-0.7, no band crossings; one accepted
+soft disagreement (candle-03 family trust-vs-background — both are real issues
+on that photo per the calibration log).
+
+**Honest validation status:** only the candle family, invalid uploads, and one
+wrong-product supporting case have real fixture images. Apparel, wall art, home
+decor, vintage, bags, personalized, jewelry, soap, mugs, plush, all digital
+categories, and most supporting roles are UNVALIDATED. Scoring quality for
+those categories must not be claimed until fixtures exist.
+
+**Fixture acquisition plan (to reach a credible 50-100 set):** (1) the founder's
+own product photos per category, scored and founder-locked like the calibration
+sessions; (2) CC0/public-domain product photos (Unsplash/Pexels) for condition
+axes (dark, blurry, busy background, tiny product, edge-crop, text-heavy);
+(3) real user uploads once beta consent language allows internal eval reuse;
+(4) each new fixture requires a founder-locked band + priority before it may be
+marked `strictness: "hard"`.
+
 Status: active V0 rubric, revised after 10 bad-photo calibration set.
 
 Purpose:

@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "eval:live": "RUN_LIVE_AI_EVALS=true vitest run eval/live-eval.test.ts",
+    "eval:consistency": "RUN_LIVE_AI_EVALS=true EVAL_REPEATS=3 vitest run eval/live-eval.test.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.0",

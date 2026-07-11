@@ -30,7 +30,8 @@ import {
   type FidelityReport,
 } from "@/lib/fidelity";
 import { imageEditCall } from "@/lib/openai";
-import type { RubricJson } from "@/lib/rubric";
+import { ISSUE_FAMILIES, PILLAR_KEYS, type IssueFamily, type RubricJson } from "@/lib/rubric";
+import { generationGuidanceFor } from "@/lib/taxonomy";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 import sharp from "sharp";
 
@@ -49,10 +50,13 @@ function isSupportPhotoSuggestion(fix: TargetedFix): boolean {
 /**
  * Classify a fix into an issue family so the generation prompt does not receive
  * the same problem three ways (e.g. three lighting fixes). Unmatched fixes get a
- * unique key so genuinely distinct advice is never merged.
+ * unique key so genuinely distinct advice is never merged. Exported for the eval
+ * harness, which uses the same families to check priority-issue agreement.
  */
-function fixFamily(text: string): string {
+export function fixFamily(text: string): string {
   const t = text.toLowerCase();
+  if (/\b(identify|identification|what (it|the product) is|cannot tell|unclear what|product type|looks like a)\b/.test(t))
+    return "identity";
   if (/\b(light|lighting|glare|shadow|exposure|bright|dim|dark|hotspot)\b/.test(t))
     return "lighting";
   if (
@@ -68,6 +72,14 @@ function fixFamily(text: string): string {
   if (/\b(blur|sharp|focus|detail|readab|clarity|crisp|texture)\b/.test(t))
     return "clarity";
   return `other:${t.slice(0, 24)}`;
+}
+
+/** fixFamily normalized onto the stable enum (other:* collapses to other). */
+export function issueFamilyOf(text: string): IssueFamily {
+  const fam = fixFamily(text);
+  return (ISSUE_FAMILIES as readonly string[]).includes(fam)
+    ? (fam as IssueFamily)
+    : "other";
 }
 
 function dedupeFixesByFamily(fixes: TargetedFix[]): TargetedFix[] {
@@ -171,21 +183,13 @@ function supportingRoleGuidance(role: RubricJson["supporting_photo_role"]): stri
   }
 }
 
+/**
+ * Category-specific generation guidance now comes from the canonical taxonomy
+ * (src/lib/taxonomy.ts) so scoring, checklist, and generation share one
+ * category system. Unknown/legacy categories get the generic safe guidance.
+ */
 function categoryGuidance(category: RubricJson["detected_category"]): string {
-  switch (category) {
-    case "candles":
-      return "For this candle, preserve the jar, label, wax, wick, flame, vessel edges, and any cup/saucer context shown in the source. Keep the full vessel and saucer/plate edge visible when the source showed them. Use a restrained backdrop with enough contrast for the container silhouette and label to read clearly. Product-only presentation. Do not add lifestyle props.";
-    case "soap":
-      return "For this soap, preserve the bar shape, texture, packaging, and handmade surface. Use a clean neutral surface without smoothing away real material detail. Product-only presentation. Do not add lifestyle props.";
-    case "mugs":
-      return "For this mug, preserve the handle, rim, proportions, printed design, glaze, and saucer/plate context if shown. Use an angle that keeps the full design readable and keeps the cup, handle, and saucer/plate edge fully inside the frame. Product-only presentation. Do not add coffee, hands, or lifestyle props unless explicitly requested.";
-    case "crochet_plush":
-      return "For this crochet or plush product, preserve stitch pattern, seams, proportions, face details, and every included piece. Keep soft texture visible without inventing fibers or accessories. Product-only presentation. Do not add hands, models, or extra pieces.";
-    case "jewelry":
-      return "For this jewelry product, preserve stone count, settings, metal color, shape, proportions, clasp, both ends of the piece, and arrangement exactly. Do not invent sparkle, stones, or engraving. Product-only presentation by default; only a clean model-worn close-up is acceptable when it clearly improves comprehension and preserves every original detail.";
-    default:
-      return "Preserve every visible product-specific detail exactly. Use a clean product-first composition without redesigning the item. Product-only presentation. Do not add people, hands, props, or lifestyle scenes. If the product is a card, print, poster, sign, sticker, or other flat design-led item, the printed design, artwork, and any text are the product: keep them dominant, fully visible, and readable, shot flat-on or at a slight angle on a clean simple surface, with minimal or no props so nothing competes with the design.";
-  }
+  return generationGuidanceFor(category);
 }
 
 /**
@@ -381,21 +385,22 @@ Requested change: "${editInstruction}"`;
 }
 
 /**
- * Honest "dominant issue resolved" proxy. Until the rubric returns an explicit
- * priority pillar, require the weakest original pillar (including ties) to reach
- * at least 7 in the candidate. The scores themselves are never altered.
+ * Honest "dominant issue resolved" check. Prefers the rubric's explicit
+ * priority_pillar (the pillar the shown priority_action addressed); falls back
+ * to the weakest-pillar heuristic for legacy audits without the field. The
+ * scores themselves are never altered.
  */
 function dominantIssueResolved(
   original: RubricJson,
   candidate: RubricJson
 ): boolean {
-  const keys = ["thumbnail", "lighting", "background", "click_appeal"] as const;
-  const weakestScore = Math.min(...keys.map((key) => original.pillars[key]));
-  for (const key of keys) {
-    if (
-      original.pillars[key] === weakestScore &&
-      candidate.pillars[key] < 7
-    ) {
+  const explicit = original.priority_pillar;
+  if (explicit && PILLAR_KEYS.includes(explicit)) {
+    return candidate.pillars[explicit] >= 7;
+  }
+  const weakestScore = Math.min(...PILLAR_KEYS.map((key) => original.pillars[key]));
+  for (const key of PILLAR_KEYS) {
+    if (original.pillars[key] === weakestScore && candidate.pillars[key] < 7) {
       return false;
     }
   }

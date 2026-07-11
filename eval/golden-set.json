@@ -1,0 +1,149 @@
+{
+  "schema_version": 1,
+  "taxonomy_version": 1,
+  "fixtures": [
+    {
+      "id": "candle-02-main",
+      "image": "public/assets/candle-02.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "band": "weak",
+        "score_range": [3.1, 5.3],
+        "priority_pillar": "lighting",
+        "priority_issue_family": "lighting",
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 4.1 (Random Smoke Test 01, docs/CALIBRATION_LOG.md). Pink teacup candle, direct flash glare on cup/saucer, messy wax decoration, competing floral background. Priority: flash/lighting. Claude historically over-scored this to 8.2 (giftability bias) - the exact failure this fixture guards."
+    },
+    {
+      "id": "candle-03-main",
+      "image": "public/assets/candle-03.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "band": "weak",
+        "score_range": [3.0, 5.4],
+        "priority_pillar": "background",
+        "priority_issue_family": "background",
+        "generation_risk": "review_text",
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 4.2 (Photo 07, docs/CALIBRATION_LOG.md). Black FIRE WOOD jar candle on pitch-black background: black-on-black silhouette loss is the primary issue; label text implies review_text generation risk. Cutout/composite look is a secondary trust point."
+    },
+    {
+      "id": "candle-03-improved-main",
+      "image": "public/assets/candle-03-gpt-image-2-local-api-test-2026-06-01.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "band": "strong",
+        "score_range": [7.3, 10]
+      },
+      "strictness": "soft",
+      "notes": "Demo-calibrated improved FIRE WOOD candle (demo-states WEAK_DEMO.improvedAudit = 9.0; not founder-locked, hence soft). Clean backdrop, readable label, lit wick. Guards against the rubric failing to reward a genuinely fixed photo."
+    },
+    {
+      "id": "candle-02-improved-main",
+      "image": "public/assets/candle-02-improved.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "score_range": [5.5, 10]
+      },
+      "strictness": "soft",
+      "notes": "AI-improved teacup candle (2026-05-29 pass). No locked gold; expectation is only that it scores clearly above the 4.1 original. Classification (candles) is the main assertion."
+    },
+    {
+      "id": "candle-02-ai-render-main",
+      "image": "public/assets/candle-02-improved-previous-ai-render-2026-05-29.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles"
+      },
+      "strictness": "soft",
+      "notes": "Earlier, more synthetic-looking AI render of the teacup candle. Classification-only fixture: no reliable score gold. Useful later for authenticity-tier expectations once founder locks one."
+    },
+    {
+      "id": "logo-invalid",
+      "image": "public/assets/mavya-logo.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "invalid",
+        "band": "invalid",
+        "score_range": [0, 0]
+      },
+      "strictness": "hard",
+      "notes": "A brand logo is not a sellable product photo; must classify upload_kind invalid and score 0. Guards the invalid-detection path."
+    },
+    {
+      "id": "candle-02-supporting-self",
+      "image": "public/assets/candle-02.png",
+      "mime": "image/png",
+      "role": "supporting",
+      "main_product_context": "pink candle poured in a floral teacup with saucer",
+      "expected": {
+        "upload_kind": "physical_product",
+        "must_not_claim": ["different product", "unrelated"]
+      },
+      "strictness": "soft",
+      "notes": "The teacup candle itself uploaded as a supporting photo for its own listing. Must NOT be flagged as a wrong/unrelated product; role will likely be alternate_angle/other. Guards relevance false-positives."
+    },
+    {
+      "id": "candle-03-supporting-wrong-product",
+      "image": "public/assets/candle-03.png",
+      "mime": "image/png",
+      "role": "supporting",
+      "main_product_context": "pink candle poured in a floral teacup with saucer",
+      "expected": {
+        "upload_kind": "physical_product",
+        "supporting_role": "unrelated_or_wrong_product",
+        "band": "weak"
+      },
+      "strictness": "soft",
+      "notes": "A completely different candle (black FIRE WOOD jar) uploaded as supporting for the pink teacup-candle listing. Same category, different product - the listing-relevance test should flag unrelated_or_wrong_product and score near 0. Soft because same-category wrong-product is the hardest relevance case."
+    },
+    {
+      "id": "candle-proof-before-main",
+      "image": "public/assets/candle-proof-before.webp",
+      "mime": "image/webp",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "score_range": [2.5, 6.5]
+      },
+      "strictness": "soft",
+      "consistency": true,
+      "notes": "Compressed 'before' proof asset of the teacup candle (landing page). No locked gold; should land clearly below strong. Also the webp-input regression fixture."
+    },
+    {
+      "id": "candle-proof-after-main",
+      "image": "public/assets/candle-proof-after.webp",
+      "mime": "image/webp",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "score_range": [6.0, 10]
+      },
+      "strictness": "soft",
+      "notes": "Compressed 'after' proof asset. Should score clearly above the before version."
+    }
+  ]
+}

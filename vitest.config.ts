@@ -9,6 +9,8 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["tests/**/*.test.ts"],
+    // eval/live-eval.test.ts self-skips unless RUN_LIVE_AI_EVALS=true, so
+    // normal `npm test` stays free and deterministic.
+    include: ["tests/**/*.test.ts", "eval/**/*.test.ts"],
   },
 });

@@ -6,6 +6,9 @@
  * (e.g. gpt-image-2) without code changes.
  */
 
+import { DETECTED_CATEGORY_VALUES } from "@/lib/taxonomy";
+import { ISSUE_FAMILIES, PILLAR_KEYS } from "@/lib/rubric";
+
 const OPENAI_BASE = "https://api.openai.com/v1";
 
 const RUBRIC_RESPONSE_SCHEMA = {
@@ -22,6 +25,8 @@ const RUBRIC_RESPONSE_SCHEMA = {
       "supporting_photo_role",
       "buyer_question_answered",
       "supporting_verdict",
+      "priority_pillar",
+      "priority_issue_family",
       "overall_score",
       "pillars",
       "detected_category",
@@ -109,6 +114,8 @@ const RUBRIC_RESPONSE_SCHEMA = {
       },
       buyer_question_answered: { type: "string" },
       supporting_verdict: { type: "string" },
+      priority_pillar: { type: "string", enum: [...PILLAR_KEYS] },
+      priority_issue_family: { type: "string", enum: [...ISSUE_FAMILIES] },
       overall_score: { type: "number", minimum: 0, maximum: 10 },
       pillars: {
         type: "object",
@@ -123,7 +130,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
       },
       detected_category: {
         type: "string",
-        enum: ["jewelry", "candles", "crochet_plush", "soap", "mugs", "other"],
+        enum: [...DETECTED_CATEGORY_VALUES],
       },
       priority_action: { type: "string" },
       priority_explanation: { type: "string" },

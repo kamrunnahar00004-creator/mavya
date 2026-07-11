@@ -59,12 +59,14 @@ export async function generateChecklist(
     checklist_category?: unknown;
     supporting_photo_checklist?: unknown;
   };
-  const category =
-    typeof obj.checklist_category === "string" ? obj.checklist_category : "other";
   if (!Array.isArray(obj.supporting_photo_checklist)) return [];
 
+  // Canonical routing: the detected_category from the main audit IS the
+  // checklist pool key (one taxonomy). The model's checklist_category is
+  // ignored — no second vocabulary, no mapping drift. Unknown ids fall back to
+  // the universal pool inside poolFor.
   const allowed = new Set(
-    poolFor(input.upload_kind, category).map((s) => s.shot_id)
+    poolFor(input.upload_kind, input.detected_category).map((s) => s.shot_id)
   );
   return obj.supporting_photo_checklist.filter(
     (item): item is SupportingPhotoChecklistItem =>
@@ -147,6 +149,29 @@ export async function scorePhoto(args: {
     : supporting
     ? computeSupportingOverall(parsed.pillars)
     : computeOverall(parsed.pillars);
+
+  // Contradiction detection (not blind trust): the model's declared
+  // priority_pillar should normally be the weakest pillar. A mismatch is kept
+  // (the model may legitimately target a tied/near-tie pillar) but logged so
+  // eval reports can quantify disagreement.
+  if (!isInvalid) {
+    const weakest = Math.min(
+      parsed.pillars.thumbnail,
+      parsed.pillars.lighting,
+      parsed.pillars.background,
+      parsed.pillars.click_appeal
+    );
+    if (parsed.pillars[parsed.priority_pillar] > weakest + 1) {
+      console.log(
+        JSON.stringify({
+          event: "score.priority_pillar_mismatch",
+          declared: parsed.priority_pillar,
+          declaredValue: parsed.pillars[parsed.priority_pillar],
+          weakest,
+        })
+      );
+    }
+  }
 
   // Checklist safety: invalid uploads carry no checklist. Otherwise keep only shots
   // that are valid for THIS category's pool; a digital planner must not return a

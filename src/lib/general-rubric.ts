@@ -98,6 +98,9 @@ Advice wording:
 Output rules:
 - Exactly 3 next_steps.
 - priority_action: imperative, max 12 words.
+- priority_pillar: the ONE pillar key ("thumbnail", "lighting", "background", "click_appeal") the priority_action addresses (supporting meanings: thumbnail=Buyer Confidence, lighting=Clarity, background=Accuracy, click_appeal=Presentation). Normally the weakest pillar.
+- priority_issue_family: the family of the priority_action: "identity" (unclear/wrong product), "lighting", "background", "framing", "trust", "clarity", or "other".
+- detected_category: the same canonical category ids used for main photos (jewelry, candles, soap, mugs, crochet_plush, apparel, wall_art, home_decor, vintage, bags, personalized, stickers, stationery, art_supplies, or a digital id such as digital_planner, printables, spreadsheet), or "other".
 - priority_explanation: 2-3 short sentences: what is visibly wrong or weak, why it matters to a buyer, and the specific change.
 - next_steps[].observation: 2-3 short sentences, concrete and actionable for a beginner.
 - next_steps[].action: for weak/mid, imperative edit or reshoot guidance, max 12 words. For strong, a short positive heading naming what works in this photo, max 12 words.
@@ -119,6 +122,8 @@ Invalid-input JSON:
   "supporting_photo_role": "other",
   "buyer_question_answered": "",
   "supporting_verdict": "",
+  "priority_pillar": "thumbnail",
+  "priority_issue_family": "other",
   "detected_category": "other",
   "overall_score": 0.0,
   "pillars": { "thumbnail": 0, "lighting": 0, "background": 0, "click_appeal": 0 },
@@ -147,7 +152,9 @@ Valid JSON shape:
   "supporting_verdict": string (one short honest verdict sentence),
   "overall_score": number 0-10 (one decimal),
   "pillars": { "thumbnail": integer 0-10, "lighting": integer 0-10, "background": integer 0-10, "click_appeal": integer 0-10 },
-  "detected_category": "jewelry" | "candles" | "crochet_plush" | "soap" | "mugs" | "other",
+  "priority_pillar": "thumbnail" | "lighting" | "background" | "click_appeal",
+  "priority_issue_family": "identity" | "lighting" | "background" | "framing" | "trust" | "clarity" | "other",
+  "detected_category": one of the canonical category ids, or "other",
   "priority_action": string (imperative, <=12 words),
   "priority_explanation": string (2-3 short sentences),
   "next_steps": array of exactly 3 items, each { "observation": string (2-3 short sentences), "action": string (imperative, <=12 words) },

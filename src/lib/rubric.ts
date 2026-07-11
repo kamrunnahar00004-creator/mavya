@@ -7,6 +7,34 @@
  */
 
 import type { PillarKey } from "@/data/demo-states";
+import {
+  DETECTED_CATEGORY_VALUES,
+  classifierPromptBlock,
+  scoringNotesBlock,
+} from "@/lib/taxonomy";
+
+/**
+ * Stable issue families shared by the rubric's priority_issue_family field, the
+ * generation prompt dedupe, and the eval harness. Lives here (dependency root)
+ * so improve-photo/eval can import without cycles.
+ */
+export const ISSUE_FAMILIES = [
+  "identity",
+  "lighting",
+  "background",
+  "framing",
+  "trust",
+  "clarity",
+  "other",
+] as const;
+export type IssueFamily = (typeof ISSUE_FAMILIES)[number];
+
+export const PILLAR_KEYS = [
+  "thumbnail",
+  "lighting",
+  "background",
+  "click_appeal",
+] as const;
 
 export const PILLAR_WEIGHTS: Record<PillarKey, number> = {
   thumbnail: 0.4,
@@ -70,13 +98,12 @@ export const SUPPORTING_PHOTO_ROLES: SupportingPhotoRole[] = [
   "other",
 ];
 
-export type RubricCategory =
-  | "jewelry"
-  | "candles"
-  | "crochet_plush"
-  | "soap"
-  | "mugs"
-  | "other";
+/**
+ * Canonical category id from src/lib/taxonomy.ts (+ "other"). Runtime-validated
+ * against DETECTED_CATEGORY_VALUES; legacy audits used a 6-value subset of the
+ * same ids, so old rows remain readable without migration.
+ */
+export type RubricCategory = string;
 
 export type ChecklistDoubt =
   | "identity"
@@ -113,6 +140,10 @@ export type RubricJson = {
   buyer_question_answered: string;
   /** One-line supporting-photo verdict. Empty for main photos. */
   supporting_verdict: string;
+  /** Pillar the priority_action addresses (normally the weakest pillar). */
+  priority_pillar: PillarKey;
+  /** Stable issue family of the priority_action. */
+  priority_issue_family: IssueFamily;
   overall_score: number;
   pillars: {
     thumbnail: number;
@@ -176,6 +207,13 @@ Score four visible pillars from 0 to 10 using integers:
 - Do not guess hidden fraud, IP issues, brand positioning, or seller intent.
 - Reward genuine buyer desire, but only as a bonus on top of a sound photo. When the product is ALREADY clear, complete, readable, and trustworthy, a photo that also shows strong giftability, emotional pull, specific use, or an obvious reason to want it should score click_appeal 7-9. Desire never rescues a weak photo: if thumbnail clarity, lighting, full-product visibility, or authenticity/trust are weak, click_appeal stays low no matter how appealing the styling, mood, or scene looks. Styling cannot lift click_appeal when the product is unclear, cut off, dirty, AI-looking, or pasted-in. All AI/mockup/cutout caps above still apply.
 
+${classifierPromptBlock()}
+
+Category scoring notes (apply only the matching category's note; these adjust judgment, never the locked weights):
+${scoringNotesBlock("physical")}
+Digital categories:
+${scoringNotesBlock("digital")}
+
 Category-aware framing (adjusts how you judge the thumbnail pillar only; never change the locked weights):
 - jewelry, stickers, and small crafts: the product should fill more of the frame with clear macro detail; a tiny product lost in the frame is a thumbnail problem.
 - candles, mugs, soap, and gift items: the product should dominate with a small amount of clean breathing room; at most one subtle mood cue is acceptable, and the product stays the hero.
@@ -188,7 +226,7 @@ DIGITAL PRODUCTS (upload_kind = "digital_product"): score the same four pillars,
 - lighting: presentation clarity for digital, sharpness, contrast, clean readable rendering, not physical lighting. Blur, compression, or low contrast scores low.
 - background: clean supportive layout. Penalize clutter, collage, and badge-soup (more than two or three labels). A realistic mockup or context that supports the product scores high.
 - click_appeal: buyer desire and trust for a digital product. Reward a clear niche, a category-appropriate mockup (iPad for planners, framed art in a room for wall art, a laptop dashboard for spreadsheets, a styled flat-lay for invitations, a grid or fanned spread for bundles), and useful labels (GoodNotes, Canva, Excel + Google Sheets, Printable PDF, Instant Download, 2026, Bundle, 50+ Templates, ATS-Friendly, Cricut/Silhouette, PLR/MRR). Penalize spammy, misleading, or shipped-physical-looking presentation.
-For digital products, give DIGITAL advice in priority_action and next_steps, never physical-photo advice. Name the digital product type (planner, template, invitation, spreadsheet, sticker sheet, SVG bundle, and so on). Good digital advice: "Show the planner on an iPad mockup.", "Make the GoodNotes compatibility label readable.", "Show the actual page spread larger.", "Use fewer badges.", "Add an Instant Download label." Never tell a digital product to "use better lighting" or "upload a product photo" as if it were physical. detected_category may be "other" for a digital product; the upload_kind field carries the digital signal.
+For digital products, give DIGITAL advice in priority_action and next_steps, never physical-photo advice. Name the digital product type (planner, template, invitation, spreadsheet, sticker sheet, SVG bundle, and so on). Good digital advice: "Show the planner on an iPad mockup.", "Make the GoodNotes compatibility label readable.", "Show the actual page spread larger.", "Use fewer badges.", "Add an Instant Download label." Never tell a digital product to "use better lighting" or "upload a product photo" as if it were physical. Classify digital products into the digital category ids above; use "other" only when none fits.
 
 Use these 10 internal checks silently:
 - frame readability
@@ -284,6 +322,8 @@ Main-photo only fields: this prompt grades a MAIN listing photo, not a supportin
 Output rules:
 - Return exactly 3 next_steps.
 - priority_action: imperative, max 12 words. Make it a scannable command.
+- priority_pillar: the ONE pillar key ("thumbnail", "lighting", "background", "click_appeal") that priority_action addresses. It should normally be the weakest pillar; if two tie, pick the one the priority_action targets.
+- priority_issue_family: the ONE family the priority_action belongs to: "identity" (buyer cannot tell what the product is), "lighting", "background", "framing" (crop/composition/product size in frame), "trust" (AI-looking/mockup/cutout/cheap presentation), "clarity" (blur/focus/readability), or "other".
 - priority_explanation: 2-3 short sentences. Explain what is visibly wrong, why it hurts clicks or trust, and the specific change the seller should make.
 - observation: 2-3 short sentences, MAX — actionable, never an essay. Do NOT just restate the problem; the value is the HOW. Spend one short clause naming the visible issue, then give the concrete, specific method a beginner can copy exactly: name the surface, the light source, the angle, the distance, or the setting to change. Bad (problem only): "The jewelry is blurry and lacks detail." Good (problem + how): "The pendant is blurry because the camera focused behind it. Rest it on dark slate, tap the screen on the prongs to lock focus, and shoot in bright window light." Always include the concrete fix method, not just what is wrong.
 - action: imperative, max 12 words. Make it a scannable command.
@@ -303,6 +343,8 @@ Invalid-input JSON:
   "supporting_photo_role": "other",
   "buyer_question_answered": "",
   "supporting_verdict": "",
+  "priority_pillar": "thumbnail",
+  "priority_issue_family": "other",
   "detected_category": "other",
   "overall_score": 0.0,
   "pillars": { "thumbnail": 0, "lighting": 0, "background": 0, "click_appeal": 0 },
@@ -329,6 +371,8 @@ Valid JSON shape:
   "supporting_photo_role": "other" (main photos always return "other"),
   "buyer_question_answered": "" (empty for main photos),
   "supporting_verdict": "" (empty for main photos),
+  "priority_pillar": "thumbnail" | "lighting" | "background" | "click_appeal",
+  "priority_issue_family": "identity" | "lighting" | "background" | "framing" | "trust" | "clarity" | "other",
   "overall_score": number 0-10 (one decimal),
   "pillars": {
     "thumbnail": integer 0-10,
@@ -336,7 +380,7 @@ Valid JSON shape:
     "background": integer 0-10,
     "click_appeal": integer 0-10
   },
-  "detected_category": "jewelry" | "candles" | "crochet_plush" | "soap" | "mugs" | "other",
+  "detected_category": one of the canonical category ids listed above, or "other",
   "priority_action": string (imperative, <=12 words),
   "priority_explanation": string (2-3 short sentences),
   "next_steps": array of exactly 3 items, each { "observation": string (2-3 short sentences), "action": string (imperative, <=12 words) },
@@ -355,6 +399,8 @@ export const INVALID_RESPONSE: RubricJson = {
   supporting_photo_role: "other",
   buyer_question_answered: "",
   supporting_verdict: "",
+  priority_pillar: "thumbnail",
+  priority_issue_family: "other",
   detected_category: "other",
   overall_score: 0.0,
   pillars: { thumbnail: 0, lighting: 0, background: 0, click_appeal: 0 },
@@ -434,17 +480,15 @@ export function isRubricJson(x: unknown): x is RubricJson {
   }
   if (typeof r.buyer_question_answered !== "string") return false;
   if (typeof r.supporting_verdict !== "string") return false;
+  if (!PILLAR_KEYS.includes(r.priority_pillar as PillarKey)) return false;
+  if (!ISSUE_FAMILIES.includes(r.priority_issue_family as IssueFamily)) return false;
   if (!isFiniteNumberInRange(r.overall_score, 0, 10)) return false;
   if (!r.pillars || typeof r.pillars !== "object") return false;
   const p = r.pillars as Record<string, unknown>;
   for (const k of ["thumbnail", "lighting", "background", "click_appeal"]) {
     if (!isIntegerInRange(p[k], 0, 10)) return false;
   }
-  if (
-    !["jewelry", "candles", "crochet_plush", "soap", "mugs", "other"].includes(
-      String(r.detected_category)
-    )
-  ) {
+  if (!DETECTED_CATEGORY_VALUES.includes(String(r.detected_category))) {
     return false;
   }
   if (typeof r.priority_action !== "string") return false;
