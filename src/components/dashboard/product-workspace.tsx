@@ -66,6 +66,10 @@ type Photo = {
   improveStartedAt?: number;
   improveStage?: string;
   improveError?: string;
+  /** Operation of the in-flight/last job (drives keep-better on retries). */
+  pendingOp?: "improve" | "edit" | "retry";
+  /** Honest "kept the better version" status after an unhelpful retry. */
+  keepNote?: string;
   lastJobId?: string;
   freePreview: boolean;
   freePreviewMsg?: string;
@@ -299,6 +303,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     (photoId: string, payload: GenerationJobPayload) => {
       const cur = photosRef.current.find((p) => p.id === photoId);
       if (!cur) return;
+      const operation = cur.pendingOp ?? "improve";
       if (ACTIVE_JOB_STATUSES.has(payload.status)) {
         patch(photoId, {
           improveStatus: "generating",
@@ -308,8 +313,31 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         return;
       }
       if (payload.status === "completed" && payload.resultUrl && payload.candidateRubric) {
+        const newScore =
+          cur.kind === "supporting"
+            ? rubricToSupportingAuditResult(payload.candidateRubric).overallScore
+            : rubricToAuditResult(payload.candidateRubric).overallScore;
+        const existingScore = cur.audit.improvedScore;
+        // Keep-better rule: a RETRY that produced a weaker result than the
+        // current preview keeps the current one and says so honestly. Edits
+        // always apply (the seller asked for that specific change).
+        if (
+          operation === "retry" &&
+          typeof existingScore === "number" &&
+          newScore <= existingScore
+        ) {
+          patch(photoId, {
+            improveStatus: "idle",
+            improveStartedAt: undefined,
+            improveStage: undefined,
+            improveError: undefined,
+            canRetry: existingScore < 8,
+            keepNote: `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the better one. You can try again.`,
+          });
+          return;
+        }
         const updated = applyCompletedJob(
-          { ...cur, improveStatus: "idle", improveStartedAt: undefined, improveStage: undefined, improveError: undefined, unresolved: null },
+          { ...cur, improveStatus: "idle", improveStartedAt: undefined, improveStage: undefined, improveError: undefined, keepNote: undefined, unresolved: null },
           {
             id: payload.jobId,
             status: "completed",
@@ -324,13 +352,27 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         setPhotos((prev) => prev.map((p) => (p.id === photoId ? updated : p)));
         return;
       }
-      // Terminal failure/rejection.
+      // Terminal failure/rejection. NEVER silent: with an existing preview, an
+      // honest quality rejection becomes a visible keep-note; infrastructure /
+      // quota errors always show as errors.
       const hasPreview = Boolean(cur.audit.improvedSrc);
+      const qualityRejection = new Set([
+        "no_publishable_candidate",
+        "unsafe_candidate",
+        "incomplete_source",
+      ]).has(payload.errorCode ?? "");
       patch(photoId, {
         improveStatus: hasPreview ? "idle" : "error",
         improveStartedAt: undefined,
         improveStage: undefined,
-        improveError: hasPreview ? undefined : payload.message ?? "Generation failed. Try again.",
+        improveError:
+          hasPreview && qualityRejection
+            ? undefined
+            : payload.message ?? "Generation failed. Try again.",
+        keepNote:
+          hasPreview && qualityRejection
+            ? "We generated another version, but it did not beat your current one, so we kept the better version. You can try again."
+            : undefined,
         unresolved: payload.unresolvedIssues ?? cur.unresolved,
         canRetry: hasPreview
           ? typeof cur.audit.improvedScore === "number" && cur.audit.improvedScore < 8
@@ -419,6 +461,8 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         improveStartedAt: Date.now(),
         improveStage: JOB_STAGE_LABELS.queued,
         improveError: undefined,
+        keepNote: undefined,
+        pendingOp: isEdit ? "edit" : retry ? "retry" : "improve",
         canRetry: false,
         revertSnap,
       });
@@ -701,6 +745,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         improveStartedAt={active.improveStartedAt}
         improveStage={active.improveStage}
         improveError={active.improveError}
+        keepNote={active.keepNote}
         freePreview={active.freePreview}
         freePreviewMessage={active.freePreviewMsg}
         checklistLoading={active.kind === "main" ? checklistLoading : false}
