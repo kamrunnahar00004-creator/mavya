@@ -144,7 +144,16 @@ export type RubricJson = {
   priority_pillar: PillarKey;
   /** Stable issue family of the priority_action. */
   priority_issue_family: IssueFamily;
+  /**
+   * PRESENTED score. May be calibrated by the temporary beta rule in
+   * src/lib/calibration.ts (raw 7.5-7.9 presents as 8.0). Internal comparisons
+   * must use raw_overall_score via rawOverall().
+   */
   overall_score: number;
+  /** Honest pre-calibration score (post trust-ceiling). Absent on legacy audits. */
+  raw_overall_score?: number;
+  /** Calibration rule version applied to overall_score (e.g. "near_eight_normalization_v1"). */
+  calibration_rule?: string;
   pillars: {
     thumbnail: number;
     lighting: number;
@@ -483,6 +492,16 @@ export function isRubricJson(x: unknown): x is RubricJson {
   if (!PILLAR_KEYS.includes(r.priority_pillar as PillarKey)) return false;
   if (!ISSUE_FAMILIES.includes(r.priority_issue_family as IssueFamily)) return false;
   if (!isFiniteNumberInRange(r.overall_score, 0, 10)) return false;
+  // Calibration fields are server-added after scoring; optional when present.
+  if (
+    r.raw_overall_score !== undefined &&
+    !isFiniteNumberInRange(r.raw_overall_score, 0, 10)
+  ) {
+    return false;
+  }
+  if (r.calibration_rule !== undefined && typeof r.calibration_rule !== "string") {
+    return false;
+  }
   if (!r.pillars || typeof r.pillars !== "object") return false;
   const p = r.pillars as Record<string, unknown>;
   for (const k of ["thumbnail", "lighting", "background", "click_appeal"]) {

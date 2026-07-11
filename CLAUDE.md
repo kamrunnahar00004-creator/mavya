@@ -63,29 +63,30 @@ If a useful skill from `https://www.skills.sh/` is not installed, ask before ins
 
 ## Current Product Rule
 
-Build for the current phase:
+Build for the current phase (founder decision, 2026-07-12):
 
 ```text
-Validation and demo creation.
+Paid-only Founding Beta. $19/month. No free AI usage.
 ```
 
-Do not turn Mavya into a full SaaS by default. The next useful artifact should help the founder create demos, post videos, or test seller interest.
+Source of truth: `docs/PAID_BETA.md`. Key rules:
 
-## Current V0 Product Rule
+1. 20 photo assessments and 12 improvement workflows per billing month; one
+   workflow contains up to 3 bounded generation attempts (attempts 2-3 are
+   automatic background refinement, never charged again).
+2. Every uploaded product photo may be assessed. Never reject an image merely
+   for being weak or difficult; only non-products are invalid.
+3. The seller decides which image to use. Never say "publish-ready" in
+   customer copy; say "AI-improved photo", "recommended version",
+   "strongest version", or "review the result".
+4. Always warn sellers to verify labels, text, patterns, personalization,
+   measurements, colors, and included pieces on AI-improved photos.
+5. Temporary beta score calibration: raw 7.5-7.9 presents as 8.0 (exact rule
+   in `src/lib/calibration.ts`); the honest raw score is always preserved and
+   all internal comparisons use it.
+6. Never claim Mavya "continuously learns". It records results and feedback
+   for founder-reviewed evaluation; prompt/calibration changes are reviewed,
+   baseline-tested, versioned, and deliberately deployed.
 
-V0 needs a screen-recordable transformation:
-
-```text
-weak product photo -> score -> free audit -> thumbnail preview -> AI-improved hero preview
-```
-
-Current founder-approved validation direction:
-
-1. Keep the concrete diagnosis free.
-2. Use real generated preview assets only where they are visually strong and honest.
-3. Label generative results as `AI-improved preview`.
-4. Warn the seller to review product details before publishing.
-5. Test a high-quality generated hero image as the paid outcome.
-
-Do not build full lifestyle scene generation, payment, or a live generation pipeline
-unless the founder explicitly asks for that next implementation step.
+Older references to a free validation product, a $4.99 download, rejecting
+weak sources, or "publish-ready" outcomes are superseded.

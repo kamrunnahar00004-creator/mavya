@@ -1,37 +1,48 @@
 # Production Readiness — Architecture & Operations
 
-Last updated: 2026-07-11 (production-readiness pass).
+Last updated: 2026-07-12 (paid-only Founding Beta pass). Billing, calibration,
+and workflow policy live in `docs/PAID_BETA.md`.
 
 ## Endpoint authentication
 
 Every billable AI endpoint requires a Supabase session (cookie-based, resolved
-server-side via `getSessionUser()` — never a client-supplied user id):
+server-side via `getSessionUser()` — never a client-supplied user id) AND an
+active $19/month subscription (webhook-maintained `subscriptions` row, checked
+server-side per request):
 
-| Route | Auth | Cost | Notes |
-|---|---|---|---|
-| `POST /api/score` | required | 1 credit | image-hash cache makes identical re-scores free |
-| `POST /api/audits` | required | free | persists only a verified server-cache score for the owned stored photo |
-| `POST /api/checklist` | required | free | best-effort; failures return `[]` |
-| `POST /api/generate` | required | 5 credits | photoId contract; persisted jobs |
-| `GET /api/generate` | required | free | job status (RLS-scoped) |
-| `POST /api/storage/sign` | required | free | re-signs only the caller's own paths |
+| Route | Auth | Subscription | Cost | Notes |
+|---|---|---|---|---|
+| `POST /api/score` | required | required | 1 of 20 monthly assessments | image-hash cache makes identical re-scores free |
+| `POST /api/audits` | required | required | free | persists only a verified server-cache score for the owned stored photo |
+| `POST /api/checklist` | required | required | free (bundled) | best-effort; failures return `[]` |
+| `POST /api/generate` | required | required | 1 of 12 monthly workflows | photoId contract; persisted jobs; up to 3 bounded attempts |
+| `GET /api/generate` | required | no | free | job status (RLS-scoped) |
+| `POST /api/photos/select-version` | required | no | free | manual version pick (locks out auto-replacement) |
+| `POST /api/storage/sign` | required | no | free | re-signs only the caller's own paths |
+| `/api/billing/checkout` / `portal` / `status`, `/api/consent`, `/api/feedback/workflow` | required | n/a | free | billing + consent + feedback server routes |
+| `POST /api/stripe/webhook` | Stripe signature | n/a | n/a | single writer of subscription state; replay-protected |
+| `/api/generate/worker` | worker secret | n/a | n/a | background refinement executor + stale recovery |
 
-Anonymous scoring is DISABLED (product decision): the landing gates the scan
-behind signup; the landing "before/after" demo is static assets, not live AI.
+Anonymous scoring is DISABLED. Paid-only beta: NO free AI usage of any kind;
+the landing "before/after" demo is static assets, not live AI.
 
-## Credits (conservative defaults, all in `src/lib/usage.ts`)
+## Allowances (paid beta; `src/lib/allowances.ts` + `docs/PAID_BETA.md`)
 
-- Signup allowance: **8 credits** (`profiles.credits` DB default) = 3 scores + 1 generation.
-- Costs: score 1, generate 5, checklist 0.
-- Consumption is ATOMIC via `consume_credits()` (SECURITY DEFINER, service-role-only,
-  unique idempotency key). Duplicate keys never double-charge; concurrent requests
-  cannot drive the balance negative (conditional `UPDATE ... WHERE credits >= amount`).
-- Ledger: `credit_ledger` (immutable rows, `charged|refunded|rejected`).
-- Refund policy: infrastructure failures only (`image_failed`, `vision_failed`,
-  `provider_timeout`, `malformed_response`, `persistence_failed`, `internal_error`).
-  Honest quality rejections are NOT refunded (provider cost was incurred).
-- Stripe later: a webhook should call `consume_credits`'s inverse — insert an
-  `adjust` ledger row and increment `profiles.credits` via the service role.
+- 20 assessments + 12 improvement workflows per billing month; one workflow
+  contains up to 3 bounded generation attempts (attempts 2-3 are internal
+  background refinement and are never charged again).
+- Consumption is ATOMIC via `consume_allowance()` (SECURITY DEFINER,
+  service-role-only, unique idempotency key, per-billing-period counters keyed
+  by `current_period_start`) — renewal refreshes exactly once and duplicate
+  webhooks cannot double-grant.
+- Ledger: `allowance_ledger` (immutable rows, `charged|refunded|rejected`).
+- Refund policy unchanged: infrastructure failures only (`image_failed`,
+  `vision_failed`, `provider_timeout`, `malformed_response`,
+  `persistence_failed`, `internal_error`). Honest quality rejections are NOT
+  refunded (provider cost was incurred).
+- Legacy credits (`profiles.credits`, `consume_credits`) remain as a
+  historical ledger only; the signup default is now 0 and no route consumes
+  credits.
 
 ## Idempotency
 
@@ -40,7 +51,12 @@ behind signup; the landing "before/after" demo is static assets, not live AI.
   the `score_cache` and is free.
 - Generate: client sends a random `idempotencyKey`; `generation_jobs.idempotency_key`
   is UNIQUE. Repeats return the existing job; conflicting parameter reuse returns
-  `idempotency_conflict` (409).
+  `idempotency_conflict` (409). One request = one WORKFLOW charge
+  (`user:workflow:idempotencyKey`); background attempts 2-3 use derived keys
+  (`workflowId:a2` / `:a3`) and are charged 0.
+- Stripe webhook: `billing_events` primary-key insert before processing; a
+  duplicate delivery is acknowledged without reprocessing; a processing failure
+  releases the dedupe row so Stripe's retry can reprocess.
 
 ## Score cache & versioning
 
@@ -100,22 +116,32 @@ internals are never sent to the browser. Structured logs via `logEvent()`
 | Variable | Purpose |
 |---|---|
 | `AI_DISABLED=true` | disable all billable AI |
-| `GENERATION_DISABLED=true` | disable generation only |
+| `GENERATION_DISABLED=true` | disable generation only (incl. background refinement) |
 | `GLOBAL_DAILY_AI_ACTIONS` | global daily ceiling (cost-weighted, default 2000) |
 | `NEXT_PUBLIC_ENABLE_DEMO=1` | enable landing demo states in production |
 | `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase client |
-| `SUPABASE_SERVICE_ROLE_KEY` | server-only; credits/cache/jobs writes |
+| `SUPABASE_SERVICE_ROLE_KEY` | server-only; billing/allowance/cache/jobs writes |
 | `OPENAI_API_KEY` (+ optional `OPENAI_VISION_MODEL`, `OPENAI_IMAGE_MODEL`) | providers |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | durable rate limits (required on Vercel) |
+| `STRIPE_SECRET_KEY` | server-only Stripe API key |
+| `STRIPE_WEBHOOK_SECRET` | webhook signature verification |
+| `STRIPE_PRICE_ID` | the $19/month recurring price |
+| `WORKER_SECRET` (and/or Vercel `CRON_SECRET`) | authorizes /api/generate/worker |
 
 ## Migrations
 
 Apply in order in the Supabase SQL editor: `0001_init.sql`, `0002_feedback.sql`,
-`0003_production.sql`, `0004_trusted_generation_state.sql`. 0004 removes browser
-authority to edit plan/credits or insert audits, and backfills each photo's selected
-result from its latest completed job. Legacy audits without `score_cache_id` must
-be re-scored before a new generation. Rollback must deliberately restore the old
-grants/policies before dropping the new provenance and selected-result columns.
+`0003_production.sql`, `0004_trusted_generation_state.sql`,
+`0005_trusted_state_review_fixes.sql`, `0006_paid_beta.sql`. 0004 removes
+browser authority to edit plan/credits or insert audits; 0005 repairs the 0004
+selection backfill to best-score ordering. 0006 adds subscriptions, webhook
+replay ledger, per-period allowances (atomic SECURITY DEFINER functions),
+workflow/candidate columns on generation_jobs (max 3 attempts, one active
+refinement), photos.selection_source, eval consent, and workflow feedback —
+all additive and safe on installations that already ran 0004/0005. Legacy
+audits without `score_cache_id` must be re-scored before a new generation.
+Rollback must deliberately restore the old grants/policies before dropping the
+new provenance and selected-result columns.
 
 ## Tests
 

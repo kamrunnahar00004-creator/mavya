@@ -91,8 +91,8 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    expect(RUBRIC_VERSION).toBe("main-v4");
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v3");
+    expect(RUBRIC_VERSION).toBe("main-v5"); // v5 = near-eight beta calibration
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v4");
   });
 });
 

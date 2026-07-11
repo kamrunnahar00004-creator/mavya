@@ -75,8 +75,15 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
         const body = (await res.json().catch(() => null)) as
           | { error?: string; code?: string }
           | null;
-        if (body?.code === "insufficient_credits") {
-          throw new Error("You are out of credits. Upgrades are coming soon.");
+        if (body?.code === "allowance_exhausted") {
+          throw new Error(
+            "You have used this month's photo assessments. They refresh with your next billing period."
+          );
+        }
+        if (body?.code === "subscription_required" || body?.code === "subscription_past_due") {
+          throw new Error(
+            "An active subscription is needed to rate photos. Check your plan on the subscribe page."
+          );
         }
         if (body?.code === "unauthenticated") {
           throw new Error("Your session expired. Log in again.");

@@ -12,7 +12,7 @@ type Props = {
 const BENEFITS = [
   "Rated in seconds",
   "Fixed in one click",
-  "Free credits at signup",
+  "Founding Beta — $19/month",
 ];
 
 export function UploadWorkspace({ onFile, errorBanner }: Props) {

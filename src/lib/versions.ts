@@ -9,11 +9,14 @@
 /** Canonical category taxonomy version (src/lib/taxonomy.ts). */
 export const TAXONOMY_VERSION = 1;
 
-// main-v4 / supporting-v3: canonical 25-category taxonomy + category scoring
-// notes + priority_pillar/priority_issue_family fields (2026-07-11). Bumping
-// invalidates the score cache by design.
-export const RUBRIC_VERSION = "main-v4";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v3";
+// main-v5 / supporting-v4: near-eight beta calibration (raw 7.5-7.9 presents
+// as 8.0; raw preserved in raw_overall_score; rule near_eight_normalization_v1,
+// 2026-07-11). Bumped so pre-calibration cached scores are never mistaken for
+// results of the new scoring policy.
+// main-v4 / supporting-v3 were: canonical 25-category taxonomy + category
+// scoring notes + priority_pillar/priority_issue_family fields (2026-07-11).
+export const RUBRIC_VERSION = "main-v5";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v4";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

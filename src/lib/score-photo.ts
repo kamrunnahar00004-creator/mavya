@@ -8,6 +8,7 @@ import {
   type SupportingPhotoChecklistItem,
 } from "@/lib/rubric";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
+import { applyScoreCalibration } from "@/lib/calibration";
 import {
   CHECKLIST_PROMPT,
   checklistUserMessage,
@@ -149,6 +150,11 @@ export async function scorePhoto(args: {
     : supporting
     ? computeSupportingOverall(parsed.pillars)
     : computeOverall(parsed.pillars);
+
+  // Beta calibration LAST: computeOverall already applied the trust ceiling, so
+  // a score reduced below 7.5 by authenticity/trust can never be promoted to
+  // 8.0. The honest score is preserved in raw_overall_score.
+  applyScoreCalibration(parsed);
 
   // Contradiction detection (not blind trust): the model's declared
   // priority_pillar should normally be the weakest pillar. A mismatch is kept

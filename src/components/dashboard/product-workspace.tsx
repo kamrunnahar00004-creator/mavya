@@ -34,6 +34,8 @@ export type InitialJob = {
   resultUrl: string | null;
   candidateRubric: RubricJson | null;
   fidelity: FidelityReport | null;
+  /** 1 = user-visible attempt; 2-3 = quiet background refinement. */
+  attemptNumber?: number;
 };
 
 export type InitialPhoto = {
@@ -108,6 +110,9 @@ function freePreviewMessage(fidelity: FidelityReport | null): string {
   return `${FREE_PREVIEW_PREFIX}${tail}`;
 }
 
+const REFINING_NOTE =
+  "Mavya keeps refining this photo in the background. If a stronger faithful version is found, it will appear here automatically. Your current version stays available.";
+
 const RETRYABLE_CODES = new Set([
   "no_publishable_candidate",
   "incomplete_source",
@@ -170,13 +175,19 @@ function makePhoto(p: InitialPhoto): Photo {
     if (p.lastJob.status === "completed" && !p.selectedJob) {
       photo = applyCompletedJob(photo, p.lastJob);
     } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
-      photo = {
-        ...photo,
-        improveStatus: "generating",
-        improveStartedAt: Date.now(),
-        improveStage: JOB_STAGE_LABELS[p.lastJob.status],
-        lastJobId: photo.lastJobId,
-      };
+      if ((p.lastJob.attemptNumber ?? 1) > 1) {
+        // Background refinement runs quietly: no spinner, keep the current
+        // version usable, and show the honest refining note instead.
+        photo = { ...photo, keepNote: REFINING_NOTE };
+      } else {
+        photo = {
+          ...photo,
+          improveStatus: "generating",
+          improveStartedAt: Date.now(),
+          improveStage: JOB_STAGE_LABELS[p.lastJob.status],
+          lastJobId: photo.lastJobId,
+        };
+      }
     }
   }
   return photo;
@@ -240,6 +251,8 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
   const photosRef = useRef<Photo[]>(photos);
   const extraInputRef = useRef<HTMLInputElement | null>(null);
   const pollTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  // Set after pollJob is defined; lets applyJobPayload chain refinement polls.
+  const pollJobRef = useRef<((photoId: string, query: string) => void) | null>(null);
   const mainRubric = initialPhotos.find((p) => p.role === "main")?.rubric;
 
   useEffect(() => {
@@ -307,7 +320,75 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     (photoId: string, payload: GenerationJobPayload) => {
       const cur = photosRef.current.find((p) => p.id === photoId);
       if (!cur) return;
+      const isRefinement = (payload.attemptNumber ?? 1) > 1;
       const operation = cur.pendingOp ?? "improve";
+
+      // Background refinement is QUIET: no spinner, no blocking. A stronger
+      // safe version swaps in with an honest note; anything else keeps the
+      // current version and never alarms the seller.
+      if (isRefinement) {
+        if (ACTIVE_JOB_STATUSES.has(payload.status)) return;
+        if (
+          payload.status === "completed" &&
+          payload.resultUrl &&
+          payload.candidateRubric
+        ) {
+          const newScore =
+            cur.kind === "supporting"
+              ? rubricToSupportingAuditResult(payload.candidateRubric).overallScore
+              : rubricToAuditResult(payload.candidateRubric).overallScore;
+          const existingScore = cur.audit.improvedScore;
+          const replaced =
+            payload.keptPrevious !== true &&
+            (typeof existingScore !== "number" || newScore > existingScore);
+          if (replaced) {
+            const updated = applyCompletedJob(
+              { ...cur, keepNote: undefined },
+              {
+                id: payload.jobId,
+                status: "completed",
+                stage: null,
+                outcome: payload.outcome,
+                errorCode: null,
+                resultUrl: payload.resultUrl,
+                candidateRubric: payload.candidateRubric,
+                fidelity: payload.fidelity,
+              }
+            );
+            setPhotos((prev) =>
+              prev.map((p) =>
+                p.id === photoId
+                  ? {
+                      ...updated,
+                      keepNote:
+                        typeof existingScore === "number"
+                          ? `We kept improving in the background. This version scored ${newScore.toFixed(1)} versus your earlier ${existingScore.toFixed(1)}, so it is now the recommended version. Your earlier version is still available.`
+                          : `Background refinement finished with a ${newScore.toFixed(1)}. It is now the recommended version.`,
+                    }
+                  : p
+              )
+            );
+          } else {
+            patch(photoId, {
+              keepNote:
+                "Background refinement finished. Your current version stayed the strongest, so we kept it.",
+            });
+          }
+        } else if (cur.keepNote === REFINING_NOTE) {
+          // Refinement ended without a usable result: clear the quiet note.
+          patch(photoId, { keepNote: undefined });
+        }
+        // Chain to the next bounded attempt when one was queued.
+        if (
+          payload.refinement &&
+          ACTIVE_JOB_STATUSES.has(payload.refinement.status)
+        ) {
+          patch(photoId, { keepNote: REFINING_NOTE });
+          pollJobRef.current?.(photoId, `id=${payload.refinement.jobId}`);
+        }
+        return;
+      }
+
       if (ACTIVE_JOB_STATUSES.has(payload.status)) {
         patch(photoId, {
           improveStatus: "generating",
@@ -315,6 +396,13 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
           lastJobId: payload.jobId ?? cur.lastJobId,
         });
         return;
+      }
+      // A finished attempt 1 may hand off to a queued background refinement.
+      const refinementActive = Boolean(
+        payload.refinement && ACTIVE_JOB_STATUSES.has(payload.refinement.status)
+      );
+      if (refinementActive && payload.refinement) {
+        pollJobRef.current?.(photoId, `id=${payload.refinement.jobId}`);
       }
       if (payload.status === "completed" && payload.resultUrl && payload.candidateRubric) {
         const newScore =
@@ -353,7 +441,13 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             fidelity: payload.fidelity,
           }
         );
-        setPhotos((prev) => prev.map((p) => (p.id === photoId ? updated : p)));
+        setPhotos((prev) =>
+          prev.map((p) =>
+            p.id === photoId
+              ? { ...updated, keepNote: refinementActive ? REFINING_NOTE : undefined }
+              : p
+          )
+        );
         return;
       }
       // Terminal failure/rejection. NEVER silent: with an existing preview, an
@@ -373,10 +467,11 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
           hasPreview && qualityRejection
             ? undefined
             : payload.message ?? "Generation failed. Try again.",
-        keepNote:
-          hasPreview && qualityRejection
-            ? "We generated another version, but it did not beat your current one, so we kept the better version. You can try again."
-            : undefined,
+        keepNote: refinementActive
+          ? REFINING_NOTE
+          : hasPreview && qualityRejection
+          ? "We generated another version, but it did not beat your current one, so we kept the better version. You can try again."
+          : undefined,
         unresolved: payload.unresolvedIssues ?? cur.unresolved,
         canRetry: hasPreview
           ? typeof cur.audit.improvedScore === "number" && cur.audit.improvedScore < 8
@@ -402,8 +497,10 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
           const res = await fetch(`/api/generate?${query}`);
           if (!res.ok) return;
           const payload = (await res.json()) as GenerationJobPayload;
-          applyJobPayload(photoId, payload);
+          // Stop THIS poll before applying: a terminal payload may chain a new
+          // poll for the queued background refinement, which must survive.
           if (!ACTIVE_JOB_STATUSES.has(payload.status)) stopPolling(photoId);
+          applyJobPayload(photoId, payload);
         } catch {
           // transient poll failure: keep trying until terminal or unmount
         }
@@ -411,6 +508,10 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     },
     [applyJobPayload, stopPolling]
   );
+
+  useEffect(() => {
+    pollJobRef.current = pollJob;
+  }, [pollJob]);
 
   // Refresh recovery: resume polling for photos whose last job is still active.
   useEffect(() => {
@@ -516,7 +617,12 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
           applyJobPayload(photo.id, {
             ok: false,
             jobId: "",
-            status: err.code === "insufficient_credits" ? "cancelled" : "failed",
+            status:
+              err.code === "allowance_exhausted" ||
+              err.code === "subscription_required" ||
+              err.code === "subscription_past_due"
+                ? "cancelled"
+                : "failed",
             stage: null,
             outcome: null,
             errorCode: (err.code as GenerationJobPayload["errorCode"]) ?? "internal_error",
@@ -621,8 +727,10 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             | { error?: string; code?: string }
             | null;
           throw new Error(
-            b?.code === "insufficient_credits"
-              ? "You are out of credits, so this photo was not rated."
+            b?.code === "allowance_exhausted"
+              ? "You have used this month's photo assessments, so this photo was not rated. They refresh with your next billing period."
+              : b?.code === "subscription_required" || b?.code === "subscription_past_due"
+              ? "An active subscription is needed to rate photos. Check your plan on the subscribe page."
               : b?.error || `Score failed (${res.status})`
           );
         }

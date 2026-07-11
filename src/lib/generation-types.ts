@@ -45,7 +45,18 @@ export type GenerationJobPayload = {
   candidateRubric: RubricJson | null;
   fidelity: FidelityReport | null;
   unresolvedIssues?: string[];
-  creditsRemaining?: number;
-  /** A completed retry was persisted but did not replace the stronger selection. */
+  /** Remaining improvement workflows this billing month. */
+  workflowsRemaining?: number;
+  /** A completed result was persisted but did not replace the stronger selection. */
   keptPrevious?: boolean;
+  /** Which bounded attempt this job is (1 = user-visible, 2-3 = background refinement). */
+  attemptNumber?: number;
+  /** Workflow grouping id (the root attempt's job id). */
+  workflowId?: string | null;
+  /** The follow-up background refinement attempt to poll, when one exists. */
+  refinement?: {
+    jobId: string;
+    status: GenerationJobStatus;
+    attemptNumber: number;
+  } | null;
 };

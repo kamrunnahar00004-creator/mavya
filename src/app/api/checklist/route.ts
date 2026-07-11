@@ -5,6 +5,7 @@ import { generateChecklist } from "@/lib/score-photo";
 import { getSessionUser } from "@/lib/supabase/server";
 import { apiError } from "@/lib/errors";
 import { aiDisabled, withinGlobalBudget } from "@/lib/usage";
+import { getEntitlement } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,6 +27,16 @@ export async function POST(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) {
     return apiError("unauthenticated", "Log in to load the checklist.");
+  }
+  // Paid-only beta: the checklist is bundled with a paid assessment (no
+  // separate allowance), but it is still a provider call, so it requires an
+  // active subscription like every other AI route.
+  const entitlement = await getEntitlement(user.id);
+  if (!entitlement.active) {
+    return apiError(
+      "subscription_required",
+      "The supporting-photo checklist is part of the Mavya Founding Beta subscription."
+    );
   }
   if (!(await withinGlobalBudget("checklist"))) {
     return NextResponse.json({ supporting_photo_checklist: [] }, { status: 200 });

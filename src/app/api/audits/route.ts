@@ -5,6 +5,7 @@ import { hashImageBytes } from "@/lib/image-hash";
 import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
+import { getEntitlement } from "@/lib/entitlements";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,6 +18,16 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in first.");
+  // Paid-only beta: audits persist paid assessments, so the same server-side
+  // subscription boundary applies (a lapsed account keeps reading old audits
+  // but cannot persist new ones).
+  const entitlement = await getEntitlement(user.id);
+  if (!entitlement.active) {
+    return apiError(
+      "subscription_required",
+      "Saving assessments is part of the Mavya Founding Beta subscription."
+    );
+  }
   const limit = await rateLimit(`audit-persist:u:${user.id}`, 30, 60_000);
   if (!limit.ok) return apiError("rate_limited", "Too many audit saves. Try again shortly.");
 

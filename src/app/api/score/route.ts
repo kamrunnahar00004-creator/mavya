@@ -9,12 +9,9 @@ import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/serve
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hashImageBytes, hashText } from "@/lib/image-hash";
 import { apiError, logEvent } from "@/lib/errors";
-import {
-  aiDisabled,
-  consumeCredits,
-  refundCredits,
-  withinGlobalBudget,
-} from "@/lib/usage";
+import { aiDisabled, withinGlobalBudget } from "@/lib/usage";
+import { getEntitlement } from "@/lib/entitlements";
+import { consumeAllowance, refundAllowance } from "@/lib/allowances";
 import { getVisionModel } from "@/lib/openai";
 import {
   MIN_IMAGE_DIMENSION,
@@ -30,11 +27,11 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 /**
- * Score a listing photo. AUTH REQUIRED — anonymous scoring is disabled
- * (product decision: the landing gates the scan behind signup; the landing demo
- * is static assets, not live scoring). Charges 1 credit unless the identical
- * image (hash + rubric version + mode + context) was already scored by this
- * user, in which case the cached audit is returned free.
+ * Score a listing photo. PAID-ONLY BETA: requires a session AND an active
+ * subscription (webhook-maintained, verified server-side). Consumes 1 of the
+ * 20 monthly assessments unless the identical image (hash + rubric version +
+ * mode + context) was already scored by this user, in which case the cached
+ * audit is returned without consuming an assessment.
  */
 export async function POST(req: NextRequest) {
   // 1. Kill switch before anything billable.
@@ -48,7 +45,23 @@ export async function POST(req: NextRequest) {
     return apiError("unauthenticated", "Log in to rate photos.");
   }
 
-  // 3. Abuse-control rate limits (secondary to credits).
+  // 2b. Paid-only beta: server-verified subscription entitlement. The browser
+  // never supplies plan, status, or period fields.
+  const entitlement = await getEntitlement(user.id);
+  if (!entitlement.active || !entitlement.periodKey) {
+    if (entitlement.reason === "past_due") {
+      return apiError(
+        "subscription_past_due",
+        "Your payment did not go through. Update it in billing to keep rating photos. Your saved results are safe."
+      );
+    }
+    return apiError(
+      "subscription_required",
+      "Rating photos is part of the Mavya Founding Beta subscription."
+    );
+  }
+
+  // 3. Abuse-control rate limits (secondary to allowances).
   const ip = clientIp(req);
   const perMin = await rateLimit(`score:u:${user.id}`, 6, 60_000);
   const perMinIp = await rateLimit(`score:${ip}`, 12, 60_000);
@@ -177,19 +190,23 @@ export async function POST(req: NextRequest) {
     return apiError("ai_disabled", "Daily capacity reached. Try again tomorrow.");
   }
 
-  // 7. Atomic charge. Idempotency = user + image + version + context, so a
-  //    double-submit of the same photo cannot double-charge.
+  // 7. Atomic allowance charge (1 of 20 monthly assessments). Idempotency =
+  //    user + image + version + context, so a double-submit of the same photo
+  //    cannot consume two assessments.
   const chargeKey = `${user.id}:score:${imageHash}:${scoringMode}:${rubricVersion}:${contextHash}`;
-  const charge = await consumeCredits({
+  const charge = await consumeAllowance({
     userId: user.id,
-    action: "score",
+    kind: "assessment",
+    periodKey: entitlement.periodKey,
     idempotencyKey: chargeKey,
   });
   if (!charge.ok) {
-    if (charge.code === "insufficient_credits") {
-      return apiError("insufficient_credits", "You are out of credits.", {
-        remaining: charge.remaining ?? 0,
-      });
+    if (charge.code === "allowance_exhausted") {
+      return apiError(
+        "allowance_exhausted",
+        "You have used this month's 20 photo assessments. They refresh with your next billing period.",
+        { remaining: charge.remaining ?? 0, renewsAt: entitlement.currentPeriodEnd }
+      );
     }
     return apiError("internal_error", "Could not process the request. Try again.");
   }
@@ -209,8 +226,8 @@ export async function POST(req: NextRequest) {
       err instanceof ScorePhotoError
         ? err
         : new ScorePhotoError("AI scoring failed. Try again.", "vision_failed");
-    // Provider/parse failure: refund the charge (policy: infra failures refund).
-    if (!charge.duplicate) await refundCredits(chargeKey);
+    // Provider/parse failure: refund the assessment (policy: infra failures refund).
+    if (!charge.duplicate) await refundAllowance(chargeKey);
     logEvent("score.failed", {
       userId: user.id,
       code: error.code,
@@ -259,7 +276,7 @@ export async function POST(req: NextRequest) {
   // The cache row is now the server-owned provenance for audit persistence.
   // Returning an unpersistable score would strand the user after charging them.
   if (!scoreCacheId) {
-    if (!charge.duplicate) await refundCredits(chargeKey);
+    if (!charge.duplicate) await refundAllowance(chargeKey);
     return apiError(
       "persistence_failed",
       "Your photo was rated but the verified audit could not be saved. Try again."
@@ -272,7 +289,7 @@ export async function POST(req: NextRequest) {
     score: rubric.overall_score,
     cached: false,
     latencyMs: Date.now() - startedAt,
-    remainingCredits: charge.remaining,
+    remainingAssessments: charge.remaining,
   });
 
   return NextResponse.json(
@@ -282,7 +299,7 @@ export async function POST(req: NextRequest) {
       imageHash,
       rubricVersion,
       scoreCacheId,
-      creditsRemaining: charge.remaining,
+      assessmentsRemaining: charge.remaining,
     },
     { status: 200 }
   );

@@ -30,6 +30,7 @@ import {
   type FidelityReport,
 } from "@/lib/fidelity";
 import { imageEditCall } from "@/lib/openai";
+import { rawOverall } from "@/lib/calibration";
 import { ISSUE_FAMILIES, PILLAR_KEYS, type IssueFamily, type RubricJson } from "@/lib/rubric";
 import { generationGuidanceFor } from "@/lib/taxonomy";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
@@ -416,10 +417,12 @@ function delivered(args: {
   // Supporting photos: role/content-preserving gate, gain-based (no 8+ / hero
   // pillar requirement). Hero photos: the unchanged hero gate + dominant issue.
   if (args.mode === "extra") {
+    // Gain comparisons use RAW scores so the near-eight calibration cannot mask
+    // (or fake) a genuine improvement.
     return passesSupportingDeliveryGate({
       fidelity: args.fidelity,
-      originalScore: args.original.overall_score,
-      candidateScore: args.candidateAudit.overall_score,
+      originalScore: rawOverall(args.original),
+      candidateScore: rawOverall(args.candidateAudit),
     });
   }
   return (
@@ -555,11 +558,11 @@ export type ImproveFailure = {
 export type ImproveResult = ImproveSuccess | ImproveFailure;
 
 const FAILURE_QUALITY =
-  "This version did not reach publish-ready quality, so we did not deliver it. Generate another version or try a different source photo.";
+  "This version was not strong enough to recommend, so we did not deliver it. Generate another version or try a different source photo.";
 const FAILURE_SUPPORTING_QUALITY =
   "This version did not become a strong supporting photo, so we did not deliver it. Generate another version or try a different source photo.";
 const FAILURE_INCOMPLETE =
-  "We could not create a publish-ready result. Upload one photo showing the complete product.";
+  "We could not create a strong result from this photo. Upload one photo showing the complete product.";
 const FAILURE_SUPPORTING_INCOMPLETE =
   "We could not create a strong supporting photo from this source. Upload one photo showing the complete product.";
 const FAILURE_AI_LOOKING =
@@ -655,9 +658,11 @@ function isUsefulFreePreview(args: {
   mode: ImproveMode;
 }): boolean {
   if (blocksFreePreview(args.fidelity, args.mode)) return false;
+  // RAW scores: calibration is presentation only and must not create or hide
+  // a 0.3 gain (e.g. original raw 7.5 and candidate raw 7.9 both present 8.0).
   if (
-    args.candidateAudit.overall_score <
-    args.original.overall_score + USEFUL_PREVIEW_MIN_GAIN
+    rawOverall(args.candidateAudit) <
+    rawOverall(args.original) + USEFUL_PREVIEW_MIN_GAIN
   ) {
     return false;
   }
@@ -871,7 +876,7 @@ export async function improvePhoto(args: {
   attempts.push({
     attempt: 1,
     stage: "generation",
-    candidateScore: candidateAudit.overall_score,
+    candidateScore: rawOverall(candidateAudit),
     fidelityScore: fidelity.fidelity_score,
     authenticityScore: fidelity.authenticity_score,
     publishable: fidelity.publishable,
@@ -901,6 +906,8 @@ export async function improvePhoto(args: {
   //    the score sits JUST under the gate (>= 7.2) AND the candidate audit
   //    actually requests a light adjustment. A finish costs two extra
   //    verification calls, so it must have a realistic chance of clearing 8.0.
+  // RAW window 7.2-7.4 only: an accepted raw 7.5-7.9 already presents as 8.0
+  // under the beta calibration, so no extra provider spend is justified there.
   const finishWorthTrying =
     fidelity.publishable &&
     !fidelity.ai_looking &&
@@ -908,8 +915,8 @@ export async function improvePhoto(args: {
     !fidelity.invented_or_missing_details &&
     !fidelity.collage_or_duplicate_product &&
     fidelity.full_product_visible &&
-    candidateAudit.overall_score < 8 &&
-    candidateAudit.overall_score >= 7.2 &&
+    rawOverall(candidateAudit) < 7.5 &&
+    rawOverall(candidateAudit) >= 7.2 &&
     candidateAudit.light_adjustment !== null;
 
   if (finishWorthTrying) {
@@ -932,7 +939,7 @@ export async function improvePhoto(args: {
         attempts.push({
           attempt: 1,
           stage: "deterministic_finish",
-          candidateScore: finished.candidateAudit.overall_score,
+          candidateScore: rawOverall(finished.candidateAudit),
           fidelityScore: finished.fidelity.fidelity_score,
           authenticityScore: finished.fidelity.authenticity_score,
           publishable: finished.fidelity.publishable,

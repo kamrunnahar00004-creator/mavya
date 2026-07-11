@@ -33,6 +33,7 @@ type JobRow = {
   result_storage_path: string | null;
   candidate_rubric: RubricJson | null;
   fidelity: FidelityReport | null;
+  attempt_number: number | null;
   created_at: string;
 };
 
@@ -77,7 +78,7 @@ export default async function ProductPage({
     const { data: jobData } = await supabase
       .from("generation_jobs")
       .select(
-        "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, created_at"
+        "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, created_at"
       )
       .in("photo_id", photoIds)
       .order("created_at", { ascending: false });
@@ -118,6 +119,7 @@ export default async function ProductPage({
           resultUrl,
           candidateRubric: jobRow.candidate_rubric,
           fidelity: jobRow.fidelity,
+          attemptNumber: jobRow.attempt_number ?? 1,
         };
       }
 

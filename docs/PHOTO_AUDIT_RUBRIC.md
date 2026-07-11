@@ -1,5 +1,25 @@
 # Mavya Photo Audit Rubric
 
+## Beta score calibration (2026-07-12, rubric main-v5 / supporting-v4)
+
+Temporary founder rule `near_eight_normalization_v1` (`src/lib/calibration.ts`):
+raw 0.0-7.4 unchanged, raw **7.5-7.9 presents as 8.0**, raw 8.0-10.0 unchanged.
+NOT rounding (8.4 stays 8.4). Applied identically to original uploads and
+generated candidates, AFTER every trust/authenticity safeguard (the click-appeal
+ceiling in `computeOverall` runs first, so a trust-capped 6.9 is never promoted).
+The honest score is preserved as `raw_overall_score`; every internal comparison
+(refinement trigger, selection, gain thresholds, eval golds) uses the raw score
+via `rawOverall()`. Rubric versions bumped to main-v5 / supporting-v4 so
+pre-calibration cached scores are never mistaken for new-policy results.
+Review plan: blind founder review of ~20-30 real results in raw 7.5-8.4 decides
+whether the rule stays. The eval harness compares golds to RAW scores.
+
+**Eval-set expansion plan (paid beta):** grow the golden set beyond candles to
+soap, mugs, jewelry, crochet/plush, personalized products, text-heavy labels,
+supporting photos, and digital products. Only consented user images
+(`profiles.eval_consent`) may be promoted into private fixtures, by the founder.
+User feedback is evidence, never automatic ground truth.
+
 ## Taxonomy + evaluation harness (2026-07-11, rubric main-v4 / supporting-v3)
 
 **Canonical taxonomy:** `src/lib/taxonomy.ts` is the single source of truth for

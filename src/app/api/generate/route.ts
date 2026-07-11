@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { after } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import {
@@ -10,13 +11,16 @@ import {
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
+import { generationDisabled, isRefundable, withinGlobalBudget } from "@/lib/usage";
+import { getEntitlement } from "@/lib/entitlements";
+import { consumeAllowance, refundAllowance } from "@/lib/allowances";
+import { rawOverall, calibrateScore, CALIBRATION_RULE } from "@/lib/calibration";
+import { candidateIsSafe } from "@/lib/workflow-rules";
 import {
-  consumeCredits,
-  generationDisabled,
-  isRefundable,
-  refundCredits,
-  withinGlobalBudget,
-} from "@/lib/usage";
+  applySelectionForCompletedJob,
+  maybeQueueRefinement,
+  runQueuedRefinementOnce,
+} from "@/lib/refinement";
 import { getImageModel } from "@/lib/openai";
 import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
 import {
@@ -43,7 +47,7 @@ type JobRow = {
   idempotency_key: string;
   status: GenerationJobStatus;
   stage: string | null;
-  operation: "improve" | "edit" | "retry";
+  operation: "improve" | "edit" | "retry" | "refine";
   edit_instruction: string | null;
   result_storage_path: string | null;
   candidate_rubric: RubricJson | null;
@@ -51,6 +55,9 @@ type JobRow = {
   outcome: "publish_ready" | "useful_free_preview" | null;
   error_code: string | null;
   credit_key: string | null;
+  allowance_key: string | null;
+  workflow_id: string | null;
+  attempt_number: number;
   refunded: boolean;
   updated_at: string;
 };
@@ -71,6 +78,29 @@ async function jobPayload(
   job: JobRow,
   extra?: Partial<GenerationJobPayload>
 ): Promise<GenerationJobPayload> {
+  // Surface the workflow's follow-up background attempt (if any) so the client
+  // can keep polling for a quietly-improved version.
+  let refinement: GenerationJobPayload["refinement"] = null;
+  if (
+    (job.status === "completed" || job.status === "rejected" || job.status === "failed") &&
+    job.workflow_id
+  ) {
+    const { data: next } = await supabase
+      .from("generation_jobs")
+      .select("id, status, attempt_number")
+      .eq("workflow_id", job.workflow_id)
+      .gt("attempt_number", job.attempt_number ?? 1)
+      .order("attempt_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (next) {
+      refinement = {
+        jobId: next.id,
+        status: next.status as GenerationJobStatus,
+        attemptNumber: next.attempt_number,
+      };
+    }
+  }
   return {
     ok: job.status === "completed",
     jobId: job.id,
@@ -85,11 +115,14 @@ async function jobPayload(
         : null,
     candidateRubric: job.status === "completed" ? job.candidate_rubric : null,
     fidelity: job.status === "completed" ? job.fidelity : null,
+    attemptNumber: job.attempt_number ?? 1,
+    workflowId: job.workflow_id,
+    refinement,
     ...extra,
   };
 }
 
-/** Mark an overdue active job failed and refund its charge. */
+/** Mark an overdue active job failed and refund its workflow charge. */
 async function failStaleJob(job: JobRow): Promise<JobRow> {
   const admin = createSupabaseAdminClient();
   const { data } = await admin
@@ -105,7 +138,11 @@ async function failStaleJob(job: JobRow): Promise<JobRow> {
     .in("status", ["queued", "generating", "fidelity_check", "rescoring"])
     .select()
     .maybeSingle();
-  if (data && job.credit_key) await refundCredits(job.credit_key);
+  // Only the charged attempt consumed a workflow allowance; legacy jobs may
+  // carry a credit_key which no longer refunds anything meaningful.
+  if (data && (job.attempt_number ?? 1) === 1 && job.allowance_key) {
+    await refundAllowance(job.allowance_key);
+  }
   logEvent("generate.stale_job_failed", { jobId: job.id });
   return (data as JobRow) ?? job;
 }
@@ -156,6 +193,21 @@ export async function POST(req: NextRequest) {
 
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in to improve photos.");
+
+  // Paid-only beta: server-verified subscription entitlement before anything.
+  const entitlement = await getEntitlement(user.id);
+  if (!entitlement.active || !entitlement.periodKey) {
+    if (entitlement.reason === "past_due") {
+      return apiError(
+        "subscription_past_due",
+        "Your payment did not go through. Update it in billing to keep improving photos. Your saved results are safe."
+      );
+    }
+    return apiError(
+      "subscription_required",
+      "AI photo improvement is part of the Mavya Founding Beta subscription."
+    );
+  }
 
   const ip = clientIp(req);
   const perMin = await rateLimit(`gen:u:${user.id}`, 2, 60_000);
@@ -286,8 +338,9 @@ export async function POST(req: NextRequest) {
     return apiError("generation_disabled", "Daily capacity reached. Try again tomorrow.");
   }
 
-  // Create the job row first so refresh can always find it.
-  const chargeKey = `${user.id}:generate:${idempotencyKey}`;
+  // Create the job row first so refresh can always find it. One user request =
+  // one WORKFLOW (this job is attempt 1 and its own workflow root).
+  const chargeKey = `${user.id}:workflow:${idempotencyKey}`;
   const { data: created, error: createErr } = await admin
     .from("generation_jobs")
     .insert({
@@ -302,7 +355,8 @@ export async function POST(req: NextRequest) {
       edit_instruction: editInstruction ?? null,
       provider_model: getImageModel(),
       prompt_version: GENERATION_PROMPT_VERSION,
-      credit_key: chargeKey,
+      allowance_key: chargeKey,
+      attempt_number: 1,
     })
     .select()
     .single();
@@ -326,6 +380,11 @@ export async function POST(req: NextRequest) {
       .eq("id", job.id);
   };
 
+  // The workflow root is this job itself.
+  await patchJob({ workflow_id: job.id });
+  job.workflow_id = job.id;
+  job.attempt_number = 1;
+
   const failJob = async (
     code: ApiErrorCode,
     message: string,
@@ -333,42 +392,67 @@ export async function POST(req: NextRequest) {
     extra?: { unresolvedIssues?: string[] }
   ) => {
     const refund = isRefundable(code);
-    if (refund) await refundCredits(chargeKey);
+    if (refund) await refundAllowance(chargeKey);
     await patchJob({
       status: kind,
       stage: null,
       error_code: code,
       refunded: refund,
+      unresolved_issues: extra?.unresolvedIssues ?? [],
       completed_at: new Date().toISOString(),
     });
     logEvent("generate.finished", { jobId: job.id, status: kind, code });
+    // A safe-but-unsafe/rejected attempt 1 still gets its bounded background
+    // attempts (weak sources are helped, never rejected for being weak).
+    if (!refund) {
+      const queuedId = await maybeQueueRefinement({
+        admin,
+        completedJob: {
+          id: job.id,
+          user_id: user.id,
+          product_id: photo.product_id,
+          photo_id: photo.id,
+          source_audit_id: auditRow.id,
+          operation,
+          workflow_id: job.id,
+          attempt_number: 1,
+          allowance_key: chargeKey,
+        },
+        acceptedRawScore: null,
+      });
+      if (queuedId) after(() => runQueuedRefinementOnce(queuedId));
+    }
     return apiError(code, message, {
       jobId: job.id,
       unresolvedIssues: extra?.unresolvedIssues ?? [],
     });
   };
 
-  // Atomic charge (duplicate keys never double-charge).
-  const charge = await consumeCredits({
+  // Atomic workflow allowance charge (1 of 12; duplicates never double-charge).
+  const charge = await consumeAllowance({
     userId: user.id,
-    action: "generate",
+    kind: "workflow",
+    periodKey: entitlement.periodKey,
     idempotencyKey: chargeKey,
     refId: job.id,
   });
   if (!charge.ok) {
     await patchJob({
       status: "cancelled",
-      error_code: charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
+      error_code:
+        charge.code === "allowance_exhausted" ? "allowance_exhausted" : "internal_error",
       completed_at: new Date().toISOString(),
     });
-    if (charge.code === "insufficient_credits") {
-      return apiError("insufficient_credits", "You are out of credits.", {
-        remaining: charge.remaining ?? 0,
-      });
+    if (charge.code === "allowance_exhausted") {
+      return apiError(
+        "allowance_exhausted",
+        "You have used this month's 12 improvement workflows. They refresh with your next billing period.",
+        { remaining: charge.remaining ?? 0, renewsAt: entitlement.currentPeriodEnd }
+      );
     }
     return apiError("internal_error", "Could not process the request. Try again.");
   }
-  await patchJob({ charged: 5 });
+  await patchJob({ charged: 1 });
 
   const startedAt = Date.now();
   try {
@@ -463,6 +547,8 @@ export async function POST(req: NextRequest) {
       return await failJob("persistence_failed", "The result could not be saved. Try again.", "failed");
     }
 
+    const rawScore = rawOverall(result.candidateAudit);
+    const safe = candidateIsSafe(result.fidelity, mode);
     await patchJob({
       status: "completed",
       stage: null,
@@ -470,56 +556,57 @@ export async function POST(req: NextRequest) {
       candidate_rubric: result.candidateAudit,
       fidelity: result.fidelity,
       outcome: result.outcome,
+      raw_score: rawScore,
+      calibrated_score: calibrateScore(rawScore),
+      calibration_rule: CALIBRATION_RULE,
+      latency_ms: Date.now() - startedAt,
       completed_at: new Date().toISOString(),
     });
 
-    // Persist the version the seller should actually see. Completed retries are
-    // still retained as evidence, but a weaker retry cannot replace the current
-    // selected result merely because it was created later.
-    let selected = operation !== "retry" || !photo.selected_generation_job_id;
-    if (operation === "retry" && photo.selected_generation_job_id) {
-      const { data: previousSelected } = await admin
-        .from("generation_jobs")
-        .select("candidate_rubric")
-        .eq("id", photo.selected_generation_job_id)
-        .eq("user_id", user.id)
-        .maybeSingle();
-      const previousRubric = previousSelected?.candidate_rubric as RubricJson | null;
-      const previousScore = previousRubric?.overall_score;
-      selected =
-        typeof previousScore !== "number" ||
-        result.candidateAudit.overall_score > previousScore;
-    }
-    if (selected) {
-      let selectQuery = admin
-        .from("photos")
-        .update({ selected_generation_job_id: job.id })
-        .eq("id", photo.id)
-        .eq("product_id", photo.product_id);
-      // Optimistic compare-and-set: two concurrent retries may both read the
-      // same previous score, but only the first writer may replace that pointer.
-      selectQuery = photo.selected_generation_job_id
-        ? selectQuery.eq(
-            "selected_generation_job_id",
-            photo.selected_generation_job_id
-          )
-        : selectQuery.is("selected_generation_job_id", null);
-      const { data: selectedPhoto, error: selectError } = await selectQuery
-        .select("id")
-        .maybeSingle();
-      if (selectError) {
-        return await failJob(
-          "persistence_failed",
-          "The result was created but could not be selected. Try again.",
-          "failed"
-        );
-      }
-      selected = Boolean(selectedPhoto);
-    }
+    // Persist the version the seller should actually see. All completed
+    // candidates are retained as comparable versions, but selection follows
+    // the shared policy: never replace a strictly better safe version, and
+    // never automatically overwrite the seller's explicit manual pick.
+    const selected = await applySelectionForCompletedJob({
+      admin,
+      userId: user.id,
+      photoId: photo.id,
+      productId: photo.product_id,
+      jobId: job.id,
+      operation,
+      candidateRubric: result.candidateAudit,
+      candidateSafe: safe,
+    });
+
+    // Bounded background refinement: an accepted raw score below 7.5 quietly
+    // queues attempt 2 (attempt 3 may follow). Raw >= 7.5 presents as 8.0 and
+    // stops automatic generation.
+    const refinementJobId = await maybeQueueRefinement({
+      admin,
+      completedJob: {
+        id: job.id,
+        user_id: user.id,
+        product_id: photo.product_id,
+        photo_id: photo.id,
+        source_audit_id: auditRow.id,
+        operation,
+        workflow_id: job.id,
+        attempt_number: 1,
+        allowance_key: chargeKey,
+      },
+      acceptedRawScore: safe ? rawScore : null,
+    });
+    // Best-effort in-invocation execution; the worker route is the durable
+    // backstop if this invocation is frozen or killed after the response.
+    if (refinementJobId) after(() => runQueuedRefinementOnce(refinementJobId));
+
     logEvent("generate.finished", {
       jobId: job.id,
       status: "completed",
       outcome: result.outcome,
+      rawScore,
+      selected,
+      refinementQueued: Boolean(refinementJobId),
       latencyMs: Date.now() - startedAt,
     });
 
@@ -535,7 +622,13 @@ export async function POST(req: NextRequest) {
         outcome: result.outcome,
         error_code: null,
       },
-      { creditsRemaining: charge.remaining, keptPrevious: !selected }
+      {
+        workflowsRemaining: charge.remaining,
+        keptPrevious: !selected,
+        refinement: refinementJobId
+          ? { jobId: refinementJobId, status: "queued", attemptNumber: 2 }
+          : null,
+      }
     );
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {

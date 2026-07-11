@@ -151,7 +151,9 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
       }
     }
     const latencyMs = Date.now() - started;
-    const score = rubric.overall_score;
+    // Golds are honest raw scores: compare against the pre-calibration score so
+    // the temporary near-eight presentation rule never distorts eval results.
+    const score = rubric.raw_overall_score ?? rubric.overall_score;
     const band = bandOf(score);
     const e = fixture.expected;
     const strict = fixture.strictness;
