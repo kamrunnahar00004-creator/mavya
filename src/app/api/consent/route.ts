@@ -32,15 +32,20 @@ export async function POST(req: NextRequest) {
   }
 
   const admin = createSupabaseAdminClient();
-  const { error } = await admin
+  const { data, error } = await admin
     .from("profiles")
     .update({
       eval_consent: body.consent,
       eval_consent_at: new Date().toISOString(),
     })
-    .eq("id", user.id);
-  if (error) {
-    logEvent("consent.update_failed", { userId: user.id, error: error.message });
+    .eq("id", user.id)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    logEvent("consent.update_failed", {
+      userId: user.id,
+      error: error?.message ?? "profile_not_found",
+    });
     return apiError("persistence_failed", "Your choice could not be saved. Try again.");
   }
   logEvent("consent.updated", { userId: user.id, consent: body.consent });
@@ -52,11 +57,14 @@ export async function GET() {
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in first.");
   const admin = createSupabaseAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("profiles")
     .select("eval_consent")
     .eq("id", user.id)
     .maybeSingle();
+  if (error || !data) {
+    return apiError("persistence_failed", "Your consent choice could not be loaded.");
+  }
   return NextResponse.json(
     { ok: true, consent: Boolean(data?.eval_consent) },
     { status: 200 }

@@ -92,12 +92,12 @@ export default function SubscriptionSuccessPage() {
         {state === "slow" && (
           <>
             <p className="text-[17px] font-bold text-[var(--color-ink)]">
-              Payment received, still confirming
+              Still waiting for confirmation
             </p>
             <p className="mt-1 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
-              Your card was charged and your subscription is being activated.
-              This is taking longer than usual. Refresh in a moment — you will
-              not be charged twice.
+              We have not confirmed an active subscription yet. Stripe may still
+              be processing or the webhook may be delayed. Check your Stripe
+              receipt, then refresh in a moment.
             </p>
             <div className="mt-5 flex gap-3">
               <button

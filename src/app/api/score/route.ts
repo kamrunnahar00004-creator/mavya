@@ -193,7 +193,7 @@ export async function POST(req: NextRequest) {
   // 7. Atomic allowance charge (1 of 20 monthly assessments). Idempotency =
   //    user + image + version + context, so a double-submit of the same photo
   //    cannot consume two assessments.
-  const chargeKey = `${user.id}:score:${imageHash}:${scoringMode}:${rubricVersion}:${contextHash}`;
+  const chargeKey = `${user.id}:score:${entitlement.periodKey}:${imageHash}:${scoringMode}:${rubricVersion}:${contextHash}`;
   const charge = await consumeAllowance({
     userId: user.id,
     kind: "assessment",

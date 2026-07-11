@@ -36,10 +36,16 @@ export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const { data: job } = await supabase
     .from("generation_jobs")
-    .select("id, user_id")
+    .select("id, user_id, workflow_id, attempt_number")
     .eq("id", workflowId)
     .maybeSingle();
-  if (!job) return apiError("source_unavailable", "Workflow not found.");
+  if (
+    !job ||
+    job.attempt_number !== 1 ||
+    (job.workflow_id !== null && job.workflow_id !== job.id)
+  ) {
+    return apiError("source_unavailable", "Workflow not found.");
+  }
 
   const optionalBool = (v: unknown) => (typeof v === "boolean" ? v : null);
   const optionalText = (v: unknown) =>

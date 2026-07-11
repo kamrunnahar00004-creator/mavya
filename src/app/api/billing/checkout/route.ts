@@ -33,8 +33,9 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const stripe = getStripe();
-  const admin = createSupabaseAdminClient();
+    const stripe = getStripe();
+    const priceId = getStripePriceId();
+    const admin = createSupabaseAdminClient();
 
   try {
     // Reuse the linked customer or create one bound to this user id.
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
       const customer = await stripe.customers.create({
         email: user.email ?? undefined,
         metadata: { user_id: user.id },
-      });
+      }, { idempotencyKey: `mavya-customer-${user.id}` });
       customerId = customer.id;
       const { error } = await admin.from("subscriptions").upsert(
         {
@@ -57,16 +58,34 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
     }
 
+    const openSessions = await stripe.checkout.sessions.list({
+      customer: customerId,
+      status: "open",
+      limit: 10,
+    });
+    const existingSession = openSessions.data.find(
+      (session) =>
+        session.client_reference_id === user.id &&
+        session.mode === "subscription" &&
+        session.metadata?.price_id === priceId
+    );
+    if (existingSession?.url) {
+      return NextResponse.json({ ok: true, url: existingSession.url }, { status: 200 });
+    }
+
     const origin = req.nextUrl.origin;
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
       customer: customerId,
       client_reference_id: user.id,
-      line_items: [{ price: getStripePriceId(), quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
+      metadata: { user_id: user.id, price_id: priceId },
       subscription_data: { metadata: { user_id: user.id } },
       success_url: `${origin}/subscription/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${origin}/subscribe?checkout=cancelled`,
       allow_promotion_codes: false,
+    }, {
+      idempotencyKey: `mavya-checkout-${user.id}-${Math.floor(Date.now() / 60_000)}`,
     });
 
     if (!session.url) {

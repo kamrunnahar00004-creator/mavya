@@ -28,7 +28,7 @@ export type SubscriptionRow = {
 
 export type Entitlement = {
   active: boolean;
-  reason: "ok" | "no_subscription" | "past_due" | "inactive";
+  reason: "ok" | "no_subscription" | "past_due" | "inactive" | "wrong_plan" | "expired";
   status: string | null;
   /** Allowance period key: the billing period start. Null when not active. */
   periodKey: string | null;
@@ -40,7 +40,11 @@ export type Entitlement = {
 const ACTIVE_STATUSES = new Set(["active", "trialing"]);
 
 /** Pure policy: derive an entitlement from a subscription row (null = none). */
-export function entitlementFromRow(row: SubscriptionRow | null): Entitlement {
+export function entitlementFromRow(
+  row: SubscriptionRow | null,
+  expectedPriceId?: string,
+  now = new Date()
+): Entitlement {
   if (!row) {
     return {
       active: false,
@@ -58,6 +62,16 @@ export function entitlementFromRow(row: SubscriptionRow | null): Entitlement {
     currentPeriodEnd: row.current_period_end,
     stripeCustomerId: row.stripe_customer_id,
   };
+  if (!expectedPriceId || row.price_id !== expectedPriceId) {
+    return { ...base, active: false, reason: "wrong_plan", periodKey: null };
+  }
+  if (
+    row.current_period_end &&
+    Number.isFinite(new Date(row.current_period_end).getTime()) &&
+    new Date(row.current_period_end) <= now
+  ) {
+    return { ...base, active: false, reason: "expired", periodKey: null };
+  }
   if (ACTIVE_STATUSES.has(row.status) && row.current_period_start) {
     return {
       ...base,
@@ -84,7 +98,10 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
       .eq("user_id", userId)
       .maybeSingle();
     if (error) throw error;
-    return entitlementFromRow((data as SubscriptionRow | null) ?? null);
+    return entitlementFromRow(
+      (data as SubscriptionRow | null) ?? null,
+      process.env.STRIPE_PRICE_ID
+    );
   } catch (err) {
     logEvent("entitlement.lookup_failed", {
       userId,

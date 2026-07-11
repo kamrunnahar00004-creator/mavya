@@ -9,15 +9,14 @@ import { rawOverall, CALIBRATION_RULE, calibrateScore } from "@/lib/calibration"
 import {
   MAX_ATTEMPTS_PER_WORKFLOW,
   candidateIsSafe,
-  resolveAutoSelection,
   shouldQueueRefinement,
-  type SelectionSource,
 } from "@/lib/workflow-rules";
 import { generationDisabled, withinGlobalBudget } from "@/lib/usage";
 import { refundAllowance } from "@/lib/allowances";
 import { logEvent } from "@/lib/errors";
 import { getImageModel } from "@/lib/openai";
 import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
+import { getEntitlement } from "@/lib/entitlements";
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
@@ -79,53 +78,16 @@ export async function applySelectionForCompletedJob(args: {
   candidateRubric: RubricJson;
   candidateSafe: boolean;
 }): Promise<boolean> {
-  const { admin } = args;
-
-  // Fresh selection snapshot (the job may have run for minutes).
-  const { data: photo } = await admin
-    .from("photos")
-    .select("id, selected_generation_job_id, selection_source")
-    .eq("id", args.photoId)
-    .maybeSingle();
-  if (!photo) return false;
-
-  let currentRawScore: number | null = null;
-  if (photo.selected_generation_job_id) {
-    const { data: current } = await admin
-      .from("generation_jobs")
-      .select("candidate_rubric")
-      .eq("id", photo.selected_generation_job_id)
-      .eq("user_id", args.userId)
-      .maybeSingle();
-    const rubric = current?.candidate_rubric as RubricJson | null;
-    currentRawScore = rubric ? rawOverall(rubric) : null;
-  }
-
-  const wantSelect = resolveAutoSelection({
-    operation: args.operation,
-    candidateSafe: args.candidateSafe,
-    candidateRawScore: rawOverall(args.candidateRubric),
-    currentRawScore,
-    currentSelectionSource:
-      (photo.selection_source as SelectionSource | null) ?? "auto",
-  });
-  if (!wantSelect) return false;
-
-  let query = admin
-    .from("photos")
-    .update({ selected_generation_job_id: args.jobId, selection_source: "auto" })
-    .eq("id", args.photoId);
-  if (args.productId) query = query.eq("product_id", args.productId);
-  // CAS on the snapshot pointer: only the first writer replaces it. A manual
-  // user pick concurrently changes the pointer (and source), so it also wins.
-  query = photo.selected_generation_job_id
-    ? query.eq("selected_generation_job_id", photo.selected_generation_job_id)
-    : query.is("selected_generation_job_id", null);
-  if (args.operation !== "edit") {
-    // Defense in depth: automatic selection never overwrites a manual pick.
-    query = query.neq("selection_source", "user");
-  }
-  const { data: updated, error } = await query.select("id").maybeSingle();
+  const { data: updated, error } = await args.admin.rpc(
+    "select_generation_if_stronger",
+    {
+      p_user: args.userId,
+      p_photo: args.photoId,
+      p_job: args.jobId,
+      p_operation: args.operation,
+      p_candidate_safe: args.candidateSafe,
+    }
+  );
   if (error) {
     logEvent("selection.update_failed", { jobId: args.jobId, error: error.message });
     return false;
@@ -304,6 +266,16 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
 
   const startedAt = Date.now();
   try {
+    const entitlement = await getEntitlement(job.user_id);
+    if (!entitlement.active) {
+      await patch({
+        status: "cancelled",
+        stage: null,
+        error_code: "subscription_required",
+        completed_at: new Date().toISOString(),
+      });
+      return job.id;
+    }
     if (!(await withinGlobalBudget("generate"))) {
       await fail("generation_disabled", "failed");
       return job.id;
@@ -498,5 +470,29 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
     });
     await fail("internal_error", "failed");
     return job.id;
+  }
+}
+
+/** Run the queued attempts for one workflow back-to-back (at most attempts 2-3). */
+export async function runQueuedRefinementChain(firstJobId: string): Promise<void> {
+  let jobId: string | null = firstJobId;
+  for (let i = 0; i < MAX_ATTEMPTS_PER_WORKFLOW - 1 && jobId; i++) {
+    const processed = await runQueuedRefinementOnce(jobId);
+    if (!processed) return;
+    const admin = createSupabaseAdminClient();
+    const { data: current } = await admin
+      .from("generation_jobs")
+      .select("workflow_id, attempt_number")
+      .eq("id", processed)
+      .maybeSingle();
+    if (!current?.workflow_id) return;
+    const { data: next } = await admin
+      .from("generation_jobs")
+      .select("id")
+      .eq("workflow_id", current.workflow_id)
+      .eq("attempt_number", (current.attempt_number ?? 1) + 1)
+      .eq("status", "queued")
+      .maybeSingle();
+    jobId = next?.id ?? null;
   }
 }

@@ -56,8 +56,14 @@ function tx<T>(
   return new Promise((resolve, reject) => {
     const t = db.transaction(STORE, mode);
     const req = run(t.objectStore(STORE));
-    req.onsuccess = () => resolve(req.result);
+    let result: T;
+    req.onsuccess = () => {
+      result = req.result;
+    };
     req.onerror = () => reject(req.error ?? new Error("indexeddb_tx_failed"));
+    t.oncomplete = () => resolve(result);
+    t.onabort = () => reject(t.error ?? new Error("indexeddb_tx_aborted"));
+    t.onerror = () => reject(t.error ?? new Error("indexeddb_tx_failed"));
   });
 }
 

@@ -19,7 +19,7 @@ import { candidateIsSafe } from "@/lib/workflow-rules";
 import {
   applySelectionForCompletedJob,
   maybeQueueRefinement,
-  runQueuedRefinementOnce,
+  runQueuedRefinementChain,
 } from "@/lib/refinement";
 import { getImageModel } from "@/lib/openai";
 import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
@@ -78,6 +78,15 @@ async function jobPayload(
   job: JobRow,
   extra?: Partial<GenerationJobPayload>
 ): Promise<GenerationJobPayload> {
+  let selectedByServer: boolean | undefined;
+  if (job.status === "completed" && job.photo_id) {
+    const { data: photo } = await supabase
+      .from("photos")
+      .select("selected_generation_job_id")
+      .eq("id", job.photo_id)
+      .maybeSingle();
+    selectedByServer = photo?.selected_generation_job_id === job.id;
+  }
   // Surface the workflow's follow-up background attempt (if any) so the client
   // can keep polling for a quietly-improved version.
   let refinement: GenerationJobPayload["refinement"] = null;
@@ -117,6 +126,8 @@ async function jobPayload(
     fidelity: job.status === "completed" ? job.fidelity : null,
     attemptNumber: job.attempt_number ?? 1,
     workflowId: job.workflow_id,
+    keptPrevious:
+      selectedByServer === undefined ? undefined : !selectedByServer,
     refinement,
     ...extra,
   };
@@ -420,7 +431,7 @@ export async function POST(req: NextRequest) {
         },
         acceptedRawScore: null,
       });
-      if (queuedId) after(() => runQueuedRefinementOnce(queuedId));
+      if (queuedId) after(() => runQueuedRefinementChain(queuedId));
     }
     return apiError(code, message, {
       jobId: job.id,
@@ -598,7 +609,7 @@ export async function POST(req: NextRequest) {
     });
     // Best-effort in-invocation execution; the worker route is the durable
     // backstop if this invocation is frozen or killed after the response.
-    if (refinementJobId) after(() => runQueuedRefinementOnce(refinementJobId));
+    if (refinementJobId) after(() => runQueuedRefinementChain(refinementJobId));
 
     logEvent("generate.finished", {
       jobId: job.id,

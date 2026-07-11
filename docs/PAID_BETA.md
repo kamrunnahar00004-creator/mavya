@@ -194,6 +194,18 @@ Status: NOT YET DONE — tracked here so the repo stops pretending otherwise.
 
 ## Known gaps / follow-ups
 
+### Codex correctness review (2026-07-12)
+
+Fixed in `0007_paid_beta_review_fixes.sql` and the matching API changes:
+webhooks are marked processed only after successful handling; older Stripe
+events cannot overwrite newer state; entitlement checks the exact paid price
+and period end; checkout reuses customers and open sessions; refunded
+assessments can retry; strongest-version selection is row-locked and atomic;
+the client follows the server selection; refinements recheck entitlement and
+attempts 2-3 chain without waiting for the recovery cron. Consent, feedback,
+checklist binding, IndexedDB commit handling, and unverified payment copy were
+also tightened. See `docs/CODEX_PAID_BETA_FIX_REPORT.md`.
+
 - OCR text comparison (labels, personalization, measurements, patterns,
   ingredients, packaging) between original and candidate: DESIGNED, not built.
   Plan: run OCR (provider vision call with a strict transcription prompt, or a

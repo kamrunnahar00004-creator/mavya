@@ -279,18 +279,14 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     if (!mainRubric || mainRubric.upload_kind === "invalid") return;
     let alive = true;
     (async () => {
+      const mainPhoto = photosRef.current.find((photo) => photo.kind === "main");
+      if (!mainPhoto) return;
       setChecklistLoading(true);
       try {
         const res = await fetch("/api/checklist", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            upload_kind: mainRubric.upload_kind,
-            detected_category: mainRubric.detected_category,
-            product_summary: mainRubric.product_summary,
-            overall_score: mainRubric.overall_score,
-            priority_action: mainRubric.priority_action,
-          }),
+          body: JSON.stringify({ photoId: mainPhoto.id }),
         });
         const data = (await res.json().catch(() => null)) as
           | { supporting_photo_checklist?: SupportingPhotoChecklistItem[] }
@@ -338,9 +334,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
               ? rubricToSupportingAuditResult(payload.candidateRubric).overallScore
               : rubricToAuditResult(payload.candidateRubric).overallScore;
           const existingScore = cur.audit.improvedScore;
-          const replaced =
-            payload.keptPrevious !== true &&
-            (typeof existingScore !== "number" || newScore > existingScore);
+          const replaced = payload.keptPrevious === false;
           if (replaced) {
             const updated = applyCompletedJob(
               { ...cur, keepNote: undefined },
@@ -413,18 +407,17 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         // Keep-better rule: a RETRY that produced a weaker result than the
         // current preview keeps the current one and says so honestly. Edits
         // always apply (the seller asked for that specific change).
-        if (
-          operation === "retry" &&
-          typeof existingScore === "number" &&
-          newScore <= existingScore
-        ) {
+        if (operation === "retry" && payload.keptPrevious === true) {
           patch(photoId, {
             improveStatus: "idle",
             improveStartedAt: undefined,
             improveStage: undefined,
             improveError: undefined,
-            canRetry: existingScore < 8,
-            keepNote: `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the better one. You can try again.`,
+            canRetry: typeof existingScore !== "number" || existingScore < 8,
+            keepNote:
+              typeof existingScore === "number"
+                ? `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the better one. You can try again.`
+                : "We generated another version, but your current version stayed stronger, so we kept it.",
           });
           return;
         }

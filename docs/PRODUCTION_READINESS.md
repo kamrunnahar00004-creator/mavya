@@ -132,7 +132,8 @@ internals are never sent to the browser. Structured logs via `logEvent()`
 
 Apply in order in the Supabase SQL editor: `0001_init.sql`, `0002_feedback.sql`,
 `0003_production.sql`, `0004_trusted_generation_state.sql`,
-`0005_trusted_state_review_fixes.sql`, `0006_paid_beta.sql`. 0004 removes
+`0005_trusted_state_review_fixes.sql`, `0006_paid_beta.sql`,
+`0007_paid_beta_review_fixes.sql`. 0004 removes
 browser authority to edit plan/credits or insert audits; 0005 repairs the 0004
 selection backfill to best-score ordering. 0006 adds subscriptions, webhook
 replay ledger, per-period allowances (atomic SECURITY DEFINER functions),
@@ -140,6 +141,8 @@ workflow/candidate columns on generation_jobs (max 3 attempts, one active
 refinement), photos.selection_source, eval consent, and workflow feedback —
 all additive and safe on installations that already ran 0004/0005. Legacy
 audits without `score_cache_id` must be re-scored before a new generation.
+0007 makes Stripe updates ordered, repairs refunded allowance retries, and
+serializes strongest-version selection.
 Rollback must deliberately restore the old grants/policies before dropping the
 new provenance and selected-result columns.
 

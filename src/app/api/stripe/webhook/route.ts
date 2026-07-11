@@ -54,17 +54,15 @@ export async function POST(req: NextRequest) {
 
   const admin = createSupabaseAdminClient();
 
-  // Replay protection: first delivery wins; duplicates are acknowledged as-is.
-  const { error: dedupeError } = await admin
+  // Only completed events are skipped. Processing happens before this marker,
+  // so a crash can cause harmless reprocessing but can never cause ack-then-loss.
+  const { data: processed } = await admin
     .from("billing_events")
-    .insert({ id: event.id, type: event.type });
-  if (dedupeError) {
-    if (dedupeError.code === "23505") {
-      return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
-    }
-    // Fail so Stripe retries: better a retried event than a lost state change.
-    logEvent("stripe.webhook_dedupe_failed", { eventId: event.id, error: dedupeError.message });
-    return NextResponse.json({ error: "storage failure" }, { status: 500 });
+    .select("id")
+    .eq("id", event.id)
+    .maybeSingle();
+  if (processed) {
+    return NextResponse.json({ received: true, duplicate: true }, { status: 200 });
   }
 
   try {
@@ -78,7 +76,7 @@ export async function POST(req: NextRequest) {
             : session.subscription?.id;
         if (userId && subscriptionId) {
           const sub = await getStripe().subscriptions.retrieve(subscriptionId);
-          await upsertSubscription(admin, userId, sub);
+          await upsertSubscription(admin, userId, sub, event.created);
         }
         break;
       }
@@ -87,7 +85,7 @@ export async function POST(req: NextRequest) {
       case "customer.subscription.deleted": {
         const sub = event.data.object as Stripe.Subscription;
         const userId = await resolveUserId(admin, sub);
-        if (userId) await upsertSubscription(admin, userId, sub);
+        if (userId) await upsertSubscription(admin, userId, sub, event.created);
         else logEvent("stripe.webhook_unmapped_subscription", { subId: sub.id });
         break;
       }
@@ -97,7 +95,7 @@ export async function POST(req: NextRequest) {
         if (subscriptionId) {
           const sub = await getStripe().subscriptions.retrieve(subscriptionId);
           const userId = await resolveUserId(admin, sub);
-          if (userId) await upsertSubscription(admin, userId, sub);
+          if (userId) await upsertSubscription(admin, userId, sub, event.created);
         }
         break;
       }
@@ -110,15 +108,24 @@ export async function POST(req: NextRequest) {
         break;
     }
   } catch (err) {
-    // Processing failed after dedupe: release the id so Stripe's retry can
-    // reprocess instead of being swallowed as a "duplicate".
-    await admin.from("billing_events").delete().eq("id", event.id);
     logEvent("stripe.webhook_processing_failed", {
       eventId: event.id,
       type: event.type,
       error: err instanceof Error ? err.message : String(err),
     });
     return NextResponse.json({ error: "processing failure" }, { status: 500 });
+  }
+
+  const { error: markerError } = await admin
+    .from("billing_events")
+    .insert({ id: event.id, type: event.type });
+  if (markerError && markerError.code !== "23505") {
+    // State processing is idempotent and timestamp-ordered. A retry is safe.
+    logEvent("stripe.webhook_marker_failed", {
+      eventId: event.id,
+      error: markerError.message,
+    });
+    return NextResponse.json({ error: "storage failure" }, { status: 500 });
   }
 
   return NextResponse.json({ received: true }, { status: 200 });
@@ -148,12 +155,21 @@ async function resolveUserId(
 async function upsertSubscription(
   admin: Admin,
   userId: string,
-  sub: Stripe.Subscription
+  sub: Stripe.Subscription,
+  eventCreated: number
 ): Promise<void> {
   const row = subscriptionRowFrom(userId, sub);
-  const { error } = await admin
-    .from("subscriptions")
-    .upsert(row, { onConflict: "user_id" });
+  const { error } = await admin.rpc("upsert_subscription_from_stripe", {
+    p_user: userId,
+    p_customer: row.stripe_customer_id,
+    p_subscription: row.stripe_subscription_id,
+    p_status: row.status,
+    p_price: row.price_id,
+    p_period_start: row.current_period_start,
+    p_period_end: row.current_period_end,
+    p_cancel_at_period_end: row.cancel_at_period_end,
+    p_event_created: eventCreated,
+  });
   if (error) throw error;
   logEvent("stripe.subscription_upserted", {
     userId,
