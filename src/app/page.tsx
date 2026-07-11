@@ -1,56 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AppHeader } from "@/components/app-header";
+import { AuthModal } from "@/components/auth-modal";
 import { UploadWorkspace } from "@/components/upload-workspace";
 import { ProductProofSection } from "@/components/product-proof-section";
 import { AnalyzingState } from "@/components/analyzing-state";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { InvalidUploadState } from "@/components/invalid-upload-state";
-import type { SlotView } from "@/components/photo-slot-strip";
-import {
-  DEMO_STATES,
-  VERIFY_AMBER_DEMO,
-  type AuditResult,
-  type DemoState,
-  type DemoStateId,
-} from "@/data/demo-states";
-import {
-  rubricToAuditResult,
-  rubricToDemoState,
-  rubricToSupportingState,
-  rubricToSupportingAuditResult,
-} from "@/lib/audit-mapping";
-import type {
-  RubricJson,
-  SupportingPhotoChecklistItem,
-} from "@/lib/rubric";
-import type { FidelityReport } from "@/lib/fidelity";
-import { savePendingDownload } from "@/lib/pending-download";
+import { DEMO_STATES, VERIFY_AMBER_DEMO } from "@/data/demo-states";
+import type { RubricJson } from "@/lib/rubric";
+import { RUBRIC_VERSION } from "@/lib/versions";
 import { trackClientEvent } from "@/lib/track-client";
-import {
-  compressDataUrlForUpload,
-  prepareUploadImage,
-} from "@/lib/client-image";
+import { prepareUploadImage } from "@/lib/client-image";
 
-type Mode =
-  | "upload"
-  | "analyzing"
-  | "real"
-  | "generating"
-  | DemoStateId
-  | "verify";
+type Mode = "upload" | "analyzing" | "invalid" | "weak" | "strong" | "verify";
 
-const VALID_QUERY_STATES: Mode[] = [
-  "upload",
-  "analyzing",
-  "weak",
-  "strong",
-  "invalid",
-  "verify",
-];
+const VALID_QUERY_STATES: Mode[] = ["upload", "analyzing", "weak", "strong", "invalid", "verify"];
 
 const KEY_MAP: Record<string, Mode> = {
   "1": "upload",
@@ -60,169 +28,42 @@ const KEY_MAP: Record<string, Mode> = {
   "5": "verify",
 };
 
-// Listing Photo Workspace: one product, a square photo strip below the Etsy
-// preview. The first upload is the Main photo (hero/thumbnail rubric + Etsy
-// preview + improve/download). Additional photos are graded with the supporting
-// rubric; selecting a slot switches the whole workspace. Supporting Improve/Edit
-// is gated OFF until a role-preserving supporting generation prompt exists.
-const MULTI_PHOTO_ENABLED = true;
-
-type SlotKind = "main" | "extra";
-
-type PhotoSlot = {
-  id: string;
-  kind: SlotKind;
-  label: string;
-  file: File;
-  originalUrl: string;
-  status: "analyzing" | "graded";
-  audit: DemoState | null;
-  /** True when the rubric classified this upload as a digital Etsy product. Edit is physical-only for v1. */
-  isDigital?: boolean;
-  /** True while the supporting-photo checklist is hydrating in the background. */
-  checklistLoading?: boolean;
-  /** Data URL of the generated preview shown before payment. */
-  improvedDownloadUrl?: string;
-  freePreview?: boolean;
-  freePreviewMessage?: string;
-  keepNote?: string;
-  improveStatus?: "idle" | "generating" | "error";
-  improveStartedAt?: number;
-  improveError?: string;
-  canRetryImprove?: boolean;
-  unresolvedIssues?: string[] | null;
-  /** Pre-edit version, captured so the seller can revert one step after an edit. */
-  revertSnapshot?: {
-    improvedSrc?: string;
-    improvedAudit?: AuditResult;
-    improvedScore?: number;
-    improvedVerdict?: string;
-    improvedDownloadUrl?: string;
-    freePreview?: boolean;
-    freePreviewMessage?: string;
-  };
-  // Paywall (publish-ready only).
-  checkoutLoading?: boolean;
-  checkoutError?: string;
-};
-
-type GenerateSuccessBody = {
-  ok: true;
-  outcome: "publish_ready" | "useful_free_preview";
-  /** Clean generated preview shown before payment. */
-  previewBase64: string;
-  previewMimeType: string;
-  candidateAudit: RubricJson;
-  fidelity: FidelityReport;
-};
-
-type GenerateFailureBody = {
-  ok: false;
-  code: string;
-  message: string;
-  unresolvedIssues?: string[];
-};
-
-function makeId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  return `slot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
+/** Demo keyboard shortcuts + ?state= routes are development/marketing tooling. */
+const DEMO_ENABLED =
+  process.env.NODE_ENV !== "production" ||
+  process.env.NEXT_PUBLIC_ENABLE_DEMO === "1";
 
 /**
- * Minimal placeholder audit so the workspace can render while an extra photo is
- * still being graded. Only feeds the left media panel + tray; the right panel
- * shows an inline analyzing loader (audit fields are not displayed).
+ * Landing page. The scan is gated behind a free account (no anonymous billable
+ * scoring): picking a photo while logged out opens the signup modal. A
+ * logged-in upload scores, persists a new product, and opens its workspace —
+ * the ONE workspace implementation in src/components/dashboard/product-workspace.tsx.
  */
-function analyzingPlaceholder(imageSrc: string, imageAlt: string): DemoState {
-  return {
-    id: "weak",
-    band: "mid",
-    overallScore: 0,
-    verdict: "",
-    priorityLabel: "",
-    priorityAction: "",
-    pillars: [],
-    nextStepsLabel: "",
-    nextSteps: [],
-    ctaLabel: "",
-    imageSrc,
-    imageAlt,
-    thumbnailHeadline: "",
-    thumbnailSub: "",
-  };
-}
-
-const FREE_PREVIEW_PREFIX =
-  "This version is better, but it did not pass publish-ready checks. We recommend ";
-
-/**
- * Honest recommendation for a safe sub-8 preview. Only the reliable fidelity-flag
- * reasons claim a specific cause. Everything else gets a neutral line — we do NOT
- * guess a physical cause (e.g. "fills more of the frame") from a single pillar
- * score, because that is often wrong. Never inflates or hides the score.
- */
-function freePreviewMessage(fidelity: FidelityReport): string {
-  // Detail/text drift now delivers as a usable preview with an honest standalone
-  // warning (founder MVP policy) instead of dead-ending. Not phrased as a
-  // "we recommend" recommendation, it is a review-before-using caution.
-  if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
-    return "This version may have changed product details. Review it carefully before using it, or generate another version.";
-  }
-  let tail =
-    "trying a cleaner, sharper source photo, or generating another version for a different result.";
-  if (fidelity.ai_looking) {
-    tail =
-      "reviewing it closely first — this version looks AI-generated, so check it against your real product before using it, or upload a photo taken in soft natural light for a more natural result.";
-  } else if (!fidelity.full_product_visible) {
-    tail = "uploading a photo that shows the complete product.";
-  }
-  return `${FREE_PREVIEW_PREFIX}${tail}`;
-}
-
 export default function Page() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("upload");
   const [staticRender, setStaticRender] = useState(false);
-  const [initialPreview, setInitialPreview] = useState(false);
-
-  // Multi-photo workspace state (local session only).
-  const [slots, setSlots] = useState<PhotoSlot[]>([]);
-  const [activeSlotId, setActiveSlotId] = useState<string | null>(null);
-  const slotsRef = useRef<PhotoSlot[]>(slots);
-  const extraInputRef = useRef<HTMLInputElement | null>(null);
-
-  // Image shown during the full-screen analyzing/generating states.
   const [pendingUrl, setPendingUrl] = useState<string | undefined>(undefined);
-
   const [scoreError, setScoreError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [authOpen, setAuthOpen] = useState(false);
 
-  const activeSlot = slots.find((s) => s.id === activeSlotId) ?? null;
-
+  // Hidden demo routes (?state=weak|strong|invalid|verify) for screenshots.
   useEffect(() => {
-    slotsRef.current = slots;
-  }, [slots]);
-
-  // Hidden demo route: ?state=weak|strong|invalid|analyzing|upload|verify.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (!DEMO_ENABLED || typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     const q = params.get("state") as Mode | null;
     const shouldRenderStatic = params.get("static") === "1";
-    const shouldOpenPreview = params.get("preview") === "1";
     if ((q && VALID_QUERY_STATES.includes(q)) || shouldRenderStatic) {
       const id = window.setTimeout(() => {
         if (q && VALID_QUERY_STATES.includes(q)) setMode(q);
         setStaticRender(shouldRenderStatic);
-        setInitialPreview(shouldOpenPreview);
       }, 0);
       return () => window.clearTimeout(id);
     }
   }, []);
 
   useEffect(() => {
+    if (!DEMO_ENABLED) return;
     function onKey(e: KeyboardEvent) {
       if (
         e.target instanceof HTMLInputElement ||
@@ -240,680 +81,136 @@ export default function Page() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Revoke every slot blob URL on unmount.
-  useEffect(() => {
-    return () => {
-      slotsRef.current.forEach((s) => URL.revokeObjectURL(s.originalUrl));
-    };
-  }, []);
-
-  const removeSlot = useCallback((id: string) => {
-    setSlots((prev) => {
-      const target = prev.find((s) => s.id === id);
-      if (target) URL.revokeObjectURL(target.originalUrl);
-      return prev.filter((s) => s.id !== id);
-    });
-  }, []);
-
-  // Background supporting-photo checklist. Best-effort: on any failure the slot
-  // simply stops loading and shows no checklist card. Never blocks the audit.
-  const hydrateChecklist = useCallback(
-    async (slotId: string, rubric: RubricJson) => {
-      try {
-        const res = await fetch("/api/checklist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            upload_kind: rubric.upload_kind,
-            detected_category: rubric.detected_category,
-            product_summary: rubric.product_summary,
-            overall_score: rubric.overall_score,
-            priority_action: rubric.priority_action,
-          }),
-        });
-        const data = (await res.json().catch(() => null)) as
-          | { supporting_photo_checklist?: SupportingPhotoChecklistItem[] }
-          | null;
-        const checklist = Array.isArray(data?.supporting_photo_checklist)
-          ? data!.supporting_photo_checklist
-          : [];
-        setSlots((prev) =>
-          prev.map((s) =>
-            s.id === slotId && s.audit
-              ? {
-                  ...s,
-                  checklistLoading: false,
-                  audit: { ...s.audit, supportingChecklist: checklist },
-                }
-              : s
-          )
-        );
-      } catch {
-        setSlots((prev) =>
-          prev.map((s) =>
-            s.id === slotId ? { ...s, checklistLoading: false } : s
-          )
-        );
-      }
-    },
-    []
-  );
-
-  const analyzePhoto = useCallback(
-    async (inputFile: File, kind: SlotKind) => {
+  const handleFirstFile = useCallback(
+    async (inputFile: File) => {
       if (!inputFile.type.startsWith("image/")) {
-        if (kind === "main") {
-          setMode("invalid");
-        } else {
-          setNotice("That file is not an image.");
-        }
+        setMode("invalid");
         return;
       }
+      setScoreError(null);
+
+      // Gate the scan, not the pick: logged-out users get the signup modal.
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) {
+        setScoreError(
+          "Create a free account to rate your photo. You get free credits to start."
+        );
+        setAuthOpen(true);
+        return;
+      }
+      const user = session.user;
 
       const file = await prepareUploadImage(inputFile);
       const url = URL.createObjectURL(file);
-      const id = makeId();
-      const previousActiveSlotId = activeSlotId;
-      const label =
-        kind === "main"
-          ? "Main photo"
-          : `Photo ${slotsRef.current.length + 1}`;
-      const slot: PhotoSlot = {
-        id,
-        kind,
-        label,
-        file,
-        originalUrl: url,
-        status: "analyzing",
-        audit: null,
-      };
-
-      trackClientEvent("photo_uploaded");
-      setNotice(null);
-      setScoreError(null);
-      setInitialPreview(false);
-      setSlots((prev) => [...prev, slot]);
-      setActiveSlotId(id);
       setPendingUrl(url);
-      // Extra photos analyze INSIDE the workspace (left image + tray stay put).
-      // Only the first/main photo uses the full-page analyzing state.
-      setMode(kind === "extra" ? "real" : "analyzing");
+      setMode("analyzing");
+      trackClientEvent("photo_uploaded");
 
       try {
         const form = new FormData();
         form.set("image", file);
-        if (kind === "extra") {
-          form.set("mode", "extra");
-          // Descriptive main-listing product, so the supporting rubric judges
-          // "same listing evidence" and can flag an unrelated / wrong product.
-          const mainSlot = slotsRef.current.find((s) => s.kind === "main");
-          const context = mainSlot?.audit?.productSummary?.trim();
-          if (context) form.set("main_product_context", context);
-        }
         const res = await fetch("/api/score", { method: "POST", body: form });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as
-            | { error?: string }
+            | { error?: string; code?: string }
             | null;
-          throw new Error(
-            (body && typeof body.error === "string" && body.error) ||
-              `Score request failed (${res.status})`
-          );
-        }
-        const data = (await res.json()) as { rubric: RubricJson };
-        const rubric = data.rubric;
-        const isInvalid = rubric.upload_kind === "invalid";
-
-        if (isInvalid) {
-          removeSlot(id);
-          if (kind === "main") {
-            setMode("invalid");
-          } else {
-            // Return to the prior active slot; keep the workspace.
-            const remaining = slotsRef.current.filter((s) => s.id !== id);
-            const fallback =
-              remaining.find((s) => s.id === previousActiveSlotId) ??
-              remaining[0] ??
-              null;
-            setActiveSlotId(fallback?.id ?? null);
-            setNotice("That image is not a product photo.");
-            setMode(remaining.length ? "real" : "upload");
+          if (body?.code === "unauthenticated") {
+            setMode("upload");
+            setAuthOpen(true);
+            return;
           }
+          if (body?.code === "insufficient_credits") {
+            throw new Error("You are out of credits. Upgrades are coming soon.");
+          }
+          throw new Error(body?.error || `Score request failed (${res.status})`);
+        }
+        const { rubric, imageHash, rubricVersion } = (await res.json()) as {
+          rubric: RubricJson;
+          imageHash?: string;
+          rubricVersion?: string;
+        };
+        if (rubric.upload_kind === "invalid") {
+          setMode("invalid");
           return;
         }
-
-        // Logged-in users: a landing upload becomes a SAVED product opened in the
-        // dashboard (so everything you scan while logged in is kept). Logged-out
-        // users fall through to the session-only demo below.
-        if (kind === "main") {
-          try {
-            const supabase = createSupabaseBrowserClient();
-            const {
-              data: { user },
-            } = await supabase.auth.getUser();
-            if (user) {
-              const { data: product } = await supabase
-                .from("products")
-                .insert({ user_id: user.id, name: null })
-                .select("id")
-                .single();
-              if (product) {
-                const ext = file.type === "image/png" ? "png" : "jpg";
-                const photoId = makeId();
-                const path = `${user.id}/${product.id}/${photoId}.${ext}`;
-                await supabase.storage
-                  .from("product-photos")
-                  .upload(path, file, { contentType: file.type });
-                await supabase.from("photos").insert({
-                  id: photoId,
-                  product_id: product.id,
-                  role: "main",
-                  storage_path: path,
-                  mime: file.type,
-                });
-                await supabase.from("audits").insert({
-                  photo_id: photoId,
-                  kind: "main",
-                  rubric,
-                  overall_score: rubric.overall_score,
-                });
-                trackClientEvent("audit_completed");
-                router.push(`/dashboard/product/${product.id}`);
-                return;
-              }
-            }
-          } catch {
-            // Not logged in or persist failed → session-only demo below.
-          }
-        }
-
-        // Digital Etsy products are valid. They share the audit UI for now, with a
-        // detection banner and an honest "experimental" note (the improve pipeline
-        // is still the physical one until a digital mockup pass is built).
-        if (rubric.upload_kind === "digital_product" && kind === "main") {
-          setNotice(
-            "Digital product detected. AI improvement for digital products is still experimental, so review the result before using it."
-          );
-        }
-
-        const audit =
-          kind === "main"
-            ? rubricToDemoState({ rubric, imageSrc: url, imageAlt: file.name })
-            : rubricToSupportingState({
-                rubric,
-                imageSrc: url,
-                imageAlt: file.name,
-              });
-
-        const isDigital = rubric.upload_kind === "digital_product";
-        // The main score no longer carries the supporting-photo checklist — it is
-        // hydrated by a separate, cheaper background call so the score shows
-        // instantly. Mark the slot loading; fill it in when the checklist lands.
-        const wantsChecklist = kind === "main" && !isInvalid;
-        setSlots((prev) =>
-          prev.map((s) =>
-            s.id === id
-              ? {
-                  ...s,
-                  status: "graded",
-                  audit,
-                  isDigital,
-                  checklistLoading: wantsChecklist,
-                }
-              : s
-          )
-        );
         trackClientEvent("audit_completed");
-        setMode("real");
-        if (wantsChecklist) {
-          void hydrateChecklist(id, rubric);
-        }
-      } catch (err) {
-        console.error("[page] score failed", err);
-        removeSlot(id);
-        if (kind === "main") {
-          setScoreError(
-            err instanceof Error ? err.message : "Score failed. Try again."
-          );
-          setMode("upload");
-        } else {
-          const remaining = slotsRef.current.filter((s) => s.id !== id);
-          const fallback =
-            remaining.find((s) => s.id === previousActiveSlotId) ??
-            remaining[0] ??
-            null;
-          setActiveSlotId(fallback?.id ?? null);
-          setNotice("That photo could not be graded. Try again.");
-          setMode(remaining.length ? "real" : "upload");
-        }
-      }
-    },
-    [activeSlotId, removeSlot, hydrateChecklist, router]
-  );
 
-  const handleFirstFile = useCallback(
-    (file: File) => analyzePhoto(file, "main"),
-    [analyzePhoto]
-  );
-
-  const handleAddPhoto = useCallback(() => {
-    extraInputRef.current?.click();
-  }, []);
-
-  const handleSelectSlot = useCallback((id: string) => {
-    const slot = slotsRef.current.find((s) => s.id === id);
-    setActiveSlotId(id);
-    setNotice(null);
-    setInitialPreview(Boolean(slot?.audit?.improvedSrc));
-  }, []);
-
-  // Improve flow — main photos use the hero rubric, extra photos the supporting rubric.
-  // `editInstruction` switches to the user-directed edit path: the edit runs on the
-  // source selected in the UI (original or current preview), and the
-  // result ALWAYS replaces the current version (edits are explicit, so a worse result
-  // is still shown), while a revert snapshot preserves the pre-edit version.
-  const runImprove = useCallback(
-    async (
-      retry: boolean,
-      editInstruction?: string,
-      editSource: "original" | "preview" = "preview"
-    ) => {
-      const slot = slotsRef.current.find((s) => s.id === activeSlotId);
-      if (!slot || !slot.audit) return;
-      if (slot.improveStatus === "generating") return;
-      const isEdit = Boolean(editInstruction);
-      const isSupporting = slot.kind === "extra";
-      trackClientEvent(
-        isSupporting
-          ? isEdit
-            ? "supporting_edit_clicked"
-            : "supporting_improve_clicked"
-          : isEdit
-          ? "edit_clicked"
-          : "improve_clicked"
-      );
-      const startedAt = Date.now();
-      // Snapshot the current improved version before an edit overwrites it, so the
-      // seller can revert one step.
-      const revertSnapshot =
-        isEdit && slot.audit.improvedSrc
-          ? {
-              improvedSrc: slot.audit.improvedSrc,
-              improvedAudit: slot.audit.improvedAudit,
-              improvedScore: slot.audit.improvedScore,
-              improvedVerdict: slot.audit.improvedVerdict,
-              improvedDownloadUrl: slot.improvedDownloadUrl,
-              freePreview: slot.freePreview,
-              freePreviewMessage: slot.freePreviewMessage,
-            }
-          : undefined;
-      setSlots((prev) =>
-        prev.map((s) =>
-          s.id === slot.id
-            ? {
-                ...s,
-                improveStatus: "generating",
-                improveStartedAt: startedAt,
-                improveError: undefined,
-                canRetryImprove: false,
-                keepNote: undefined,
-                ...(revertSnapshot ? { revertSnapshot } : {}),
-              }
-            : s
-        )
-      );
-
-      try {
-        const form = new FormData();
-        form.set("image", slot.file);
-        if (slot.kind === "extra") {
-          form.set("mode", "extra");
-          // Same listing context used at grade time, so the re-score keeps the
-          // supporting role and can still flag a wrong/unrelated product.
-          const mainSlot = slotsRef.current.find((s) => s.kind === "main");
-          const context = mainSlot?.audit?.productSummary?.trim();
-          if (context) form.set("main_product_context", context);
-        }
-        // Retry always builds from the current preview. An edit builds from the
-        // image the seller selected in the UI: original or current preview.
-        const useBase =
-          (retry || (isEdit && editSource === "preview")) &&
-          slot.improvedDownloadUrl;
-        if (useBase) {
-          form.set(
-            "retryBaseImage",
-            await compressDataUrlForUpload(slot.improvedDownloadUrl!)
-          );
-        }
-        if (isEdit) {
-          form.set("editInstruction", editInstruction!);
-        }
-        if (retry && !isEdit && slot.unresolvedIssues?.length) {
-          form.set(
-            "unresolvedIssues",
-            JSON.stringify(slot.unresolvedIssues)
-          );
-        }
-        const res = await fetch("/api/generate", {
-          method: "POST",
-          body: form,
-        });
-        const body = (await res.json().catch(() => null)) as
-          | GenerateSuccessBody
-          | GenerateFailureBody
-          | null;
-
-        if (!res.ok || !body || body.ok === false) {
-          const message =
-            body && body.ok === false && typeof body.message === "string"
-              ? body.message
-              : `Generation failed (${res.status})`;
-          const unresolvedIssues =
-            body &&
-            body.ok === false &&
-            Array.isArray(body.unresolvedIssues)
-              ? body.unresolvedIssues
-              : undefined;
-          const retryableCodes = new Set([
-            "no_publishable_candidate",
-            "incomplete_source",
-            "unsafe_candidate",
-            "image_failed",
-          ]);
-          setSlots((prev) =>
-            prev.map((s) =>
-              s.id === slot.id
-                ? (() => {
-                    const hasExistingPreview = Boolean(
-                      s.audit?.improvedSrc &&
-                        typeof s.audit.improvedScore === "number"
-                    );
-                    const hasExistingRetryablePreview =
-                      hasExistingPreview &&
-                      (Boolean(s.freePreview) ||
-                        (typeof s.audit?.improvedScore === "number" &&
-                          s.audit.improvedScore < 8));
-                    return {
-                      ...s,
-                      improveStatus: hasExistingPreview ? "idle" : "error",
-                      improveStartedAt: undefined,
-                      improveError:
-                        hasExistingPreview && !hasExistingRetryablePreview
-                          ? undefined
-                          : message,
-                      keepNote: undefined,
-                      unresolvedIssues:
-                        unresolvedIssues ?? s.unresolvedIssues ?? null,
-                      canRetryImprove: hasExistingPreview
-                        ? hasExistingRetryablePreview
-                        : retryableCodes.has(
-                            body && body.ok === false ? body.code : ""
-                          ),
-                    };
-                  })()
-                : s
-            )
-          );
-          return;
-        }
-
-        const improvedDataUrl = `data:${body.previewMimeType};base64,${body.previewBase64}`;
-        const improvedAudit: AuditResult =
-          slot.kind === "extra"
-            ? rubricToSupportingAuditResult(body.candidateAudit)
-            : rubricToAuditResult(body.candidateAudit);
-        const isFreePreview = body.outcome === "useful_free_preview";
-        const previewMessage = isFreePreview
-          ? freePreviewMessage(body.fidelity)
-          : undefined;
-
-        setSlots((prev) =>
-          prev.map((s) =>
-            s.id === slot.id && s.audit
-              ? (() => {
-                  const existingScore = s.audit?.improvedScore;
-                  // Edits ALWAYS apply (the seller asked for this specific change, so
-                  // a worse result is still shown honestly). Only the automatic
-                  // retry path keeps the better version when the new one is not better.
-                  if (
-                    !isEdit &&
-                    typeof existingScore === "number" &&
-                    improvedAudit.overallScore <= existingScore
-                  ) {
-                    const existingRetryable =
-                      Boolean(s.freePreview) || existingScore < 8;
-                    return {
-                      ...s,
-                      improveStatus: "idle",
-                      improveStartedAt: undefined,
-                      improveError: undefined,
-                      canRetryImprove: existingRetryable,
-                      keepNote: undefined,
-                    };
-                  }
-
-                  return {
-                    ...s,
-                    improvedDownloadUrl: improvedDataUrl,
-                    checkoutError: undefined,
-                    freePreview: isFreePreview,
-                    freePreviewMessage: previewMessage,
-                    keepNote: undefined,
-                    improveStatus: "idle",
-                    improveStartedAt: undefined,
-                    improveError: undefined,
-                    canRetryImprove:
-                      isFreePreview || improvedAudit.overallScore < 8,
-                    unresolvedIssues: null,
-                    audit: {
-                      ...s.audit,
-                      improvedSrc: improvedDataUrl,
-                      improvedAudit,
-                      improvedScore: improvedAudit.overallScore,
-                      improvedVerdict: improvedAudit.verdict,
-                      comparisonMode: "toggle",
-                    },
-                  };
-                })()
-              : s
-          )
-        );
-        trackClientEvent(
-          isSupporting
-            ? isEdit
-              ? "supporting_edit_completed"
-              : "supporting_improve_completed"
-            : isEdit
-            ? "edit_completed"
-            : "improve_completed"
-        );
-        setInitialPreview(true);
-      } catch (err) {
-        console.error("[page] improve flow failed", err);
-        setSlots((prev) =>
-          prev.map((s) =>
-            s.id === slot.id
-              ? (() => {
-                  const hasExistingPreview = Boolean(
-                    s.audit?.improvedSrc &&
-                      typeof s.audit.improvedScore === "number"
-                  );
-                  const hasExistingRetryablePreview =
-                    hasExistingPreview &&
-                    (Boolean(s.freePreview) ||
-                      (typeof s.audit?.improvedScore === "number" &&
-                        s.audit.improvedScore < 8));
-                  return {
-                    ...s,
-                    improveStatus: hasExistingPreview ? "idle" : "error",
-                    improveStartedAt: undefined,
-                    improveError:
-                      hasExistingPreview && !hasExistingRetryablePreview
-                      ? undefined
-                      : err instanceof Error
-                      ? err.message
-                      : "Generation failed. Try again.",
-                    keepNote: undefined,
-                    canRetryImprove: hasExistingPreview
-                      ? hasExistingRetryablePreview
-                      : true,
-                  };
-                })()
-              : s
-          )
-        );
-      }
-    },
-    [activeSlotId]
-  );
-
-  const handleImprove = useCallback(() => runImprove(false), [runImprove]);
-  const handleRetryImprove = useCallback(() => runImprove(true), [runImprove]);
-  const handleEdit = useCallback(
-    (instruction: string, source: "original" | "preview") =>
-      runImprove(false, instruction, source),
-    [runImprove]
-  );
-  // Restore the version captured before the last edit (one-step revert).
-  const handleRevert = useCallback(() => {
-    const slot = slotsRef.current.find((s) => s.id === activeSlotId);
-    if (!slot?.revertSnapshot || !slot.audit) return;
-    const snap = slot.revertSnapshot;
-    setSlots((prev) =>
-      prev.map((s) =>
-        s.id === slot.id && s.audit
-          ? {
-              ...s,
-              improvedDownloadUrl: snap.improvedDownloadUrl,
-              freePreview: snap.freePreview,
-              freePreviewMessage: snap.freePreviewMessage,
-              revertSnapshot: undefined,
-              canRetryImprove:
-                typeof snap.improvedScore === "number"
-                  ? snap.improvedScore < 8
-                  : s.canRetryImprove,
-              audit: {
-                ...s.audit,
-                improvedSrc: snap.improvedSrc,
-                improvedAudit: snap.improvedAudit,
-                improvedScore: snap.improvedScore,
-                improvedVerdict: snap.improvedVerdict,
-              },
-            }
-          : s
-      )
-    );
-  }, [activeSlotId]);
-
-  // Validation MVP: the clean preview is already visible. Download click opens
-  // Stripe, and the success page downloads the generated image from this tab's
-  // IndexedDB after payment.
-  const handleCheckout = useCallback(
-    async (email?: string) => {
-      const slot = slotsRef.current.find((s) => s.id === activeSlotId);
-      if (!slot || !slot.improvedDownloadUrl) return;
-      trackClientEvent("download_clicked");
-      setSlots((prev) =>
-        prev.map((s) =>
-          s.id === slot.id
-            ? { ...s, checkoutLoading: true, checkoutError: undefined }
-            : s
-        )
-      );
-      try {
-        try {
-          await savePendingDownload({
-            dataUrl: slot.improvedDownloadUrl,
-            filename: "mavya-improved.png",
-            savedAt: Date.now(),
-          });
-        } catch {
+        // Persist as a new product. Failures are VISIBLE — never a silent
+        // session-only fallback that pretends the product was saved.
+        const { data: product, error: pErr } = await supabase
+          .from("products")
+          .insert({ user_id: user.id, name: null })
+          .select("id")
+          .single();
+        if (pErr || !product) {
           throw new Error(
-            "Could not prepare the download in this browser. Try refreshing and generating again."
+            "Your photo was rated but could not be saved. Try again from your dashboard."
           );
         }
-        const res = await fetch("/api/checkout", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email }),
-        });
-        const data = (await res.json().catch(() => null)) as
-          | { url?: string; error?: string }
-          | null;
-        if (!res.ok || !data?.url) {
-          throw new Error(data?.error || "Could not start checkout.");
+        const ext = file.type === "image/png" ? "png" : "jpg";
+        const photoId = crypto.randomUUID();
+        const path = `${user.id}/${product.id}/${photoId}.${ext}`;
+        const { error: upErr } = await supabase.storage
+          .from("product-photos")
+          .upload(path, file, { contentType: file.type });
+        if (upErr) {
+          throw new Error(
+            "Your photo was rated but could not be saved. Try again from your dashboard."
+          );
         }
-        window.location.href = data.url;
+        const { error: phErr } = await supabase.from("photos").insert({
+          id: photoId,
+          product_id: product.id,
+          role: "main",
+          storage_path: path,
+          mime: file.type,
+        });
+        const { error: aErr } = phErr
+          ? { error: phErr }
+          : await supabase.from("audits").insert({
+              photo_id: photoId,
+              kind: "main",
+              rubric,
+              overall_score: rubric.overall_score,
+              rubric_version: rubricVersion ?? RUBRIC_VERSION,
+              image_hash: imageHash ?? null,
+            });
+        if (phErr || aErr) {
+          throw new Error(
+            "Your photo was rated but could not be saved. Try again from your dashboard."
+          );
+        }
+
+        router.refresh();
+        router.push(`/dashboard/product/${product.id}`);
       } catch (err) {
-        setSlots((prev) =>
-          prev.map((s) =>
-            s.id === slot.id
-              ? {
-                  ...s,
-                  checkoutLoading: false,
-                  checkoutError:
-                    err instanceof Error
-                      ? err.message
-                      : "Could not start checkout.",
-                }
-              : s
-          )
+        console.error("[landing] score/persist failed", err);
+        setScoreError(
+          err instanceof Error ? err.message : "Score failed. Try again."
         );
+        setMode("upload");
       }
     },
-    [activeSlotId]
+    [router]
   );
 
   const reset = useCallback(() => {
-    slotsRef.current.forEach((s) => URL.revokeObjectURL(s.originalUrl));
-    setSlots([]);
-    setActiveSlotId(null);
     setPendingUrl(undefined);
     setScoreError(null);
-    setNotice(null);
-    setInitialPreview(false);
     setMode("upload");
   }, []);
 
-  const showNewAudit =
-    mode === "weak" ||
-    mode === "strong" ||
-    mode === "invalid" ||
-    mode === "verify" ||
-    mode === "real";
-
-  const slotViews: SlotView[] = slots.map((s) => ({
-    id: s.id,
-    label: s.label,
-    thumbnailUrl: s.originalUrl,
-    status: s.improveStatus === "generating" ? "improving" : s.status,
-    score: s.audit?.overallScore,
-    active: s.id === activeSlotId,
-  }));
-
   return (
     <>
-      <AppHeader showNewAudit={showNewAudit} onNewAudit={reset} />
-
-      {/* Hidden input for adding extra photos (multi-photo only). */}
-      {MULTI_PHOTO_ENABLED && (
-        <input
-          ref={extraInputRef}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) analyzePhoto(file, "extra");
-            e.target.value = "";
-          }}
-        />
-      )}
+      <AppHeader />
 
       {mode === "upload" && (
         <>
           <UploadWorkspace
-            onFile={handleFirstFile}
+            onFile={(f) => void handleFirstFile(f)}
             errorBanner={scoreError ?? undefined}
           />
           <ProductProofSection />
@@ -927,86 +224,25 @@ export default function Page() {
         />
       )}
 
-      {mode === "real" && activeSlot && (
-        <AuditWorkspace
-          key={activeSlot.id}
-          state={
-            activeSlot.audit ??
-            analyzingPlaceholder(activeSlot.originalUrl, activeSlot.label)
-          }
-          uploadedSrc={activeSlot.originalUrl}
-          panelMode={activeSlot.kind}
-          analyzing={activeSlot.status === "analyzing"}
-          slots={MULTI_PHOTO_ENABLED ? slotViews : undefined}
-          onSelectSlot={MULTI_PHOTO_ENABLED ? handleSelectSlot : undefined}
-          onAddPhoto={MULTI_PHOTO_ENABLED ? handleAddPhoto : undefined}
-          animate={!staticRender}
-          initialPreview={
-            initialPreview || Boolean(activeSlot.audit?.improvedSrc)
-          }
-          notice={notice ?? undefined}
-          onCta={reset}
-          onImprove={
-            activeSlot.audit?.supportingRole === "unrelated_or_wrong_product"
-              ? undefined
-              : handleImprove
-          }
-          onRetryImprove={
-            activeSlot.audit?.supportingRole !== "unrelated_or_wrong_product" &&
-            activeSlot.canRetryImprove
-              ? handleRetryImprove
-              : undefined
-          }
-          improveLoading={activeSlot.improveStatus === "generating"}
-          improveStartedAt={activeSlot.improveStartedAt}
-          improveError={activeSlot.improveError ?? undefined}
-          improvedDownloadUrl={activeSlot.improvedDownloadUrl}
-          freePreview={activeSlot.freePreview ?? false}
-          freePreviewMessage={activeSlot.freePreviewMessage}
-          keepNote={activeSlot.keepNote}
-          onCheckout={handleCheckout}
-          checkoutLoading={activeSlot.checkoutLoading ?? false}
-          checkoutError={activeSlot.checkoutError}
-          onEdit={
-            // Main digital products keep Edit disabled (physical-only pipeline).
-            // Supporting photos (including digital previews) can be edited, except
-            // a wrong/unrelated product which has nothing to preserve.
-            (activeSlot.kind === "main" && activeSlot.isDigital) ||
-            activeSlot.audit?.supportingRole === "unrelated_or_wrong_product"
-              ? undefined
-              : handleEdit
-          }
-          onRevert={activeSlot.revertSnapshot ? handleRevert : undefined}
-          checklistLoading={activeSlot.checklistLoading ?? false}
-        />
-      )}
-
       {mode === "weak" && (
         <AuditWorkspace
           state={DEMO_STATES.weak}
           animate={!staticRender}
-          initialPreview={initialPreview}
           onCta={() => undefined}
         />
       )}
-
       {mode === "strong" && (
-        <AuditWorkspace
-          state={DEMO_STATES.strong}
-          animate={!staticRender}
-          onCta={reset}
-        />
+        <AuditWorkspace state={DEMO_STATES.strong} animate={!staticRender} onCta={reset} />
       )}
-
       {mode === "verify" && (
-        <AuditWorkspace
-          state={VERIFY_AMBER_DEMO}
-          animate={!staticRender}
-          onCta={reset}
-        />
+        <AuditWorkspace state={VERIFY_AMBER_DEMO} animate={!staticRender} onCta={reset} />
       )}
 
       {mode === "invalid" && <InvalidUploadState onTryAgain={reset} />}
+
+      {authOpen && (
+        <AuthModal initialMode="signup" onClose={() => setAuthOpen(false)} />
+      )}
     </>
   );
 }

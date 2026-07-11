@@ -31,22 +31,28 @@ export class ScorePhotoError extends Error {
 export async function generateChecklist(
   input: ChecklistGenInput
 ): Promise<SupportingPhotoChecklistItem[]> {
-  let raw: string;
-  try {
-    raw = await checklistCall({
-      systemPrompt: CHECKLIST_PROMPT,
-      userMessage: checklistUserMessage(input),
-    });
-  } catch (error) {
-    console.error("[checklist] generation failed:", error);
-    return [];
-  }
-
   let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    return [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let raw: string;
+    try {
+      raw = await checklistCall({
+        systemPrompt:
+          attempt === 0
+            ? CHECKLIST_PROMPT
+            : CHECKLIST_PROMPT +
+              "\n\nSTRICT OUTPUT REPAIR: your previous response failed validation. Return ONLY the exact JSON object. No prose.",
+        userMessage: checklistUserMessage(input),
+      });
+    } catch (error) {
+      console.error("[checklist] generation failed:", error);
+      return []; // provider failure: best-effort, no retry
+    }
+    try {
+      parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") break;
+    } catch {
+      parsed = undefined;
+    }
   }
   if (!parsed || typeof parsed !== "object") return [];
   const obj = parsed as {
@@ -68,6 +74,10 @@ export async function generateChecklist(
   );
 }
 
+/** Appended on the single structured-output repair retry. */
+const REPAIR_INSTRUCTION =
+  "\n\nSTRICT OUTPUT REPAIR: your previous response failed JSON schema validation. Return ONLY the exact JSON object matching the schema. No prose, no markdown, no truncation.";
+
 export async function scorePhoto(args: {
   imageBuffer: Buffer;
   imageMimeType: string;
@@ -81,34 +91,48 @@ export async function scorePhoto(args: {
   const dataUrl = `data:${args.imageMimeType};base64,${args.imageBuffer.toString("base64")}`;
 
   const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
+  const basePrompt = args.systemPrompt ?? RUBRIC_PROMPT;
 
-  let raw: string;
-  try {
-    raw = await visionScoreCall({
-      imageDataUrl: dataUrl,
-      systemPrompt: args.systemPrompt ?? RUBRIC_PROMPT,
-      // Relevance context is only meaningful for supporting photos.
-      mainProductContext: supporting ? args.mainProductContext : undefined,
-    });
-  } catch (error) {
-    console.error("[score-photo] vision call failed:", error);
-    throw new ScorePhotoError("AI scoring failed. Try again.", "vision_failed");
+  // One controlled retry on parse/schema failure with a stricter instruction.
+  // Provider/network failures are NOT retried here (route-level policy decides).
+  let parsed: RubricJson | undefined;
+  let lastFailure: "vision_failed" | "bad_ai_response" = "bad_ai_response";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let raw: string;
+    try {
+      raw = await visionScoreCall({
+        imageDataUrl: dataUrl,
+        systemPrompt: attempt === 0 ? basePrompt : basePrompt + REPAIR_INSTRUCTION,
+        // Relevance context is only meaningful for supporting photos.
+        mainProductContext: supporting ? args.mainProductContext : undefined,
+      });
+    } catch (error) {
+      console.error("[score-photo] vision call failed:", error);
+      lastFailure = "vision_failed";
+      break; // do not burn a retry on provider failure
+    }
+
+    try {
+      const candidate: unknown = JSON.parse(raw);
+      if (isRubricJson(candidate)) {
+        parsed = candidate;
+        if (attempt === 1) {
+          console.log(JSON.stringify({ event: "score.repair_retry_succeeded" }));
+        }
+        break;
+      }
+    } catch {
+      // fall through to retry
+    }
+    lastFailure = "bad_ai_response";
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  if (parsed === undefined) {
     throw new ScorePhotoError(
-      "AI scoring returned an invalid response. Try again.",
-      "bad_ai_response"
-    );
-  }
-
-  if (!isRubricJson(parsed)) {
-    throw new ScorePhotoError(
-      "AI scoring returned an invalid response. Try again.",
-      "bad_ai_response"
+      lastFailure === "vision_failed"
+        ? "AI scoring failed. Try again."
+        : "AI scoring returned an invalid response. Try again.",
+      lastFailure
     );
   }
 

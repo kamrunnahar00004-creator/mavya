@@ -19,6 +19,8 @@ type Props = {
   checklist: SupportingPhotoChecklistItem[];
   /** True while the checklist hydrates in the background (score already shown). */
   loading?: boolean;
+  /** Shot ids already covered by uploaded supporting photos (auto-marked "Added"). */
+  coveredShotIds?: string[];
 };
 
 /**
@@ -27,10 +29,15 @@ type Props = {
  * personal "I've covered this" satisfaction toggle, session-only, with no scoring
  * and no pressure - a seller with no supporting photos never feels they failed.
  */
-export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
+export function PhotoChecklistPanel({
+  checklist,
+  loading = false,
+  coveredShotIds,
+}: Props) {
   const [open, setOpen] = useState(false);
   // Session-only "I've covered this" state, keyed by shot id. No scoring.
   const [checked, setChecked] = useState<Set<string>>(new Set());
+  const covered = new Set(coveredShotIds ?? []);
 
   // Nothing to show and nothing coming: render nothing.
   if (!checklist.length && !loading) return null;
@@ -106,6 +113,7 @@ export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
                 key={`c-${i}`}
                 item={item}
                 checked={checked.has(item.shot_id)}
+                covered={covered.has(item.shot_id)}
                 onToggle={() => toggle(item.shot_id)}
               />
             ))}
@@ -125,6 +133,7 @@ export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
                     key={`r-${i}`}
                     item={item}
                     checked={checked.has(item.shot_id)}
+                    covered={covered.has(item.shot_id)}
                     onToggle={() => toggle(item.shot_id)}
                   />
                 ))}
@@ -144,20 +153,29 @@ export function PhotoChecklistPanel({ checklist, loading = false }: Props) {
 function ChecklistRow({
   item,
   checked,
+  covered = false,
   onToggle,
 }: {
   item: SupportingPhotoChecklistItem;
   checked: boolean;
+  /** Auto-detected from an uploaded supporting photo; not user-toggleable. */
+  covered?: boolean;
   onToggle: () => void;
 }) {
+  const done = covered || checked;
   return (
     <button
       type="button"
-      onClick={onToggle}
-      aria-pressed={checked}
-      className="flex w-full gap-2.5 rounded-[var(--radius-md)] py-0.5 text-left transition-colors hover:bg-[var(--color-page-deep)]/40"
+      onClick={covered ? undefined : onToggle}
+      aria-pressed={done}
+      disabled={covered}
+      className={cn(
+        "flex w-full gap-2.5 rounded-[var(--radius-md)] py-0.5 text-left transition-colors",
+        !covered && "hover:bg-[var(--color-page-deep)]/40",
+        covered && "cursor-default"
+      )}
     >
-      {checked ? (
+      {done ? (
         <CircleCheck
           className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-strong)]"
           aria-hidden="true"
@@ -173,7 +191,7 @@ function ChecklistRow({
           <span
             className={cn(
               "text-[13.5px] font-semibold",
-              checked
+              done
                 ? "text-[var(--color-ink-soft)] line-through"
                 : "text-[var(--color-ink)]"
             )}
@@ -183,8 +201,13 @@ function ChecklistRow({
           <span className="rounded-full bg-[var(--color-page-deep)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink-muted)]">
             {DOUBT_LABEL[item.answers_doubt]}
           </span>
+          {covered && (
+            <span className="rounded-full bg-[var(--color-strong-soft)] px-2 py-0.5 text-[10.5px] font-bold text-[var(--color-strong)]">
+              Added
+            </span>
+          )}
         </div>
-        {!checked && (
+        {!done && (
           <>
             <p className="mt-0.5 text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
               {item.reason}

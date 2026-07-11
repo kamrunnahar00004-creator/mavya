@@ -779,6 +779,8 @@ export async function improvePhoto(args: {
    * compares the result to the original product.
    */
   editInstruction?: string;
+  /** Pipeline-stage callback (persisted to the generation job for honest UI). */
+  onStage?: (stage: "generating" | "fidelity_check" | "rescoring") => void | Promise<void>;
 }): Promise<ImproveResult> {
   const attempts: AttemptRecord[] = [];
   const mode: ImproveMode = args.mode ?? "main";
@@ -790,8 +792,25 @@ export async function improvePhoto(args: {
   const promptSource = args.baseBuffer ? "improved_preview" : "original";
   const editInstruction = sanitizeEditInstruction(args.editInstruction);
 
+  // Preserve the source aspect intent instead of forcing everything square:
+  // clearly landscape sources render 1536x1024, clearly portrait 1024x1536.
+  let size: "1024x1024" | "1024x1536" | "1536x1024" = "1024x1024";
+  try {
+    const meta = await sharp(editBuffer).metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+    if (w > 0 && h > 0) {
+      const ratio = w / h;
+      if (ratio >= 1.25) size = "1536x1024";
+      else if (ratio <= 0.8) size = "1024x1536";
+    }
+  } catch {
+    // metadata failure -> keep square default
+  }
+
   // 1. Targeted generation. A seller edit instruction switches to the user-directed
   //    edit prompt; otherwise the audit-driven targeted prompt is used.
+  await args.onStage?.("generating");
   let candidateBase64: string;
   try {
     candidateBase64 = await imageEditCall({
@@ -805,7 +824,7 @@ export async function improvePhoto(args: {
             mode,
             promptSource
           ),
-      size: "1024x1024",
+      size,
     });
   } catch (err) {
     console.error("[improve-photo] image edit failed:", err);
@@ -819,6 +838,7 @@ export async function improvePhoto(args: {
   }
 
   // 2. Re-score + fidelity in parallel.
+  await args.onStage?.("fidelity_check");
   let candidateAudit: RubricJson;
   let fidelity: FidelityReport;
   try {
@@ -872,9 +892,10 @@ export async function improvePhoto(args: {
     };
   }
 
-  // 3. Candidate-specific deterministic finish, only when fidelity is sound but
-  //    the canonical score sits just under the gate. Never run a finish over an
-  //    already-untrustworthy candidate.
+  // 3. Candidate-specific deterministic finish, only when fidelity is sound AND
+  //    the score sits JUST under the gate (>= 7.2) AND the candidate audit
+  //    actually requests a light adjustment. A finish costs two extra
+  //    verification calls, so it must have a realistic chance of clearing 8.0.
   const finishWorthTrying =
     fidelity.publishable &&
     !fidelity.ai_looking &&
@@ -882,7 +903,9 @@ export async function improvePhoto(args: {
     !fidelity.invented_or_missing_details &&
     !fidelity.collage_or_duplicate_product &&
     fidelity.full_product_visible &&
-    candidateAudit.overall_score < 8;
+    candidateAudit.overall_score < 8 &&
+    candidateAudit.overall_score >= 7.2 &&
+    candidateAudit.light_adjustment !== null;
 
   if (finishWorthTrying) {
     try {
@@ -891,6 +914,7 @@ export async function improvePhoto(args: {
         candidateAudit
       );
       if (finishedBase64 !== candidateBase64) {
+        await args.onStage?.("rescoring");
 	        const finished = await scoreAndFidelity({
 	          originalBuffer: args.originalBuffer,
 	          originalMimeType: args.originalMimeType,

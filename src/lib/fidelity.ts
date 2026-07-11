@@ -179,35 +179,44 @@ export async function evaluateFidelity(args: {
   )}`;
   const candidateDataUrl = `data:${args.candidateMimeType};base64,${args.candidateBase64}`;
 
-  let raw: string;
-  try {
-    raw = await visionCompareCall({
-      originalDataUrl,
-      candidateDataUrl,
-      systemPrompt: args.systemPrompt ?? FIDELITY_PROMPT,
-    });
-  } catch (err) {
-    console.error("[fidelity] compare call failed:", err);
-    throw new FidelityError(
-      "Fidelity comparison failed. Try again.",
-      "vision_failed"
-    );
+  const basePrompt = args.systemPrompt ?? FIDELITY_PROMPT;
+  const repair =
+    "\n\nSTRICT OUTPUT REPAIR: your previous response failed JSON schema validation. Return ONLY the exact JSON object matching the schema. No prose, no markdown, no truncation.";
+
+  // One controlled retry on parse/schema failure; provider failures not retried.
+  let parsed: FidelityReport | undefined;
+  let failure: "vision_failed" | "bad_ai_response" = "bad_ai_response";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    let raw: string;
+    try {
+      raw = await visionCompareCall({
+        originalDataUrl,
+        candidateDataUrl,
+        systemPrompt: attempt === 0 ? basePrompt : basePrompt + repair,
+      });
+    } catch (err) {
+      console.error("[fidelity] compare call failed:", err);
+      failure = "vision_failed";
+      break;
+    }
+    try {
+      const candidate: unknown = JSON.parse(raw);
+      if (isFidelityReport(candidate)) {
+        parsed = candidate;
+        break;
+      }
+    } catch {
+      // retry
+    }
+    failure = "bad_ai_response";
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
+  if (!parsed) {
     throw new FidelityError(
-      "Fidelity comparison returned an invalid response. Try again.",
-      "bad_ai_response"
-    );
-  }
-
-  if (!isFidelityReport(parsed)) {
-    throw new FidelityError(
-      "Fidelity comparison returned an invalid response. Try again.",
-      "bad_ai_response"
+      failure === "vision_failed"
+        ? "Fidelity comparison failed. Try again."
+        : "Fidelity comparison returned an invalid response. Try again.",
+      failure
     );
   }
 

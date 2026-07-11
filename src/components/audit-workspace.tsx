@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  Info,
   Loader2,
   Sparkles,
   WandSparkles,
@@ -59,17 +60,16 @@ type Props = {
   /** Epoch ms when the active slot started improving. Preserves countdown across slot switches. */
   improveStartedAt?: number;
   improveError?: string;
-  /** Data URL or blob URL of the AI-improved image, used for download. */
-  improvedDownloadUrl?: string;
+  /** Truthful pipeline-stage label from the generation job (replaces rotating copy). */
+  improveStage?: string;
   /** True when the active preview is safe to show but not publish-ready. */
   freePreview?: boolean;
   /** Specific upload recommendation shown for a free preview. */
   freePreviewMessage?: string;
   /** Muted status shown when a retry keeps the existing better preview. */
   keepNote?: string;
-  onCheckout?: (email?: string) => void;
-  checkoutLoading?: boolean;
-  checkoutError?: string;
+  /** Checklist shot ids already covered by uploaded supporting photos. */
+  coveredShotIds?: string[];
   /** Plain-language edit. When provided, an "Edit photo" button opens the edit modal. Physical products only. */
   onEdit?: (
     instruction: string,
@@ -102,9 +102,11 @@ export function AuditWorkspace({
   improveLoading = false,
   improveStartedAt,
   improveError,
+  improveStage,
   freePreview = false,
   freePreviewMessage,
   keepNote,
+  coveredShotIds,
   onEdit,
   onRevert,
   checklistLoading = false,
@@ -212,7 +214,9 @@ export function AuditWorkspace({
   const improveRemaining = IMPROVE_ESTIMATE_SECONDS - improveElapsed;
   const improveCountdown =
     improveRemaining > 0 ? `Generating… ${improveRemaining}s` : "Finishing…";
-  const improveStatus = IMPROVE_STATUSES[improveStatusIdx];
+  // Prefer the truthful job-stage label when the caller provides one; the
+  // rotating copy is only the fallback for flows without job state.
+  const improveStatus = improveStage ?? IMPROVE_STATUSES[improveStatusIdx];
 
   // Inline supporting-photo analyzing status rotation (right panel only).
   useEffect(() => {
@@ -333,6 +337,7 @@ export function AuditWorkspace({
               <PhotoChecklistPanel
                 checklist={state.supportingChecklist ?? []}
                 loading={checklistLoading}
+                coveredShotIds={coveredShotIds}
               />
             )}
         </section>
@@ -359,7 +364,7 @@ export function AuditWorkspace({
             </div>
           ) : (
             <>
-          <div className="reveal-item" data-reveal-order="0">
+          <div className="reveal-item relative" data-reveal-order="0">
             <ScoreVerdict
               key={previewActive ? "improved" : "original"}
               score={activeAudit.overallScore}
@@ -367,6 +372,7 @@ export function AuditWorkspace({
               heading={isExtra ? "Supporting photo grade" : "Main photo score"}
               animate={animate}
             />
+            <ScoringInfo isExtra={isExtra} />
             {isExtra && state.supportingRole && state.supportingRole !== "other" && (
               <div className="mt-3 flex flex-col gap-1.5">
                 <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--color-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--color-primary)]">
@@ -399,7 +405,7 @@ export function AuditWorkspace({
                   </span>
                 </span>
                 <span className="text-[var(--color-ink-soft)]">
-                  AI-improved preview. Label text and small patterns may differ. Do not publish unless they match your physical product.
+                  AI-improved preview, saved to this product. Label text and small patterns may differ. Do not publish unless they match your physical product.
                 </span>
               </div>
             )}
@@ -648,6 +654,57 @@ export function AuditWorkspace({
         />
       )}
     </main>
+  );
+}
+
+/**
+ * Compact "How scoring works" explainer. Honest framing: Etsy-oriented rubric,
+ * fixed pillar weights, guidance not a sales guarantee, generation separately
+ * fidelity-checked. No claims of statistical validation.
+ */
+function ScoringInfo({ isExtra }: { isExtra: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="absolute right-0 top-0">
+      <button
+        type="button"
+        aria-label="How scoring works"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[var(--color-ink-soft)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)]"
+      >
+        <Info className="h-4 w-4" aria-hidden="true" />
+      </button>
+      {open && (
+        <>
+          <button
+            type="button"
+            aria-hidden="true"
+            tabIndex={-1}
+            className="fixed inset-0 z-10 cursor-default"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute right-0 top-9 z-20 w-[300px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-4 text-left shadow-[var(--shadow-soft-strong)]">
+            <p className="text-[13px] font-bold text-[var(--color-ink)]">
+              How scoring works
+            </p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-[var(--color-ink-muted)]">
+              {isExtra
+                ? "Supporting photos are judged on the job they do for a buyer: Buyer Confidence (35%), Clarity (30%), Accuracy (20%), and Presentation (15%)."
+                : "The score is built for Etsy listings: Thumbnail readability (40%), Lighting (25%), Background (20%), and Click Appeal (15%)."}
+            </p>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-[var(--color-ink-muted)]">
+              8.0+ is strong, 6.0-7.9 is workable, below 6.0 needs attention.
+              AI-improved photos are separately checked for product fidelity before
+              they are shown.
+            </p>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-[var(--color-ink-soft)]">
+              A high score is guidance for getting clicks, not a guarantee of sales.
+            </p>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
 

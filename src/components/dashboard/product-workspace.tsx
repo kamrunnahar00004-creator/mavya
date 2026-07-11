@@ -13,15 +13,36 @@ import {
 import type { AuditResult, DemoState } from "@/data/demo-states";
 import type { RubricJson, SupportingPhotoChecklistItem } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
+import {
+  ACTIVE_JOB_STATUSES,
+  JOB_STAGE_LABELS,
+  type GenerationJobPayload,
+  type GenerationJobStatus,
+} from "@/lib/generation-types";
+import { coveredShotIds } from "@/lib/checklist-coverage";
+import { SUPPORTING_RUBRIC_VERSION, MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { prepareUploadImage, compressDataUrlForUpload } from "@/lib/client-image";
+import { prepareUploadImage } from "@/lib/client-image";
 import { trackClientEvent } from "@/lib/track-client";
+
+export type InitialJob = {
+  id: string;
+  status: GenerationJobStatus;
+  stage: string | null;
+  outcome: "publish_ready" | "useful_free_preview" | null;
+  errorCode: string | null;
+  resultUrl: string | null;
+  candidateRubric: RubricJson | null;
+  fidelity: FidelityReport | null;
+};
 
 export type InitialPhoto = {
   id: string;
   role: "main" | "supporting";
   imageSrc: string;
+  storagePath: string;
   rubric: RubricJson;
+  lastJob: InitialJob | null;
 };
 
 type Props = {
@@ -31,20 +52,11 @@ type Props = {
   initialPhotos: InitialPhoto[];
 };
 
-type RevertSnap = {
-  improvedSrc?: string;
-  improvedAudit?: AuditResult;
-  improvedScore?: number;
-  improvedVerdict?: string;
-  improvedDownloadUrl?: string;
-  freePreview?: boolean;
-  freePreviewMessage?: string;
-};
-
 type Photo = {
   id: string;
   kind: "main" | "supporting";
   imageSrc: string;
+  storagePath: string;
   audit: DemoState;
   status: "analyzing" | "graded";
   isDigital: boolean;
@@ -52,8 +64,9 @@ type Photo = {
   productSummary?: string;
   improveStatus: "idle" | "generating" | "error";
   improveStartedAt?: number;
+  improveStage?: string;
   improveError?: string;
-  improvedDownloadUrl?: string;
+  lastJobId?: string;
   freePreview: boolean;
   freePreviewMsg?: string;
   canRetry: boolean;
@@ -61,25 +74,21 @@ type Photo = {
   revertSnap: RevertSnap | null;
 };
 
-type GenerateSuccessBody = {
-  ok: true;
-  outcome: "publish_ready" | "useful_free_preview";
-  previewBase64: string;
-  previewMimeType: string;
-  candidateAudit: RubricJson;
-  fidelity: FidelityReport;
-};
-type GenerateFailureBody = {
-  ok: false;
-  code: string;
-  message: string;
-  unresolvedIssues?: string[];
+type RevertSnap = {
+  improvedSrc?: string;
+  improvedAudit?: AuditResult;
+  improvedScore?: number;
+  improvedVerdict?: string;
+  lastJobId?: string;
+  freePreview?: boolean;
+  freePreviewMessage?: string;
 };
 
 const FREE_PREVIEW_PREFIX =
   "This version is better, but it did not pass publish-ready checks. We recommend ";
 
-function freePreviewMessage(fidelity: FidelityReport): string {
+function freePreviewMessage(fidelity: FidelityReport | null): string {
+  if (!fidelity) return `${FREE_PREVIEW_PREFIX}reviewing it before using it.`;
   if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
     return "This version may have changed product details. Review it carefully before using it, or generate another version.";
   }
@@ -94,15 +103,50 @@ function freePreviewMessage(fidelity: FidelityReport): string {
   return `${FREE_PREVIEW_PREFIX}${tail}`;
 }
 
+const RETRYABLE_CODES = new Set([
+  "no_publishable_candidate",
+  "incomplete_source",
+  "unsafe_candidate",
+  "image_failed",
+  "vision_failed",
+  "provider_timeout",
+  "internal_error",
+]);
+
+function applyCompletedJob(photo: Photo, job: InitialJob): Photo {
+  if (job.status !== "completed" || !job.resultUrl || !job.candidateRubric) return photo;
+  const improvedAudit =
+    photo.kind === "supporting"
+      ? rubricToSupportingAuditResult(job.candidateRubric)
+      : rubricToAuditResult(job.candidateRubric);
+  const isFree = job.outcome === "useful_free_preview";
+  return {
+    ...photo,
+    lastJobId: job.id,
+    freePreview: isFree,
+    freePreviewMsg: isFree ? freePreviewMessage(job.fidelity) : undefined,
+    canRetry: improvedAudit.overallScore < 8,
+    audit: {
+      ...photo.audit,
+      improvedSrc: job.resultUrl,
+      improvedAudit,
+      improvedScore: improvedAudit.overallScore,
+      improvedVerdict: improvedAudit.verdict,
+      comparisonMode: "toggle",
+    },
+  };
+}
+
 function makePhoto(p: InitialPhoto): Photo {
   const isMain = p.role === "main";
   const audit = isMain
     ? rubricToDemoState({ rubric: p.rubric, imageSrc: p.imageSrc })
     : rubricToSupportingState({ rubric: p.rubric, imageSrc: p.imageSrc });
-  return {
+  let photo: Photo = {
     id: p.id,
     kind: p.role,
     imageSrc: p.imageSrc,
+    storagePath: p.storagePath,
     audit,
     status: "graded",
     isDigital: p.rubric.upload_kind === "digital_product",
@@ -114,6 +158,20 @@ function makePhoto(p: InitialPhoto): Photo {
     unresolved: null,
     revertSnap: null,
   };
+  if (p.lastJob) {
+    if (p.lastJob.status === "completed") {
+      photo = applyCompletedJob(photo, p.lastJob);
+    } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
+      photo = {
+        ...photo,
+        improveStatus: "generating",
+        improveStartedAt: Date.now(),
+        improveStage: JOB_STAGE_LABELS[p.lastJob.status],
+        lastJobId: p.lastJob.id,
+      };
+    }
+  }
+  return photo;
 }
 
 function analyzingPhoto(id: string, imageSrc: string): Photo {
@@ -121,6 +179,7 @@ function analyzingPhoto(id: string, imageSrc: string): Photo {
     id,
     kind: "supporting",
     imageSrc,
+    storagePath: "",
     audit: {
       id: "weak",
       band: "mid",
@@ -147,16 +206,18 @@ function analyzingPhoto(id: string, imageSrc: string): Photo {
   };
 }
 
-function makeId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `slot-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+function newId(): string {
+  if (typeof crypto === "undefined" || !("randomUUID" in crypto)) {
+    throw new Error("This browser is too old to upload photos securely.");
+  }
+  return crypto.randomUUID();
 }
 
 /**
  * Interactive per-product workspace: main + supporting photos, One-click fix +
- * Edit, switching, and the checklist — seeded from the DB. Supporting photos are
- * persisted (Storage + photos + audits) under RLS; generated previews stay
- * session-only per the deferred-download decision.
+ * Edit, switching, and the checklist — seeded from the DB. Generation runs
+ * through persisted, idempotent jobs (photoId contract; the server loads the
+ * stored audit + image, so nothing here is trusted for billing or safety).
  */
 export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
   const router = useRouter();
@@ -169,21 +230,30 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
   const [notice, setNotice] = useState<string | null>(null);
 
   const photosRef = useRef<Photo[]>(photos);
-  const filesRef = useRef<Record<string, File>>({});
   const extraInputRef = useRef<HTMLInputElement | null>(null);
+  const pollTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   const mainRubric = initialPhotos.find((p) => p.role === "main")?.rubric;
 
   useEffect(() => {
     photosRef.current = photos;
   }, [photos]);
 
+  useEffect(() => {
+    const timers = pollTimers.current;
+    return () => {
+      Object.values(timers).forEach(clearInterval);
+    };
+  }, []);
+
   const active = photos.find((p) => p.id === activeId) ?? null;
 
-  function patch(id: string, next: Partial<Photo>) {
+  const patch = useCallback((id: string, next: Partial<Photo>) => {
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...next } : p)));
-  }
+  }, []);
 
-  // Hydrate the supporting-photo checklist for the main product (background).
+  // ------------------------------------------------------------------
+  // Checklist (background hydrate) + covered-shot diffing.
+  // ------------------------------------------------------------------
   useEffect(() => {
     if (!mainRubric || mainRubric.upload_kind === "invalid") return;
     let alive = true;
@@ -216,31 +286,99 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     };
   }, [mainRubric]);
 
-  // Fetch a photo's original as a File for improve/edit (cached).
-  const ensureFile = useCallback(
-    async (id: string): Promise<File | null> => {
-      if (filesRef.current[id]) return filesRef.current[id];
-      const photo = photosRef.current.find((p) => p.id === id);
-      if (!photo) return null;
-      try {
-        const res = await fetch(photo.imageSrc);
-        const blob = await res.blob();
-        const type = blob.type === "image/png" ? "image/png" : "image/jpeg";
-        const f = new File([blob], "photo", { type });
-        filesRef.current[id] = f;
-        return f;
-      } catch {
-        return null;
-      }
-    },
-    []
+  const covered = coveredShotIds(
+    photos
+      .filter((p) => p.kind === "supporting" && p.status === "graded")
+      .map((p) => p.supportingRole ?? "")
   );
 
-  const mainContext = useCallback(() => {
-    const main = photosRef.current.find((p) => p.kind === "main");
-    return main?.productSummary?.trim() || undefined;
+  // ------------------------------------------------------------------
+  // Generation job polling (live stage labels + refresh recovery).
+  // ------------------------------------------------------------------
+  const applyJobPayload = useCallback(
+    (photoId: string, payload: GenerationJobPayload) => {
+      const cur = photosRef.current.find((p) => p.id === photoId);
+      if (!cur) return;
+      if (ACTIVE_JOB_STATUSES.has(payload.status)) {
+        patch(photoId, {
+          improveStatus: "generating",
+          improveStage: JOB_STAGE_LABELS[payload.status],
+          lastJobId: payload.jobId ?? cur.lastJobId,
+        });
+        return;
+      }
+      if (payload.status === "completed" && payload.resultUrl && payload.candidateRubric) {
+        const updated = applyCompletedJob(
+          { ...cur, improveStatus: "idle", improveStartedAt: undefined, improveStage: undefined, improveError: undefined, unresolved: null },
+          {
+            id: payload.jobId,
+            status: "completed",
+            stage: null,
+            outcome: payload.outcome,
+            errorCode: null,
+            resultUrl: payload.resultUrl,
+            candidateRubric: payload.candidateRubric,
+            fidelity: payload.fidelity,
+          }
+        );
+        setPhotos((prev) => prev.map((p) => (p.id === photoId ? updated : p)));
+        return;
+      }
+      // Terminal failure/rejection.
+      const hasPreview = Boolean(cur.audit.improvedSrc);
+      patch(photoId, {
+        improveStatus: hasPreview ? "idle" : "error",
+        improveStartedAt: undefined,
+        improveStage: undefined,
+        improveError: hasPreview ? undefined : payload.message ?? "Generation failed. Try again.",
+        unresolved: payload.unresolvedIssues ?? cur.unresolved,
+        canRetry: hasPreview
+          ? typeof cur.audit.improvedScore === "number" && cur.audit.improvedScore < 8
+          : RETRYABLE_CODES.has(payload.errorCode ?? ""),
+      });
+    },
+    [patch]
+  );
+
+  const stopPolling = useCallback((photoId: string) => {
+    const t = pollTimers.current[photoId];
+    if (t) {
+      clearInterval(t);
+      delete pollTimers.current[photoId];
+    }
   }, []);
 
+  const pollJob = useCallback(
+    (photoId: string, query: string) => {
+      stopPolling(photoId);
+      pollTimers.current[photoId] = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/generate?${query}`);
+          if (!res.ok) return;
+          const payload = (await res.json()) as GenerationJobPayload;
+          applyJobPayload(photoId, payload);
+          if (!ACTIVE_JOB_STATUSES.has(payload.status)) stopPolling(photoId);
+        } catch {
+          // transient poll failure: keep trying until terminal or unmount
+        }
+      }, 4000);
+    },
+    [applyJobPayload, stopPolling]
+  );
+
+  // Refresh recovery: resume polling for photos whose last job is still active.
+  useEffect(() => {
+    for (const p of initialPhotos) {
+      if (p.lastJob && ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
+        pollJob(p.id, `id=${p.lastJob.id}`);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // ------------------------------------------------------------------
+  // One-click fix / Edit / Retry — persisted, idempotent generation jobs.
+  // ------------------------------------------------------------------
   const runImprove = useCallback(
     async (
       retry: boolean,
@@ -249,11 +387,6 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     ) => {
       const photo = photosRef.current.find((p) => p.id === activeId);
       if (!photo || photo.improveStatus === "generating") return;
-      const f = await ensureFile(photo.id);
-      if (!f) {
-        patch(photo.id, { improveStatus: "error", improveError: "Could not load the photo." });
-        return;
-      }
       const isEdit = Boolean(editInstruction);
       const isExtra = photo.kind === "supporting";
       trackClientEvent(
@@ -265,7 +398,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
           ? "edit_clicked"
           : "improve_clicked"
       );
-      const startedAt = Date.now();
+
       const revertSnap: RevertSnap | null =
         isEdit && photo.audit.improvedSrc
           ? {
@@ -273,92 +406,79 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
               improvedAudit: photo.audit.improvedAudit,
               improvedScore: photo.audit.improvedScore,
               improvedVerdict: photo.audit.improvedVerdict,
-              improvedDownloadUrl: photo.improvedDownloadUrl,
+              lastJobId: photo.lastJobId,
               freePreview: photo.freePreview,
               freePreviewMessage: photo.freePreviewMsg,
             }
           : photo.revertSnap;
+
+      const idempotencyKey = newId();
+      const useBase = (retry || (isEdit && editSource === "preview")) && photo.lastJobId;
       patch(photo.id, {
         improveStatus: "generating",
-        improveStartedAt: startedAt,
+        improveStartedAt: Date.now(),
+        improveStage: JOB_STAGE_LABELS.queued,
         improveError: undefined,
         canRetry: false,
         revertSnap,
       });
+      pollJob(photo.id, `key=${idempotencyKey}`);
 
       try {
-        const form = new FormData();
-        form.set("image", f);
-        if (isExtra) {
-          form.set("mode", "extra");
-          const ctx = mainContext();
-          if (ctx) form.set("main_product_context", ctx);
-        }
-        const useBase =
-          (retry || (isEdit && editSource === "preview")) && photo.improvedDownloadUrl;
-        if (useBase) {
-          form.set("retryBaseImage", await compressDataUrlForUpload(photo.improvedDownloadUrl!));
-        }
-        if (isEdit) form.set("editInstruction", editInstruction!);
-        if (retry && !isEdit && photo.unresolved?.length) {
-          form.set("unresolvedIssues", JSON.stringify(photo.unresolved));
-        }
-        const res = await fetch("/api/generate", { method: "POST", body: form });
-        const body = (await res.json().catch(() => null)) as
-          | GenerateSuccessBody
-          | GenerateFailureBody
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            photoId: photo.id,
+            idempotencyKey,
+            editInstruction: editInstruction || undefined,
+            retry,
+            previousJobId: useBase ? photo.lastJobId : undefined,
+            unresolvedIssues: retry && !isEdit ? photo.unresolved ?? undefined : undefined,
+          }),
+        });
+        const payload = (await res.json().catch(() => null)) as
+          | GenerationJobPayload
+          | { ok: false; code?: string; message?: string; unresolvedIssues?: string[] }
           | null;
-
-        const cur = photosRef.current.find((p) => p.id === photo.id);
-        const hasPreview = Boolean(cur?.audit.improvedSrc);
-
-        if (!res.ok || !body || body.ok === false) {
-          const message =
-            body && body.ok === false ? body.message : `Generation failed (${res.status})`;
-          const retryable = new Set([
-            "no_publishable_candidate",
-            "incomplete_source",
-            "unsafe_candidate",
-            "image_failed",
-          ]);
-          patch(photo.id, {
-            improveStatus: hasPreview ? "idle" : "error",
-            improveStartedAt: undefined,
-            improveError: hasPreview ? undefined : message,
-            unresolved:
-              body && body.ok === false && Array.isArray(body.unresolvedIssues)
-                ? body.unresolvedIssues
-                : cur?.unresolved ?? null,
-            canRetry: hasPreview
-              ? typeof cur?.audit.improvedScore === "number" && cur.audit.improvedScore < 8
-              : retryable.has(body && body.ok === false ? body.code : ""),
+        stopPolling(photo.id);
+        if (!payload) {
+          applyJobPayload(photo.id, {
+            ok: false,
+            jobId: "",
+            status: "failed",
+            stage: null,
+            outcome: null,
+            errorCode: "internal_error",
+            message: "Generation failed. Try again.",
+            resultUrl: null,
+            candidateRubric: null,
+            fidelity: null,
           });
           return;
         }
-
-        const improvedDataUrl = `data:${body.previewMimeType};base64,${body.previewBase64}`;
-        const improvedAudit = isExtra
-          ? rubricToSupportingAuditResult(body.candidateAudit)
-          : rubricToAuditResult(body.candidateAudit);
-        const isFree = body.outcome === "useful_free_preview";
-        patch(photo.id, {
-          improvedDownloadUrl: improvedDataUrl,
-          freePreview: isFree,
-          freePreviewMsg: isFree ? freePreviewMessage(body.fidelity) : undefined,
-          improveStatus: "idle",
-          improveStartedAt: undefined,
-          improveError: undefined,
-          canRetry: improvedAudit.overallScore < 8,
-          unresolved: null,
-          audit: {
-            ...(cur?.audit ?? photo.audit),
-            improvedSrc: improvedDataUrl,
-            improvedAudit,
-            improvedScore: improvedAudit.overallScore,
-            improvedVerdict: improvedAudit.verdict,
-            comparisonMode: "toggle",
-          },
-        });
+        if ("status" in payload && payload.status) {
+          applyJobPayload(photo.id, payload as GenerationJobPayload);
+          if (ACTIVE_JOB_STATUSES.has((payload as GenerationJobPayload).status)) {
+            pollJob(photo.id, `key=${idempotencyKey}`);
+            return;
+          }
+        } else {
+          const err = payload as { code?: string; message?: string; unresolvedIssues?: string[] };
+          applyJobPayload(photo.id, {
+            ok: false,
+            jobId: "",
+            status: err.code === "insufficient_credits" ? "cancelled" : "failed",
+            stage: null,
+            outcome: null,
+            errorCode: (err.code as GenerationJobPayload["errorCode"]) ?? "internal_error",
+            message: err.message ?? "Generation failed. Try again.",
+            resultUrl: null,
+            candidateRubric: null,
+            fidelity: null,
+            unresolvedIssues: err.unresolvedIssues,
+          });
+        }
         trackClientEvent(
           isExtra
             ? isEdit
@@ -368,22 +488,14 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             ? "edit_completed"
             : "improve_completed"
         );
-      } catch (err) {
-        const cur = photosRef.current.find((p) => p.id === photo.id);
-        const hasPreview = Boolean(cur?.audit.improvedSrc);
-        patch(photo.id, {
-          improveStatus: hasPreview ? "idle" : "error",
-          improveStartedAt: undefined,
-          improveError: hasPreview
-            ? undefined
-            : err instanceof Error
-            ? err.message
-            : "Generation failed.",
-          canRetry: true,
-        });
+      } catch {
+        stopPolling(photo.id);
+        // The request died but the job may still be running server-side; poll by
+        // key so a completed result is still recovered.
+        pollJob(photo.id, `key=${idempotencyKey}`);
       }
     },
-    [activeId, ensureFile, mainContext]
+    [activeId, applyJobPayload, patch, pollJob, stopPolling]
   );
 
   const handleImprove = useCallback(() => runImprove(false), [runImprove]);
@@ -398,7 +510,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     if (!photo?.revertSnap) return;
     const snap = photo.revertSnap;
     patch(photo.id, {
-      improvedDownloadUrl: snap.improvedDownloadUrl,
+      lastJobId: snap.lastJobId,
       freePreview: Boolean(snap.freePreview),
       freePreviewMsg: snap.freePreviewMessage,
       canRetry:
@@ -412,7 +524,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         improvedVerdict: snap.improvedVerdict,
       },
     });
-  }, [activeId]);
+  }, [activeId, patch]);
 
   const handleSelectSlot = useCallback((id: string) => {
     setActiveId(id);
@@ -421,32 +533,54 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
 
   const handleAddPhoto = useCallback(() => extraInputRef.current?.click(), []);
 
-  // Upload a supporting photo: score (mode=extra) then persist under RLS.
+  // ------------------------------------------------------------------
+  // Supporting-photo upload: score (authed, credit-charged) then persist.
+  // Persistence failure is VISIBLE (never a silent fallback).
+  // ------------------------------------------------------------------
   const addSupporting = useCallback(
     async (inputFile: File) => {
       if (!inputFile.type.startsWith("image/")) {
         setNotice("That file is not an image.");
         return;
       }
+      const supportingCount = photosRef.current.filter((p) => p.kind === "supporting").length;
+      if (supportingCount >= MAX_SUPPORTING_PHOTOS) {
+        setNotice(`You can add up to ${MAX_SUPPORTING_PHOTOS} supporting photos per product.`);
+        return;
+      }
+      let tempId: string;
+      try {
+        tempId = newId();
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : "Unsupported browser.");
+        return;
+      }
       const prepared = await prepareUploadImage(inputFile);
       const blobUrl = URL.createObjectURL(prepared);
-      const tempId = makeId();
-      filesRef.current[tempId] = prepared;
       setPhotos((prev) => [...prev, analyzingPhoto(tempId, blobUrl)]);
       setActiveId(tempId);
       setNotice(null);
       trackClientEvent("supporting_photo_uploaded");
 
+      const mainSummary = photosRef.current
+        .find((p) => p.kind === "main")
+        ?.productSummary?.trim();
+
       try {
         const form = new FormData();
         form.set("image", prepared);
         form.set("mode", "extra");
-        const ctx = mainContext();
-        if (ctx) form.set("main_product_context", ctx);
+        if (mainSummary) form.set("main_product_context", mainSummary);
         const res = await fetch("/api/score", { method: "POST", body: form });
         if (!res.ok) {
-          const b = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(b?.error || `Score failed (${res.status})`);
+          const b = (await res.json().catch(() => null)) as
+            | { error?: string; code?: string }
+            | null;
+          throw new Error(
+            b?.code === "insufficient_credits"
+              ? "You are out of credits, so this photo was not rated."
+              : b?.error || `Score failed (${res.status})`
+          );
         }
         const { rubric } = (await res.json()) as { rubric: RubricJson };
         if (rubric.upload_kind === "invalid") {
@@ -463,7 +597,8 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         });
         trackClientEvent("supporting_audit_completed");
 
-        // Persist (best-effort; keep the session slot even if saving fails).
+        // Persist. Failure is surfaced clearly; the graded result stays for this
+        // session only and the user is told exactly that.
         try {
           const supabase = createSupabaseBrowserClient();
           const ext = prepared.type === "image/png" ? "png" : "jpg";
@@ -480,14 +615,20 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             mime: prepared.type,
           });
           if (phErr) throw phErr;
-          await supabase.from("audits").insert({
+          const { error: auErr } = await supabase.from("audits").insert({
             photo_id: tempId,
             kind: "supporting",
             rubric,
             overall_score: rubric.overall_score,
+            rubric_version: SUPPORTING_RUBRIC_VERSION,
           });
-        } catch {
-          setNotice("Scored, but could not save this supporting photo. It stays for this session.");
+          if (auErr) throw auErr;
+          patch(tempId, { storagePath: path });
+        } catch (persistErr) {
+          console.error("[product-workspace] supporting persist failed", persistErr);
+          setNotice(
+            "NOT SAVED: this photo was rated but could not be saved to your product. It will disappear when you leave this page. Re-add it to try saving again."
+          );
         }
       } catch (err) {
         setPhotos((prev) => prev.filter((p) => p.id !== tempId));
@@ -495,7 +636,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         setNotice(err instanceof Error ? err.message : "That photo could not be graded.");
       }
     },
-    [mainContext, productId, userId]
+    [patch, productId, userId]
   );
 
   if (!active) {
@@ -507,6 +648,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
   }
 
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
+  const digitalMain = active.kind === "main" && active.isDigital;
   const slotViews: SlotView[] = photos.map((p) => ({
     id: p.id,
     label: p.kind === "main" ? "Main photo" : "Supporting",
@@ -542,23 +684,27 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         slots={slotViews}
         onSelectSlot={handleSelectSlot}
         onAddPhoto={handleAddPhoto}
-        notice={notice ?? undefined}
-        onCta={() => router.push("/dashboard")}
-        onImprove={wrongProduct ? undefined : handleImprove}
-        onRetryImprove={!wrongProduct && active.canRetry ? handleRetry : undefined}
-        onEdit={
-          (active.kind === "main" && active.isDigital) || wrongProduct
-            ? undefined
-            : handleEdit
+        notice={
+          digitalMain
+            ? notice ??
+              "Digital product detected. AI improvement is disabled for digital listings because exact text and layout cannot be guaranteed yet."
+            : notice ?? undefined
         }
+        onCta={() => router.push("/dashboard")}
+        onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
+        onRetryImprove={
+          !wrongProduct && !digitalMain && active.canRetry ? handleRetry : undefined
+        }
+        onEdit={digitalMain || wrongProduct ? undefined : handleEdit}
         onRevert={active.revertSnap ? handleRevert : undefined}
         improveLoading={active.improveStatus === "generating"}
         improveStartedAt={active.improveStartedAt}
+        improveStage={active.improveStage}
         improveError={active.improveError}
-        improvedDownloadUrl={active.improvedDownloadUrl}
         freePreview={active.freePreview}
         freePreviewMessage={active.freePreviewMsg}
         checklistLoading={active.kind === "main" ? checklistLoading : false}
+        coveredShotIds={active.kind === "main" ? [...covered] : undefined}
         animate
       />
     </>

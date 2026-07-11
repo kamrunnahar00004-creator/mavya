@@ -19,7 +19,11 @@ type Props = {
   id: string;
   name: string;
   thumbnailUrl: string | null;
+  /** Canonical storage path; used to re-sign the thumbnail if the URL expired. */
+  storagePath?: string | null;
   score: number | null;
+  /** Highest-priority recommended fix (only for sub-8 photos). */
+  topFix?: string | null;
 };
 
 function scoreColors(score: number): { bg: string; fg: string } {
@@ -39,7 +43,14 @@ function scoreBand(score: number): string {
  * rating; a hover kebab menu offers Rename (inline) and Delete (confirmed,
  * danger-styled). All writes run under the user's RLS.
  */
-export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
+export function ProductCard({
+  id,
+  name,
+  thumbnailUrl,
+  storagePath,
+  score,
+  topFix,
+}: Props) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -47,7 +58,26 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [imgSrc, setImgSrc] = useState<string | null>(thumbnailUrl);
+  const refreshedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Expired signed URL: re-sign once through the authenticated endpoint.
+  async function refreshThumb() {
+    if (refreshedRef.current || !storagePath) return;
+    refreshedRef.current = true;
+    try {
+      const res = await fetch("/api/storage/sign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ path: storagePath }),
+      });
+      const data = (await res.json().catch(() => null)) as { url?: string } | null;
+      if (data?.url) setImgSrc(data.url);
+    } catch {
+      // leave the placeholder
+    }
+  }
 
   const href = `/dashboard/product/${id}`;
 
@@ -120,11 +150,12 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
         aria-label={`Open ${name}`}
         className="relative block aspect-square w-full overflow-hidden rounded-t-[var(--radius-xl)] bg-[var(--color-page-deep)]"
       >
-        {thumbnailUrl ? (
+        {imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={thumbnailUrl}
+            src={imgSrc}
             alt=""
+            onError={() => void refreshThumb()}
             className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
           />
         ) : (
@@ -172,6 +203,11 @@ export function ProductCard({ id, name, thumbnailUrl, score }: Props) {
                 style={{ color: scoreColors(score).fg }}
               >
                 {scoreBand(score)}
+              </span>
+            )}
+            {topFix && (
+              <span className="mt-0.5 block truncate text-[11.5px] text-[var(--color-ink-muted)]">
+                Fix first: {topFix}
               </span>
             )}
           </div>

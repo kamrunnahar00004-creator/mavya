@@ -72,10 +72,22 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
       form.set("image", prepared);
       const res = await fetch("/api/score", { method: "POST", body: form });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        const body = (await res.json().catch(() => null)) as
+          | { error?: string; code?: string }
+          | null;
+        if (body?.code === "insufficient_credits") {
+          throw new Error("You are out of credits. Upgrades are coming soon.");
+        }
+        if (body?.code === "unauthenticated") {
+          throw new Error("Your session expired. Log in again.");
+        }
         throw new Error(body?.error || `Scoring failed (${res.status})`);
       }
-      const { rubric } = (await res.json()) as { rubric: RubricJson };
+      const { rubric, imageHash, rubricVersion } = (await res.json()) as {
+        rubric: RubricJson;
+        imageHash?: string;
+        rubricVersion?: string;
+      };
       if (rubric.upload_kind === "invalid") {
         setStep("idle");
         setError("That image is not a product photo. Try another.");
@@ -119,6 +131,8 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
         kind: "main",
         rubric,
         overall_score: rubric.overall_score,
+        rubric_version: rubricVersion ?? null,
+        image_hash: imageHash ?? null,
       });
       if (aErr) throw new Error(aErr.message);
 

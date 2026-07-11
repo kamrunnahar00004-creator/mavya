@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { generateChecklist } from "@/lib/score-photo";
+import { getSessionUser } from "@/lib/supabase/server";
+import { apiError } from "@/lib/errors";
+import { aiDisabled, withinGlobalBudget } from "@/lib/usage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,8 +17,22 @@ export const maxDuration = 30;
  * is an optional add-on and must never block the audit.
  */
 export async function POST(req: NextRequest) {
+  // Checklist is free but still billable upstream (a gpt-4o text call), so it
+  // requires a session and honors the global kill switch. Failures stay
+  // best-effort empty lists so the audit UI never blocks.
+  if (aiDisabled()) {
+    return NextResponse.json({ supporting_photo_checklist: [] }, { status: 200 });
+  }
+  const user = await getSessionUser();
+  if (!user) {
+    return apiError("unauthenticated", "Log in to load the checklist.");
+  }
+  if (!(await withinGlobalBudget("checklist"))) {
+    return NextResponse.json({ supporting_photo_checklist: [] }, { status: 200 });
+  }
+
   const ip = clientIp(req);
-  const daily = await rateLimit(`checklist-day:${ip}`, 60, 24 * 60 * 60 * 1000);
+  const daily = await rateLimit(`checklist-day:u:${user.id}`, 60, 24 * 60 * 60 * 1000);
   if (!daily.ok) {
     // Best-effort feature: on rate-limit, hand back an empty list, not an error.
     return NextResponse.json({ supporting_photo_checklist: [] }, { status: 200 });

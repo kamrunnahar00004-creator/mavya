@@ -1,12 +1,17 @@
 import { redirect } from "next/navigation";
 import {
   ProductWorkspace,
+  type InitialJob,
   type InitialPhoto,
 } from "@/components/dashboard/product-workspace";
 import type { RubricJson } from "@/lib/rubric";
+import type { FidelityReport } from "@/lib/fidelity";
+import type { GenerationJobStatus } from "@/lib/generation-types";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+const SIGNED_URL_TTL = 24 * 60 * 60; // 24h; /api/storage/sign refreshes on demand
 
 type AuditRow = { rubric: RubricJson; created_at: string };
 type PhotoRow = {
@@ -17,11 +22,23 @@ type PhotoRow = {
   created_at: string;
   audits: AuditRow[] | null;
 };
+type JobRow = {
+  id: string;
+  photo_id: string;
+  status: GenerationJobStatus;
+  stage: string | null;
+  outcome: "publish_ready" | "useful_free_preview" | null;
+  error_code: string | null;
+  result_storage_path: string | null;
+  candidate_rubric: RubricJson | null;
+  fidelity: FidelityReport | null;
+  created_at: string;
+};
 
 /**
- * Per-product workspace. Loads the saved main + supporting photos with their
- * latest audits and signed URLs, then renders the interactive workspace
- * (One-click fix, Edit, supporting strip, checklist) seeded from the DB.
+ * Per-product workspace. Loads photos + latest audits + latest generation job
+ * per photo (refresh recovery: a completed preview re-appears, an active job
+ * resumes polling), all under RLS.
  */
 export default async function ProductPage({
   params,
@@ -45,14 +62,28 @@ export default async function ProductPage({
     .from("photos")
     .select("id, role, storage_path, position, created_at, audits(rubric, created_at)")
     .eq("product_id", product.id)
-    .order("role", { ascending: true }) // 'main' < 'supporting'
+    .order("role", { ascending: true })
     .order("position", { ascending: true })
     .order("created_at", { ascending: true });
 
   const rows = (photoData as PhotoRow[] | null) ?? [];
+  const photoIds = rows.map((r) => r.id);
 
-  // Sign all photo URLs in parallel (was sequential — a lag source with several
-  // supporting photos).
+  // Latest generation job per photo (RLS scopes to the owner).
+  const jobsByPhoto = new Map<string, JobRow>();
+  if (photoIds.length > 0) {
+    const { data: jobData } = await supabase
+      .from("generation_jobs")
+      .select(
+        "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, created_at"
+      )
+      .in("photo_id", photoIds)
+      .order("created_at", { ascending: false });
+    for (const j of (jobData as JobRow[] | null) ?? []) {
+      if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
+    }
+  }
+
   const signed = await Promise.all(
     rows.map(async (row) => {
       const latest = [...(row.audits ?? [])].sort((a, b) =>
@@ -61,13 +92,38 @@ export default async function ProductPage({
       if (!latest?.rubric) return null;
       const { data } = await supabase.storage
         .from("product-photos")
-        .createSignedUrl(row.storage_path, 3600);
+        .createSignedUrl(row.storage_path, SIGNED_URL_TTL);
       if (!data?.signedUrl) return null;
+
+      const jobRow = jobsByPhoto.get(row.id) ?? null;
+      let lastJob: InitialJob | null = null;
+      if (jobRow) {
+        let resultUrl: string | null = null;
+        if (jobRow.status === "completed" && jobRow.result_storage_path) {
+          const { data: signedResult } = await supabase.storage
+            .from("product-photos")
+            .createSignedUrl(jobRow.result_storage_path, SIGNED_URL_TTL);
+          resultUrl = signedResult?.signedUrl ?? null;
+        }
+        lastJob = {
+          id: jobRow.id,
+          status: jobRow.status,
+          stage: jobRow.stage,
+          outcome: jobRow.outcome,
+          errorCode: jobRow.error_code,
+          resultUrl,
+          candidateRubric: jobRow.candidate_rubric,
+          fidelity: jobRow.fidelity,
+        };
+      }
+
       return {
         id: row.id,
         role: row.role,
         imageSrc: data.signedUrl,
+        storagePath: row.storage_path,
         rubric: latest.rubric,
+        lastJob,
       } satisfies InitialPhoto;
     })
   );
@@ -75,7 +131,6 @@ export default async function ProductPage({
     (p): p is InitialPhoto => p !== null
   );
 
-  // No scored main photo yet (edge case) — back to dashboard.
   if (!initialPhotos.some((p) => p.role === "main")) redirect("/dashboard");
 
   return (

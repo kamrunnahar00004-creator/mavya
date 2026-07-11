@@ -1,270 +1,504 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
-import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import {
   improvePhoto,
   sanitizeRetryConstraints,
   sanitizeEditInstruction,
+  MAX_EDIT_INSTRUCTION_LEN,
 } from "@/lib/improve-photo";
-import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
-import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
-
-const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
-const DATA_URL_RE = /^data:(image\/png|image\/jpeg);base64,([A-Za-z0-9+/=]+)$/;
-const BAD_MIME_MESSAGE =
-  "Use a JPG or PNG photo.";
+import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
+import {
+  consumeCredits,
+  generationDisabled,
+  isRefundable,
+  refundCredits,
+  withinGlobalBudget,
+} from "@/lib/usage";
+import { getImageModel } from "@/lib/openai";
+import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
+import {
+  ACTIVE_JOB_STATUSES,
+  type GenerationJobPayload,
+  type GenerationJobStatus,
+} from "@/lib/generation-types";
+import type { RubricJson } from "@/lib/rubric";
+import type { FidelityReport } from "@/lib/fidelity";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
 
+/** Jobs stuck in an active state longer than this are treated as failed. */
+const STALE_JOB_MS = 10 * 60 * 1000;
+
+type JobRow = {
+  id: string;
+  user_id: string;
+  product_id: string | null;
+  photo_id: string | null;
+  idempotency_key: string;
+  status: GenerationJobStatus;
+  stage: string | null;
+  operation: "improve" | "edit" | "retry";
+  edit_instruction: string | null;
+  result_storage_path: string | null;
+  candidate_rubric: RubricJson | null;
+  fidelity: FidelityReport | null;
+  outcome: "publish_ready" | "useful_free_preview" | null;
+  error_code: string | null;
+  credit_key: string | null;
+  refunded: boolean;
+  updated_at: string;
+};
+
+async function signResult(
+  supabase: SupabaseClient,
+  path: string | null
+): Promise<string | null> {
+  if (!path) return null;
+  const { data } = await supabase.storage
+    .from("product-photos")
+    .createSignedUrl(path, 24 * 60 * 60);
+  return data?.signedUrl ?? null;
+}
+
+async function jobPayload(
+  supabase: SupabaseClient,
+  job: JobRow,
+  extra?: Partial<GenerationJobPayload>
+): Promise<GenerationJobPayload> {
+  return {
+    ok: job.status === "completed",
+    jobId: job.id,
+    status: job.status,
+    stage: job.stage,
+    outcome: job.outcome,
+    errorCode: (job.error_code as ApiErrorCode | null) ?? null,
+    message: null,
+    resultUrl:
+      job.status === "completed"
+        ? await signResult(supabase, job.result_storage_path)
+        : null,
+    candidateRubric: job.status === "completed" ? job.candidate_rubric : null,
+    fidelity: job.status === "completed" ? job.fidelity : null,
+    ...extra,
+  };
+}
+
+/** Mark an overdue active job failed and refund its charge. */
+async function failStaleJob(job: JobRow): Promise<JobRow> {
+  const admin = createSupabaseAdminClient();
+  const { data } = await admin
+    .from("generation_jobs")
+    .update({
+      status: "failed",
+      error_code: "provider_timeout",
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+      refunded: true,
+    })
+    .eq("id", job.id)
+    .in("status", ["queued", "generating", "fidelity_check", "rescoring"])
+    .select()
+    .maybeSingle();
+  if (data && job.credit_key) await refundCredits(job.credit_key);
+  logEvent("generate.stale_job_failed", { jobId: job.id });
+  return (data as JobRow) ?? job;
+}
+
+/**
+ * GET: refresh-safe job status. ?id=<jobId> or ?key=<idempotencyKey>.
+ * RLS scopes the select to the authenticated user's own jobs.
+ */
+export async function GET(req: NextRequest) {
+  const user = await getSessionUser();
+  if (!user) return apiError("unauthenticated", "Log in first.");
+
+  const id = req.nextUrl.searchParams.get("id");
+  const key = req.nextUrl.searchParams.get("key");
+  if (!id && !key) return apiError("bad_request", "Missing job id or key.");
+
+  const supabase = await createSupabaseServerClient();
+  let query = supabase.from("generation_jobs").select("*").limit(1);
+  query = id ? query.eq("id", id) : query.eq("idempotency_key", key!);
+  const { data } = await query.maybeSingle();
+  if (!data) return apiError("source_unavailable", "Job not found.");
+
+  let job = data as JobRow;
+  if (
+    ACTIVE_JOB_STATUSES.has(job.status) &&
+    Date.now() - new Date(job.updated_at).getTime() > STALE_JOB_MS
+  ) {
+    job = await failStaleJob(job);
+  }
+  return NextResponse.json(await jobPayload(supabase, job), { status: 200 });
+}
+
+/**
+ * POST: run a generation for a persisted photo.
+ *
+ * The baseline audit is LOADED FROM THE DATABASE (the exact audit the user saw),
+ * never re-scored and never accepted from the browser. The source image is
+ * downloaded from storage server-side, so expired browser URLs cannot break the
+ * flow. Results are persisted to storage and the job row survives refresh.
+ *
+ * Body (JSON): { photoId, idempotencyKey, editInstruction?, editSource?,
+ *                previousJobId?, retry?, unresolvedIssues? }
+ */
 export async function POST(req: NextRequest) {
+  if (generationDisabled()) {
+    return apiError("generation_disabled", "AI generation is temporarily disabled.");
+  }
+
+  const user = await getSessionUser();
+  if (!user) return apiError("unauthenticated", "Log in to improve photos.");
+
   const ip = clientIp(req);
-  const limit = await rateLimit(`gen:${ip}`, 2, 60_000);
-  if (!limit.ok) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code:
-          limit.reason === "missing_durable_store"
-            ? "rate_limit_not_configured"
-            : "rate_limited",
-        message:
-          limit.reason === "missing_durable_store"
-            ? "Rate limiting is not configured."
-            : "Generation rate limit hit. Wait a minute.",
-      },
-      { status: limit.reason === "missing_durable_store" ? 503 : 429 }
-    );
-  }
-  const dailyLimit = await rateLimit(`gen-day:${ip}`, 5, 24 * 60 * 60 * 1000);
-  if (!dailyLimit.ok) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code:
-          dailyLimit.reason === "missing_durable_store"
-            ? "rate_limit_not_configured"
-            : "rate_limited",
-        message:
-          dailyLimit.reason === "missing_durable_store"
-            ? "Rate limiting is not configured."
-            : "Daily generation limit hit. Try again tomorrow.",
-      },
-      { status: dailyLimit.reason === "missing_durable_store" ? 503 : 429 }
-    );
+  const perMin = await rateLimit(`gen:u:${user.id}`, 2, 60_000);
+  const perMinIp = await rateLimit(`gen:${ip}`, 4, 60_000);
+  const perDay = await rateLimit(`gen-day:u:${user.id}`, 40, 24 * 60 * 60 * 1000);
+  if (!perMin.ok || !perMinIp.ok || !perDay.ok) {
+    const reason = [perMin, perMinIp, perDay].find((r) => !r.ok)?.reason;
+    if (reason === "missing_durable_store") {
+      return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
+    }
+    return apiError("rate_limited", "Generation rate limit hit. Wait a minute.");
   }
 
-  let form: FormData;
+  let body: Record<string, unknown>;
   try {
-    form = await req.formData();
+    body = (await req.json()) as Record<string, unknown>;
   } catch {
-    return NextResponse.json(
-      { ok: false, code: "bad_form", message: "Invalid form data." },
-      { status: 400 }
-    );
+    return apiError("bad_request", "Invalid request body.");
   }
 
-  const file = form.get("image");
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { ok: false, code: "missing_image", message: "Missing image upload." },
-      { status: 400 }
-    );
+  const photoId = typeof body.photoId === "string" ? body.photoId : "";
+  const idempotencyKey =
+    typeof body.idempotencyKey === "string" ? body.idempotencyKey.slice(0, 80) : "";
+  if (!photoId || !idempotencyKey) {
+    return apiError("bad_request", "Missing photoId or idempotencyKey.");
   }
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return NextResponse.json(
-      { ok: false, code: "bad_mime", message: BAD_MIME_MESSAGE },
-      { status: 400 }
-    );
+  const rawInstruction =
+    typeof body.editInstruction === "string" ? body.editInstruction : undefined;
+  if (rawInstruction && rawInstruction.length > MAX_EDIT_INSTRUCTION_LEN * 4) {
+    return apiError("bad_request", "Edit instruction too long.");
   }
-  if (file.size > MAX_SERVER_IMAGE_BYTES) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "too_large",
-        message: "Photo too large. Use a smaller image under 4MB.",
-      },
-      { status: 400 }
-    );
-  }
+  const editInstruction = sanitizeEditInstruction(rawInstruction);
+  const isRetry = body.retry === true;
+  const previousJobId =
+    typeof body.previousJobId === "string" ? body.previousJobId : undefined;
+  const unresolvedIssues = Array.isArray(body.unresolvedIssues)
+    ? sanitizeRetryConstraints(
+        body.unresolvedIssues.filter((i): i is string => typeof i === "string")
+      )
+    : undefined;
+  const operation: JobRow["operation"] = editInstruction
+    ? "edit"
+    : isRetry
+    ? "retry"
+    : "improve";
 
-  // Optional retry constraints. These are our own server-generated strings
-  // returned to the client on a prior failure. They only shape the prompt; all
-  // safety gating still runs server-side on the new candidate, so tampering
-  // cannot bypass the delivery gate.
-  let extraConstraints: string[] | undefined;
-  const retryRaw = form.get("unresolvedIssues");
-  if (typeof retryRaw === "string" && retryRaw.length > 0) {
-    try {
-      const parsed = JSON.parse(retryRaw);
+  const supabase = await createSupabaseServerClient();
+  const admin = createSupabaseAdminClient();
+
+  // Idempotency: an existing job for this key is returned, never re-run.
+  {
+    const { data: existing } = await supabase
+      .from("generation_jobs")
+      .select("*")
+      .eq("idempotency_key", idempotencyKey)
+      .maybeSingle();
+    if (existing) {
+      const job = existing as JobRow;
       if (
-        Array.isArray(parsed) &&
-        parsed.every((item) => typeof item === "string")
+        job.photo_id !== photoId ||
+        job.operation !== operation ||
+        (job.edit_instruction ?? null) !== (editInstruction ?? null)
       ) {
-        // The browser round-trip is untrusted. Accept only the server-defined
-        // remediation phrases emitted by the previous failed attempt.
-        extraConstraints = sanitizeRetryConstraints(parsed);
+        return apiError(
+          "idempotency_conflict",
+          "This request key was already used with different parameters."
+        );
       }
-    } catch {
-      // Ignore malformed retry payloads; treat as a fresh attempt.
+      let current = job;
+      if (
+        ACTIVE_JOB_STATUSES.has(current.status) &&
+        Date.now() - new Date(current.updated_at).getTime() > STALE_JOB_MS
+      ) {
+        current = await failStaleJob(current);
+      }
+      return NextResponse.json(await jobPayload(supabase, current), {
+        status: ACTIVE_JOB_STATUSES.has(current.status) ? 202 : 200,
+      });
     }
   }
 
-  // Optional plain-language seller edit instruction. Untrusted: sanitized here and
-  // wrapped under immutable product-preservation rules in the generation prompt.
-  // The fidelity gate re-run against the original is the real backstop.
-  const editRaw = form.get("editInstruction");
-  const editInstruction =
-    typeof editRaw === "string"
-      ? sanitizeEditInstruction(editRaw)
-      : undefined;
+  // Ownership: RLS scopes photos to the owner; a foreign photoId returns null.
+  const { data: photo } = await supabase
+    .from("photos")
+    .select("id, role, storage_path, mime, product_id")
+    .eq("id", photoId)
+    .maybeSingle();
+  if (!photo) return apiError("source_unavailable", "Photo not found.");
 
-  // mode=extra improves a supporting photo, graded by the general rubric.
-  const mode = form.get("mode") === "extra" ? "extra" : "main";
-  const systemPrompt = mode === "extra" ? GENERAL_RUBRIC_PROMPT : undefined;
+  // Baseline audit: the exact persisted audit the user saw. Never re-scored.
+  const { data: auditRow } = await supabase
+    .from("audits")
+    .select("id, rubric, created_at")
+    .eq("photo_id", photo.id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!auditRow?.rubric) {
+    return apiError("stale_audit", "Score this photo before improving it.");
+  }
+  const originalAudit = auditRow.rubric as RubricJson;
+  const mode: "main" | "extra" = photo.role === "main" ? "main" : "extra";
 
-  // Descriptive main-listing product, threaded only for supporting photos so the
-  // re-score keeps role + relevance and a wrong/unrelated product is detected.
-  const rawContext = form.get("main_product_context");
-  const mainProductContext =
-    mode === "extra" && typeof rawContext === "string"
-      ? rawContext.trim().slice(0, 200)
-      : undefined;
-
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const originalMimeType = file.type as "image/png" | "image/jpeg";
-
-  // Server-side canonical audit. Never trust browser audit JSON for prompt
-  // composition or safety gating.
-  let originalAudit;
-  try {
-    originalAudit = await scorePhoto({
-      imageBuffer: buffer,
-      imageMimeType: originalMimeType,
-      systemPrompt,
-      mainProductContext,
-    });
-  } catch (err) {
-    const error =
-      err instanceof ScorePhotoError
-        ? err
-        : new ScorePhotoError("AI scoring failed. Try again.", "vision_failed");
-    return NextResponse.json(
-      { ok: false, code: error.code, message: error.message },
-      { status: 502 }
+  // Server-side generation gates (mirror the UI, never trust it).
+  if (mode === "main" && originalAudit.upload_kind === "digital_product") {
+    return apiError(
+      "unsupported_digital_generation",
+      "AI improvement for digital product listings is not available yet because exact text and layout cannot be guaranteed. Your audit is still ready."
     );
   }
-
   if (originalAudit.generation_risk === "unsupported") {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "unsupported_product",
-        message:
-          "AI improvement is not supported for this product yet because exact product details may change. Your free audit is still ready above.",
-      },
-      { status: 422 }
+    return apiError(
+      "unsupported_product",
+      "AI improvement is not supported for this product yet because exact product details may change. Your audit is still ready."
     );
   }
-
-  // A supporting photo that shows a DIFFERENT product than the listing must never
-  // be "improved" — there is nothing to preserve, and hero-ifying it would
-  // fabricate the wrong item. Keep it grade-only with an honest message.
   if (
     mode === "extra" &&
     originalAudit.supporting_photo_role === "unrelated_or_wrong_product"
   ) {
-    return NextResponse.json(
-      {
-        ok: false,
-        code: "wrong_product",
-        message:
-          "This photo shows a different product than your listing, so it cannot be improved. Upload a photo of the actual product or its packaging, details, or size.",
-      },
-      { status: 422 }
+    return apiError(
+      "wrong_product",
+      "This photo shows a different product than your listing, so it cannot be improved."
     );
   }
 
-  let baseBuffer: Buffer | undefined;
-  let baseMimeType: "image/png" | "image/jpeg" | undefined;
-  let promptAudit = originalAudit;
-  const retryBaseRaw = form.get("retryBaseImage");
-  if (typeof retryBaseRaw === "string" && retryBaseRaw.length > 0) {
-    const match = DATA_URL_RE.exec(retryBaseRaw);
-    if (!match) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "bad_retry_base",
-          message: "Could not use the previous preview. Generate from the original photo instead.",
-        },
-        { status: 400 }
-      );
-    }
-    baseMimeType = match[1] as "image/png" | "image/jpeg";
-    baseBuffer = Buffer.from(match[2], "base64");
-    if (baseBuffer.length > MAX_SERVER_IMAGE_BYTES) {
-      return NextResponse.json(
-        {
-          ok: false,
-          code: "retry_base_too_large",
-          message: "Previous preview is too large to retry.",
-        },
-        { status: 400 }
-      );
-    }
-    try {
-      promptAudit = await scorePhoto({
-        imageBuffer: baseBuffer,
-        imageMimeType: baseMimeType,
-        systemPrompt,
-        mainProductContext,
-      });
-    } catch (err) {
-      console.error("[generate] retry base scoring failed:", err);
-      promptAudit = originalAudit;
-      baseBuffer = undefined;
-      baseMimeType = undefined;
-    }
+  if (!(await withinGlobalBudget("generate"))) {
+    return apiError("generation_disabled", "Daily capacity reached. Try again tomorrow.");
   }
 
-  const result = await improvePhoto({
-    originalBuffer: buffer,
-    originalMimeType,
-    originalAudit,
-    baseBuffer,
-    baseMimeType,
-    promptAudit,
-    extraConstraints,
-    mainProductContext,
-    mode,
-    editInstruction,
+  // Create the job row first so refresh can always find it.
+  const chargeKey = `${user.id}:generate:${idempotencyKey}`;
+  const { data: created, error: createErr } = await admin
+    .from("generation_jobs")
+    .insert({
+      user_id: user.id,
+      product_id: photo.product_id,
+      photo_id: photo.id,
+      source_audit_id: auditRow.id,
+      idempotency_key: idempotencyKey,
+      status: "queued",
+      stage: "queued",
+      operation,
+      edit_instruction: editInstruction ?? null,
+      provider_model: getImageModel(),
+      prompt_version: GENERATION_PROMPT_VERSION,
+      credit_key: chargeKey,
+    })
+    .select()
+    .single();
+  if (createErr || !created) {
+    // Unique violation => concurrent duplicate; tell the client to poll.
+    if (createErr?.code === "23505") {
+      return NextResponse.json(
+        { ok: false, status: "queued", jobId: null, key: idempotencyKey },
+        { status: 202 }
+      );
+    }
+    logEvent("generate.job_create_failed", { userId: user.id, error: createErr?.message });
+    return apiError("internal_error", "Could not start the generation. Try again.");
+  }
+  const job = created as JobRow;
+
+  const patchJob = async (fields: Record<string, unknown>) => {
+    await admin
+      .from("generation_jobs")
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq("id", job.id);
+  };
+
+  const failJob = async (
+    code: ApiErrorCode,
+    message: string,
+    kind: "failed" | "rejected",
+    extra?: { unresolvedIssues?: string[] }
+  ) => {
+    const refund = isRefundable(code);
+    if (refund) await refundCredits(chargeKey);
+    await patchJob({
+      status: kind,
+      stage: null,
+      error_code: code,
+      refunded: refund,
+      completed_at: new Date().toISOString(),
+    });
+    logEvent("generate.finished", { jobId: job.id, status: kind, code });
+    return apiError(code, message, {
+      jobId: job.id,
+      unresolvedIssues: extra?.unresolvedIssues ?? [],
+    });
+  };
+
+  // Atomic charge (duplicate keys never double-charge).
+  const charge = await consumeCredits({
+    userId: user.id,
+    action: "generate",
+    idempotencyKey: chargeKey,
+    refId: job.id,
   });
-
-  if (!result.ok) {
-    const status =
-      result.code === "no_publishable_candidate" ||
-      result.code === "incomplete_source" ||
-      result.code === "unsafe_candidate"
-        ? 422
-        : 502;
-    return NextResponse.json(result, { status });
+  if (!charge.ok) {
+    await patchJob({
+      status: "cancelled",
+      error_code: charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
+      completed_at: new Date().toISOString(),
+    });
+    if (charge.code === "insufficient_credits") {
+      return apiError("insufficient_credits", "You are out of credits.", {
+        remaining: charge.remaining ?? 0,
+      });
+    }
+    return apiError("internal_error", "Could not process the request. Try again.");
   }
+  await patchJob({ charged: 5 });
 
-  // Validation MVP: show the clean generated preview before payment so sellers
-  // can judge the outcome. Stripe gates only the browser download click.
-  return NextResponse.json(
-    {
-      ok: true,
-      outcome: result.outcome,
-      previewBase64: result.imageBase64,
-      previewMimeType: "image/png",
-      candidateAudit: result.candidateAudit,
+  const startedAt = Date.now();
+  try {
+    // Source image comes from storage server-side (no browser URLs involved).
+    await patchJob({ status: "generating", stage: "preparing_source", started_at: new Date().toISOString() });
+    const { data: originalBlob, error: dlErr } = await supabase.storage
+      .from("product-photos")
+      .download(photo.storage_path);
+    if (dlErr || !originalBlob) {
+      return await failJob("source_unavailable", "The original photo could not be loaded.", "failed");
+    }
+    const originalBuffer = Buffer.from(await originalBlob.arrayBuffer());
+    const originalMimeType =
+      photo.mime === "image/png" ? ("image/png" as const) : ("image/jpeg" as const);
+
+    // Optional base: the previous completed job's persisted result.
+    let baseBuffer: Buffer | undefined;
+    let promptAudit: RubricJson | undefined;
+    if (previousJobId) {
+      const { data: prev } = await supabase
+        .from("generation_jobs")
+        .select("id, status, photo_id, result_storage_path, candidate_rubric")
+        .eq("id", previousJobId)
+        .maybeSingle();
+      if (
+        prev &&
+        prev.status === "completed" &&
+        prev.photo_id === photo.id &&
+        prev.result_storage_path
+      ) {
+        const { data: baseBlob } = await supabase.storage
+          .from("product-photos")
+          .download(prev.result_storage_path);
+        if (baseBlob) {
+          baseBuffer = Buffer.from(await baseBlob.arrayBuffer());
+          promptAudit = (prev.candidate_rubric as RubricJson) ?? undefined;
+        }
+      }
+    }
+
+    // Supporting photos get the listing context from the MAIN photo's audit.
+    let mainProductContext: string | undefined;
+    if (mode === "extra" && photo.product_id) {
+      const { data: mainPhoto } = await supabase
+        .from("photos")
+        .select("id, audits(rubric, created_at)")
+        .eq("product_id", photo.product_id)
+        .eq("role", "main")
+        .limit(1)
+        .maybeSingle();
+      const audits = (mainPhoto?.audits ?? []) as { rubric: RubricJson; created_at: string }[];
+      const latest = [...audits].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
+      mainProductContext = latest?.rubric?.product_summary?.trim() || undefined;
+    }
+
+    await patchJob({ status: "generating", stage: "generating" });
+    const result = await improvePhoto({
+      originalBuffer,
+      originalMimeType,
+      originalAudit,
+      baseBuffer,
+      baseMimeType: baseBuffer ? "image/png" : undefined,
+      promptAudit,
+      extraConstraints: unresolvedIssues,
+      mainProductContext,
+      mode,
+      editInstruction,
+      onStage: async (stage) => {
+        await patchJob({ status: stage, stage });
+      },
+    });
+
+    if (!result.ok) {
+      const kind =
+        result.code === "image_failed" || result.code === "vision_failed"
+          ? "failed"
+          : "rejected";
+      return await failJob(result.code, result.message, kind, {
+        unresolvedIssues: result.unresolvedIssues,
+      });
+    }
+
+    // Persist the accepted output; the preview survives refresh.
+    const resultPath = `${user.id}/${photo.product_id}/generated/${job.id}.png`;
+    const { error: upErr } = await admin.storage
+      .from("product-photos")
+      .upload(resultPath, Buffer.from(result.imageBase64, "base64"), {
+        contentType: "image/png",
+        upsert: true,
+      });
+    if (upErr) {
+      return await failJob("persistence_failed", "The result could not be saved. Try again.", "failed");
+    }
+
+    await patchJob({
+      status: "completed",
+      stage: null,
+      result_storage_path: resultPath,
+      candidate_rubric: result.candidateAudit,
       fidelity: result.fidelity,
-      attempts: result.attempts,
-    },
-    { status: 200 }
-  );
+      outcome: result.outcome,
+      completed_at: new Date().toISOString(),
+    });
+    logEvent("generate.finished", {
+      jobId: job.id,
+      status: "completed",
+      outcome: result.outcome,
+      latencyMs: Date.now() - startedAt,
+    });
+
+    const payload = await jobPayload(
+      supabase,
+      {
+        ...job,
+        status: "completed",
+        stage: null,
+        result_storage_path: resultPath,
+        candidate_rubric: result.candidateAudit,
+        fidelity: result.fidelity,
+        outcome: result.outcome,
+        error_code: null,
+      },
+      { creditsRemaining: charge.remaining }
+    );
+    return NextResponse.json(payload, { status: 200 });
+  } catch (err) {
+    logEvent("generate.unhandled", {
+      jobId: job.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return await failJob("internal_error", "Generation failed unexpectedly. Try again.", "failed");
+  }
 }

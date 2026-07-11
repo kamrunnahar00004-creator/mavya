@@ -6,7 +6,11 @@ import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/serve
 
 export const dynamic = "force-dynamic";
 
-type AuditRow = { overall_score: number | null; created_at: string };
+type AuditRow = {
+  overall_score: number | null;
+  created_at: string;
+  rubric: { priority_action?: string } | null;
+};
 type PhotoRow = {
   storage_path: string;
   role: string;
@@ -34,7 +38,7 @@ export default async function DashboardPage() {
   const { data } = await supabase
     .from("products")
     .select(
-      "id, name, position, created_at, photos(storage_path, role, created_at, audits(overall_score, created_at))"
+      "id, name, position, created_at, photos(storage_path, role, created_at, audits(overall_score, created_at, rubric))"
     )
     .order("position", { ascending: true })
     .order("created_at", { ascending: true });
@@ -46,22 +50,31 @@ export default async function DashboardPage() {
     products.map(async (p, index) => {
       const main = (p.photos ?? []).find((ph) => ph.role === "main");
       let thumbnailUrl: string | null = null;
+      let storagePath: string | null = null;
       let score: number | null = null;
+      let topFix: string | null = null;
       if (main) {
         const { data: signed } = await supabase.storage
           .from("product-photos")
-          .createSignedUrl(main.storage_path, 3600);
+          .createSignedUrl(main.storage_path, 24 * 60 * 60);
         thumbnailUrl = signed?.signedUrl ?? null;
+        storagePath = main.storage_path;
         const latest = [...(main.audits ?? [])].sort((a, b) =>
           b.created_at.localeCompare(a.created_at)
         )[0];
         score = typeof latest?.overall_score === "number" ? latest.overall_score : null;
+        // Show the top recommended fix only when the photo still needs work.
+        if (typeof score === "number" && score < 8) {
+          topFix = latest?.rubric?.priority_action?.trim() || null;
+        }
       }
       return {
         id: p.id,
         name: p.name?.trim() || `Product ${index + 1}`,
         thumbnailUrl,
+        storagePath,
         score,
+        topFix,
       };
     })
   );
@@ -101,7 +114,9 @@ export default async function DashboardPage() {
             id={c.id}
             name={c.name}
             thumbnailUrl={c.thumbnailUrl}
+            storagePath={c.storagePath}
             score={c.score}
+            topFix={c.topFix}
           />
         ))}
         <AddProductCard />
