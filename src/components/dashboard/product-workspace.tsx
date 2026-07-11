@@ -610,15 +610,11 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
       setNotice(null);
       trackClientEvent("supporting_photo_uploaded");
 
-      const mainSummary = photosRef.current
-        .find((p) => p.kind === "main")
-        ?.productSummary?.trim();
-
       try {
         const form = new FormData();
         form.set("image", prepared);
         form.set("mode", "extra");
-        if (mainSummary) form.set("main_product_context", mainSummary);
+        form.set("product_id", productId);
         const res = await fetch("/api/score", { method: "POST", body: form });
         if (!res.ok) {
           const b = (await res.json().catch(() => null)) as

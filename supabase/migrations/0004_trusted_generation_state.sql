@@ -25,13 +25,19 @@ alter table public.photos
 create index if not exists photos_selected_generation_job_idx
   on public.photos(selected_generation_job_id);
 
+-- Enforce the storage upload limit at the bucket boundary as well as in routes.
+update storage.buckets
+set file_size_limit = 4194304
+where id = 'product-photos';
+
 -- Preserve the result users already saw before this explicit pointer existed.
 update public.photos p
 set selected_generation_job_id = (
   select j.id
   from public.generation_jobs j
   where j.photo_id = p.id and j.status = 'completed'
-  order by j.created_at desc
+  order by (nullif(j.candidate_rubric->>'overall_score', ''))::numeric desc nulls last,
+           j.created_at desc
   limit 1
 )
 where p.selected_generation_job_id is null

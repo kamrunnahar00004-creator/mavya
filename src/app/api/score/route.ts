@@ -5,7 +5,7 @@ import { clientIp } from "@/lib/request-ip";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
-import { getSessionUser } from "@/lib/supabase/server";
+import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { hashImageBytes, hashText } from "@/lib/image-hash";
 import { apiError, logEvent } from "@/lib/errors";
@@ -99,11 +99,42 @@ export async function POST(req: NextRequest) {
   const scoringMode: "main" | "supporting" = mode === "extra" ? "supporting" : "main";
   const systemPrompt = scoringMode === "supporting" ? GENERAL_RUBRIC_PROMPT : undefined;
 
-  const rawContext = form.get("main_product_context");
-  const mainProductContext =
-    scoringMode === "supporting" && typeof rawContext === "string"
-      ? rawContext.trim().slice(0, 200)
-      : undefined;
+  // Supporting relevance is listing context, not user-authored prompt context.
+  // Derive it from the owned product's persisted main audit so a caller cannot
+  // describe an unrelated photo as belonging to this listing.
+  let mainProductContext: string | undefined;
+  if (scoringMode === "supporting") {
+    const productId = form.get("product_id");
+    if (typeof productId !== "string" || !productId) {
+      return apiError("bad_request", "Supporting photos require a product.");
+    }
+    const server = await createSupabaseServerClient();
+    const { data: product } = await server
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .maybeSingle();
+    if (!product) return apiError("source_unavailable", "Product not found.");
+    const { data: mainPhoto } = await server
+      .from("photos")
+      .select("id, role")
+      .eq("product_id", product.id)
+      .eq("role", "main")
+      .maybeSingle();
+    if (mainPhoto) {
+      const { data: mainAudit } = await server
+        .from("audits")
+        .select("rubric, created_at")
+        .eq("photo_id", mainPhoto.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const rubric = mainAudit?.rubric as { product_summary?: unknown } | null;
+      if (typeof rubric?.product_summary === "string") {
+        mainProductContext = rubric.product_summary.trim().slice(0, 200) || undefined;
+      }
+    }
+  }
 
   // 5. Cache lookup: identical image + version + mode + context => free reuse.
   const imageHash = hashImageBytes(buffer);

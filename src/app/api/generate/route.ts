@@ -491,11 +491,22 @@ export async function POST(req: NextRequest) {
         result.candidateAudit.overall_score > previousScore;
     }
     if (selected) {
-      const { error: selectError } = await admin
+      let selectQuery = admin
         .from("photos")
         .update({ selected_generation_job_id: job.id })
         .eq("id", photo.id)
         .eq("product_id", photo.product_id);
+      // Optimistic compare-and-set: two concurrent retries may both read the
+      // same previous score, but only the first writer may replace that pointer.
+      selectQuery = photo.selected_generation_job_id
+        ? selectQuery.eq(
+            "selected_generation_job_id",
+            photo.selected_generation_job_id
+          )
+        : selectQuery.is("selected_generation_job_id", null);
+      const { data: selectedPhoto, error: selectError } = await selectQuery
+        .select("id")
+        .maybeSingle();
       if (selectError) {
         return await failJob(
           "persistence_failed",
@@ -503,6 +514,7 @@ export async function POST(req: NextRequest) {
           "failed"
         );
       }
+      selected = Boolean(selectedPhoto);
     }
     logEvent("generate.finished", {
       jobId: job.id,
