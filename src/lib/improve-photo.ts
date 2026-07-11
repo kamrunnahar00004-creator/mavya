@@ -597,18 +597,16 @@ function hasHardTrustFailure(fidelity: FidelityReport): boolean {
 }
 
 /**
- * Blocks for the FREE-PREVIEW path only. Softer than hasHardTrustFailure: it does
- * NOT auto-reject text/pattern/detail drift, and (founder call 2026-06-25) no
- * longer auto-rejects an AI-looking result. An artificial-but-faithful render is
+ * Blocks for the FREE-PREVIEW path. An artificial-but-faithful render can still
+ * be shown with an explicit warning, but known text, pattern, or physical-detail
+ * drift is never normalized as a usable preview. Product identity remains strict.
+ * An artificial-but-faithful render is
  * the seller's photo, just styled synthetically — deliver it as a clearly labeled
  * "looks AI-generated, review before publishing" preview and let the seller decide,
- * rather than dead-ending them after a 2-minute wait. Severity is still enforced by
- * the graded fidelity_score floor below (severe drift / wrong product scores low
- * and is rejected). Only unambiguously BROKEN output hard-blocks here: a collage /
- * duplicate product, or an incomplete product — there is nothing for a seller to
- * "decide" about a two-mug collage, it is just wrong.
+ * rather than dead-ending them after a long wait. Collage, duplication, incomplete
+ * product, and any known product-content drift remain hard blocks.
  */
-function blocksFreePreview(
+export function blocksFreePreview(
   fidelity: FidelityReport,
   mode: ImproveMode = "main"
 ): boolean {
@@ -620,12 +618,14 @@ function blocksFreePreview(
       fidelity.collage_or_duplicate_product ||
       !fidelity.full_product_visible ||
       fidelity.invented_or_missing_details ||
-      (fidelity.text_or_pattern_drift && fidelity.fidelity_score < 6)
+      fidelity.text_or_pattern_drift
     );
   }
   return (
     fidelity.collage_or_duplicate_product ||
-    !fidelity.full_product_visible
+    !fidelity.full_product_visible ||
+    fidelity.invented_or_missing_details ||
+    fidelity.text_or_pattern_drift
   );
 }
 

@@ -12,7 +12,6 @@ import { AuditWorkspace } from "@/components/audit-workspace";
 import { InvalidUploadState } from "@/components/invalid-upload-state";
 import { DEMO_STATES, VERIFY_AMBER_DEMO } from "@/data/demo-states";
 import type { RubricJson } from "@/lib/rubric";
-import { RUBRIC_VERSION } from "@/lib/versions";
 import { trackClientEvent } from "@/lib/track-client";
 import { prepareUploadImage } from "@/lib/client-image";
 
@@ -127,10 +126,9 @@ export default function Page() {
           }
           throw new Error(body?.error || `Score request failed (${res.status})`);
         }
-        const { rubric, imageHash, rubricVersion } = (await res.json()) as {
+        const { rubric, scoreCacheId } = (await res.json()) as {
           rubric: RubricJson;
-          imageHash?: string;
-          rubricVersion?: string;
+          scoreCacheId?: string | null;
         };
         if (rubric.upload_kind === "invalid") {
           setMode("invalid");
@@ -168,17 +166,14 @@ export default function Page() {
           storage_path: path,
           mime: file.type,
         });
-        const { error: aErr } = phErr
-          ? { error: phErr }
-          : await supabase.from("audits").insert({
-              photo_id: photoId,
-              kind: "main",
-              rubric,
-              overall_score: rubric.overall_score,
-              rubric_version: rubricVersion ?? RUBRIC_VERSION,
-              image_hash: imageHash ?? null,
+        const auditRes = phErr
+          ? null
+          : await fetch("/api/audits", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ photoId, scoreCacheId }),
             });
-        if (phErr || aErr) {
+        if (phErr || !auditRes?.ok) {
           throw new Error(
             "Your photo was rated but could not be saved. Try again from your dashboard."
           );

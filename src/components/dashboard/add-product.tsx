@@ -83,10 +83,9 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
         }
         throw new Error(body?.error || `Scoring failed (${res.status})`);
       }
-      const { rubric, imageHash, rubricVersion } = (await res.json()) as {
+      const { rubric, scoreCacheId } = (await res.json()) as {
         rubric: RubricJson;
-        imageHash?: string;
-        rubricVersion?: string;
+        scoreCacheId?: string | null;
       };
       if (rubric.upload_kind === "invalid") {
         setStep("idle");
@@ -126,15 +125,17 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
       });
       if (phErr) throw new Error(phErr.message);
 
-      const { error: aErr } = await supabase.from("audits").insert({
-        photo_id: photoId,
-        kind: "main",
-        rubric,
-        overall_score: rubric.overall_score,
-        rubric_version: rubricVersion ?? null,
-        image_hash: imageHash ?? null,
+      const auditRes = await fetch("/api/audits", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId, scoreCacheId }),
       });
-      if (aErr) throw new Error(aErr.message);
+      if (!auditRes.ok) {
+        const auditBody = (await auditRes.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(auditBody?.error || "Could not save the audit.");
+      }
 
       // Invalidate the dashboard's Router Cache so the new product shows when the
       // user navigates back, then open the product.

@@ -21,6 +21,7 @@ type PhotoRow = {
   position: number;
   created_at: string;
   audits: AuditRow[] | null;
+  selected_generation_job_id: string | null;
 };
 type JobRow = {
   id: string;
@@ -60,7 +61,7 @@ export default async function ProductPage({
 
   const { data: photoData } = await supabase
     .from("photos")
-    .select("id, role, storage_path, position, created_at, audits(rubric, created_at)")
+    .select("id, role, storage_path, position, created_at, selected_generation_job_id, audits(rubric, created_at)")
     .eq("product_id", product.id)
     .order("role", { ascending: true })
     .order("position", { ascending: true })
@@ -71,6 +72,7 @@ export default async function ProductPage({
 
   // Latest generation job per photo (RLS scopes to the owner).
   const jobsByPhoto = new Map<string, JobRow>();
+  const jobsById = new Map<string, JobRow>();
   if (photoIds.length > 0) {
     const { data: jobData } = await supabase
       .from("generation_jobs")
@@ -80,6 +82,7 @@ export default async function ProductPage({
       .in("photo_id", photoIds)
       .order("created_at", { ascending: false });
     for (const j of (jobData as JobRow[] | null) ?? []) {
+      jobsById.set(j.id, j);
       if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
     }
   }
@@ -97,6 +100,7 @@ export default async function ProductPage({
 
       const jobRow = jobsByPhoto.get(row.id) ?? null;
       let lastJob: InitialJob | null = null;
+      let selectedJob: InitialJob | null = null;
       if (jobRow) {
         let resultUrl: string | null = null;
         if (jobRow.status === "completed" && jobRow.result_storage_path) {
@@ -117,6 +121,27 @@ export default async function ProductPage({
         };
       }
 
+      const selectedRow = row.selected_generation_job_id
+        ? jobsById.get(row.selected_generation_job_id) ?? null
+        : null;
+      if (selectedRow?.status === "completed" && selectedRow.result_storage_path) {
+        const { data: signedSelected } = await supabase.storage
+          .from("product-photos")
+          .createSignedUrl(selectedRow.result_storage_path, SIGNED_URL_TTL);
+        if (signedSelected?.signedUrl) {
+          selectedJob = {
+            id: selectedRow.id,
+            status: selectedRow.status,
+            stage: selectedRow.stage,
+            outcome: selectedRow.outcome,
+            errorCode: selectedRow.error_code,
+            resultUrl: signedSelected.signedUrl,
+            candidateRubric: selectedRow.candidate_rubric,
+            fidelity: selectedRow.fidelity,
+          };
+        }
+      }
+
       return {
         id: row.id,
         role: row.role,
@@ -124,6 +149,7 @@ export default async function ProductPage({
         storagePath: row.storage_path,
         rubric: latest.rubric,
         lastJob,
+        selectedJob,
       } satisfies InitialPhoto;
     })
   );

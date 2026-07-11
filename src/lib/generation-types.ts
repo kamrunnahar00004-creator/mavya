@@ -46,4 +46,6 @@ export type GenerationJobPayload = {
   fidelity: FidelityReport | null;
   unresolvedIssues?: string[];
   creditsRemaining?: number;
+  /** A completed retry was persisted but did not replace the stronger selection. */
+  keptPrevious?: boolean;
 };

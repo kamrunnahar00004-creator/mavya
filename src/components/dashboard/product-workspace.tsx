@@ -20,7 +20,7 @@ import {
   type GenerationJobStatus,
 } from "@/lib/generation-types";
 import { coveredShotIds } from "@/lib/checklist-coverage";
-import { SUPPORTING_RUBRIC_VERSION, MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
+import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { prepareUploadImage } from "@/lib/client-image";
 import { trackClientEvent } from "@/lib/track-client";
@@ -43,6 +43,7 @@ export type InitialPhoto = {
   storagePath: string;
   rubric: RubricJson;
   lastJob: InitialJob | null;
+  selectedJob: InitialJob | null;
 };
 
 type Props = {
@@ -162,8 +163,11 @@ function makePhoto(p: InitialPhoto): Photo {
     unresolved: null,
     revertSnap: null,
   };
+  if (p.selectedJob) {
+    photo = applyCompletedJob(photo, p.selectedJob);
+  }
   if (p.lastJob) {
-    if (p.lastJob.status === "completed") {
+    if (p.lastJob.status === "completed" && !p.selectedJob) {
       photo = applyCompletedJob(photo, p.lastJob);
     } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
       photo = {
@@ -171,7 +175,7 @@ function makePhoto(p: InitialPhoto): Photo {
         improveStatus: "generating",
         improveStartedAt: Date.now(),
         improveStage: JOB_STAGE_LABELS[p.lastJob.status],
-        lastJobId: p.lastJob.id,
+        lastJobId: photo.lastJobId,
       };
     }
   }
@@ -626,7 +630,10 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
               : b?.error || `Score failed (${res.status})`
           );
         }
-        const { rubric } = (await res.json()) as { rubric: RubricJson };
+        const { rubric, scoreCacheId } = (await res.json()) as {
+          rubric: RubricJson;
+          scoreCacheId?: string | null;
+        };
         if (rubric.upload_kind === "invalid") {
           setPhotos((prev) => prev.filter((p) => p.id !== tempId));
           setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
@@ -659,14 +666,17 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             mime: prepared.type,
           });
           if (phErr) throw phErr;
-          const { error: auErr } = await supabase.from("audits").insert({
-            photo_id: tempId,
-            kind: "supporting",
-            rubric,
-            overall_score: rubric.overall_score,
-            rubric_version: SUPPORTING_RUBRIC_VERSION,
+          const auditRes = await fetch("/api/audits", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ photoId: tempId, scoreCacheId }),
           });
-          if (auErr) throw auErr;
+          if (!auditRes.ok) {
+            const auditBody = (await auditRes.json().catch(() => null)) as
+              | { error?: string }
+              | null;
+            throw new Error(auditBody?.error || "Could not save the audit.");
+          }
           patch(tempId, { storagePath: path });
         } catch (persistErr) {
           console.error("[product-workspace] supporting persist failed", persistErr);

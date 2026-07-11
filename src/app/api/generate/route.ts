@@ -240,7 +240,7 @@ export async function POST(req: NextRequest) {
   // Ownership: RLS scopes photos to the owner; a foreign photoId returns null.
   const { data: photo } = await supabase
     .from("photos")
-    .select("id, role, storage_path, mime, product_id")
+    .select("id, role, storage_path, mime, product_id, selected_generation_job_id")
     .eq("id", photoId)
     .maybeSingle();
   if (!photo) return apiError("source_unavailable", "Photo not found.");
@@ -248,12 +248,12 @@ export async function POST(req: NextRequest) {
   // Baseline audit: the exact persisted audit the user saw. Never re-scored.
   const { data: auditRow } = await supabase
     .from("audits")
-    .select("id, rubric, created_at")
+    .select("id, rubric, created_at, score_cache_id")
     .eq("photo_id", photo.id)
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
-  if (!auditRow?.rubric) {
+  if (!auditRow?.rubric || !auditRow.score_cache_id) {
     return apiError("stale_audit", "Score this photo before improving it.");
   }
   const originalAudit = auditRow.rubric as RubricJson;
@@ -472,6 +472,38 @@ export async function POST(req: NextRequest) {
       outcome: result.outcome,
       completed_at: new Date().toISOString(),
     });
+
+    // Persist the version the seller should actually see. Completed retries are
+    // still retained as evidence, but a weaker retry cannot replace the current
+    // selected result merely because it was created later.
+    let selected = operation !== "retry" || !photo.selected_generation_job_id;
+    if (operation === "retry" && photo.selected_generation_job_id) {
+      const { data: previousSelected } = await admin
+        .from("generation_jobs")
+        .select("candidate_rubric")
+        .eq("id", photo.selected_generation_job_id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      const previousRubric = previousSelected?.candidate_rubric as RubricJson | null;
+      const previousScore = previousRubric?.overall_score;
+      selected =
+        typeof previousScore !== "number" ||
+        result.candidateAudit.overall_score > previousScore;
+    }
+    if (selected) {
+      const { error: selectError } = await admin
+        .from("photos")
+        .update({ selected_generation_job_id: job.id })
+        .eq("id", photo.id)
+        .eq("product_id", photo.product_id);
+      if (selectError) {
+        return await failJob(
+          "persistence_failed",
+          "The result was created but could not be selected. Try again.",
+          "failed"
+        );
+      }
+    }
     logEvent("generate.finished", {
       jobId: job.id,
       status: "completed",
@@ -491,7 +523,7 @@ export async function POST(req: NextRequest) {
         outcome: result.outcome,
         error_code: null,
       },
-      { creditsRemaining: charge.remaining }
+      { creditsRemaining: charge.remaining, keptPrevious: !selected }
     );
     return NextResponse.json(payload, { status: 200 });
   } catch (err) {

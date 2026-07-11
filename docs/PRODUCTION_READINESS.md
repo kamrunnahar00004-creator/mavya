@@ -10,6 +10,7 @@ server-side via `getSessionUser()` — never a client-supplied user id):
 | Route | Auth | Cost | Notes |
 |---|---|---|---|
 | `POST /api/score` | required | 1 credit | image-hash cache makes identical re-scores free |
+| `POST /api/audits` | required | free | persists only a verified server-cache score for the owned stored photo |
 | `POST /api/checklist` | required | free | best-effort; failures return `[]` |
 | `POST /api/generate` | required | 5 credits | photoId contract; persisted jobs |
 | `GET /api/generate` | required | free | job status (RLS-scoped) |
@@ -47,6 +48,11 @@ behind signup; the landing "before/after" demo is static assets, not live AI.
 Rubric/prompt versions live in `src/lib/versions.ts`; bumping a version invalidates
 the cache and marks new audits (`audits.rubric_version`, `audits.image_hash`).
 
+The browser cannot insert audit JSON. `/api/score` returns a server-owned
+`scoreCacheId`; after the photo is stored, `/api/audits` verifies ownership and the
+stored image hash, then copies the validated rubric from `score_cache` into
+`audits`. Generation requires this provenance link (`audits.score_cache_id`).
+
 ## Generation jobs
 
 `generation_jobs` persists every generation: status (`queued → generating →
@@ -59,6 +65,16 @@ product page loads the latest job per photo; active jobs resume polling
 (`GET /api/generate?id=`); jobs stuck >10 minutes are marked failed and refunded.
 Limitation: execution is request-bound (Vercel serverless, no queue); the function
 usually completes after a client disconnect, and the job row records the outcome.
+
+`photos.selected_generation_job_id` is the durable result the seller sees. A
+completed retry is retained, but it replaces the selected result only when its
+canonical score is higher. Rejected or weaker retries therefore cannot erase the
+better version after refresh. A seller-directed edit may intentionally become the
+selected version even when its score is lower.
+
+Useful previews may be below 8 or look somewhat artificial when clearly labeled,
+but known label/text/pattern drift, invented or missing product details, duplicate
+products, and incomplete product output are never delivered as normal previews.
 
 ## Signed URLs
 
@@ -95,9 +111,11 @@ internals are never sent to the browser. Structured logs via `logEvent()`
 ## Migrations
 
 Apply in order in the Supabase SQL editor: `0001_init.sql`, `0002_feedback.sql`,
-`0003_production.sql`. 0003 is additive (no destructive changes); legacy audits
-have NULL `rubric_version`/`image_hash`, which is handled (they are simply never
-cache hits). Rollback: drop the new tables/functions and the two audit columns.
+`0003_production.sql`, `0004_trusted_generation_state.sql`. 0004 removes browser
+authority to edit plan/credits or insert audits, and backfills each photo's selected
+result from its latest completed job. Legacy audits without `score_cache_id` must
+be re-scored before a new generation. Rollback must deliberately restore the old
+grants/policies before dropping the new provenance and selected-result columns.
 
 ## Tests
 

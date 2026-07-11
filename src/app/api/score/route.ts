@@ -113,7 +113,7 @@ export async function POST(req: NextRequest) {
   try {
     const { data: cached } = await admin
       .from("score_cache")
-      .select("rubric")
+      .select("id, rubric")
       .eq("user_id", user.id)
       .eq("image_hash", imageHash)
       .eq("mode", scoringMode)
@@ -123,7 +123,13 @@ export async function POST(req: NextRequest) {
     if (cached?.rubric) {
       logEvent("score.cache_hit", { userId: user.id, mode: scoringMode });
       return NextResponse.json(
-        { rubric: cached.rubric as RubricJson, cached: true, imageHash, rubricVersion },
+        {
+          rubric: cached.rubric as RubricJson,
+          cached: true,
+          imageHash,
+          rubricVersion,
+          scoreCacheId: cached.id,
+        },
         { status: 200 }
       );
     }
@@ -183,8 +189,11 @@ export async function POST(req: NextRequest) {
   }
 
   // 9. Store in cache (best-effort).
+  let scoreCacheId: string | null = null;
   try {
-    await admin.from("score_cache").insert({
+    const { data: inserted, error: insertError } = await admin
+      .from("score_cache")
+      .insert({
       user_id: user.id,
       image_hash: imageHash,
       mode: scoringMode,
@@ -192,9 +201,38 @@ export async function POST(req: NextRequest) {
       model: getVisionModel(),
       context_hash: contextHash,
       rubric,
+      })
+      .select("id")
+      .maybeSingle();
+    if (insertError && insertError.code !== "23505") throw insertError;
+    scoreCacheId = inserted?.id ?? null;
+    if (!scoreCacheId) {
+      const { data: existing } = await admin
+        .from("score_cache")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("image_hash", imageHash)
+        .eq("mode", scoringMode)
+        .eq("rubric_version", rubricVersion)
+        .eq("context_hash", contextHash)
+        .maybeSingle();
+      scoreCacheId = existing?.id ?? null;
+    }
+  } catch (err) {
+    logEvent("score.cache_store_failed", {
+      userId: user.id,
+      error: err instanceof Error ? err.message : String(err),
     });
-  } catch {
-    // Unique-violation on a concurrent identical request is fine.
+  }
+
+  // The cache row is now the server-owned provenance for audit persistence.
+  // Returning an unpersistable score would strand the user after charging them.
+  if (!scoreCacheId) {
+    if (!charge.duplicate) await refundCredits(chargeKey);
+    return apiError(
+      "persistence_failed",
+      "Your photo was rated but the verified audit could not be saved. Try again."
+    );
   }
 
   logEvent("score.completed", {
@@ -212,6 +250,7 @@ export async function POST(req: NextRequest) {
       cached: false,
       imageHash,
       rubricVersion,
+      scoreCacheId,
       creditsRemaining: charge.remaining,
     },
     { status: 200 }
