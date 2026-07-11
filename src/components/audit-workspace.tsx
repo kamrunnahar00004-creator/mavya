@@ -62,7 +62,7 @@ type Props = {
   improveError?: string;
   /** Truthful pipeline-stage label from the generation job (replaces rotating copy). */
   improveStage?: string;
-  /** True when the active preview is safe to show but not publish-ready. */
+  /** True when the active preview is safe to show but needs seller review. */
   freePreview?: boolean;
   /** Specific upload recommendation shown for a free preview. */
   freePreviewMessage?: string;
@@ -438,7 +438,7 @@ export function AuditWorkspace({
           {(
           <div className="reveal-item mt-1.5 border-t border-[var(--color-border-soft)] pt-4" data-reveal-order="4">
             {/* A failed retry must not show an alarming banner over an already
-                delivered publish-ready preview — the displayed result WAS delivered.
+                delivered preview — the displayed result WAS delivered.
                 The "Generate another version" control stays available below. */}
             {improveError && !(previewActive && !freePreview) && (
               <div className="mb-3 flex flex-col items-start gap-2.5">

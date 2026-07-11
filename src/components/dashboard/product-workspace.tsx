@@ -90,7 +90,7 @@ type RevertSnap = {
 };
 
 const FREE_PREVIEW_PREFIX =
-  "This version is better, but it did not pass publish-ready checks. We recommend ";
+  "This version is better, but Mavya still found things worth reviewing. We recommend ";
 
 function freePreviewMessage(fidelity: FidelityReport | null): string {
   if (!fidelity) return `${FREE_PREVIEW_PREFIX}reviewing it before using it.`;
