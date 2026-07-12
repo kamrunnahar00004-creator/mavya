@@ -122,7 +122,7 @@ export default function Page() {
           }
           if (body?.code === "allowance_exhausted") {
             throw new Error(
-              "You have used this month's photo assessments. They refresh with your next billing period."
+              "You have used this month's Photo Credits. They refresh with your next billing period."
             );
           }
           throw new Error(body?.error || `Score request failed (${res.status})`);

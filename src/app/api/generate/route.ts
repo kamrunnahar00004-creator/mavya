@@ -457,7 +457,7 @@ export async function POST(req: NextRequest) {
     if (charge.code === "allowance_exhausted") {
       return apiError(
         "allowance_exhausted",
-        "You have used this month's 12 improvement workflows. They refresh with your next billing period.",
+        "You have used this month's 12 Improvement Credits. They refresh with your next billing period.",
         { remaining: charge.remaining ?? 0, renewsAt: entitlement.currentPeriodEnd }
       );
     }

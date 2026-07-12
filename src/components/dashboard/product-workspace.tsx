@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuditWorkspace } from "@/components/audit-workspace";
+import { VersionStrip, type VersionView } from "@/components/dashboard/version-strip";
 import type { SlotView } from "@/components/photo-slot-strip";
 import {
   rubricToAuditResult,
@@ -46,6 +47,12 @@ export type InitialPhoto = {
   rubric: RubricJson;
   lastJob: InitialJob | null;
   selectedJob: InitialJob | null;
+  /** photos.selected_generation_job_id (null = the original is in use). */
+  selectedJobId?: string | null;
+  /** 'user' = the seller picked this version explicitly. */
+  selectionSource?: "auto" | "user";
+  /** Completed versions for the picker (oldest first, max 3). */
+  versions?: InitialJob[];
 };
 
 type Props = {
@@ -80,6 +87,10 @@ type Photo = {
   canRetry: boolean;
   unresolved: string[] | null;
   revertSnap: RevertSnap | null;
+  /** Completed versions available in the picker (oldest first). */
+  versions: InitialJob[];
+  /** Currently selected version (null = original). */
+  selectedJobId: string | null;
 };
 
 type RevertSnap = {
@@ -169,12 +180,18 @@ function makePhoto(p: InitialPhoto): Photo {
     canRetry: false,
     unresolved: null,
     revertSnap: null,
+    versions: p.versions ?? [],
+    selectedJobId: p.selectedJobId ?? p.selectedJob?.id ?? null,
   };
   if (p.selectedJob) {
     photo = applyCompletedJob(photo, p.selectedJob);
   }
+  // The seller explicitly picked the ORIGINAL: never fall back to showing the
+  // latest completed result as the preview.
+  const userPickedOriginal =
+    p.selectionSource === "user" && !p.selectedJob && !p.selectedJobId;
   if (p.lastJob) {
-    if (p.lastJob.status === "completed" && !p.selectedJob) {
+    if (p.lastJob.status === "completed" && !p.selectedJob && !userPickedOriginal) {
       photo = applyCompletedJob(photo, p.lastJob);
     } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
       if ((p.lastJob.attemptNumber ?? 1) > 1) {
@@ -225,7 +242,27 @@ function analyzingPhoto(id: string, imageSrc: string): Photo {
     canRetry: false,
     unresolved: null,
     revertSnap: null,
+    versions: [],
+    selectedJobId: null,
   };
+}
+
+/** Upsert a completed payload into the photo's version list (max 3, oldest first). */
+function withVersion(photo: Photo, payload: GenerationJobPayload): InitialJob[] {
+  if (!payload.resultUrl || !payload.candidateRubric) return photo.versions;
+  const entry: InitialJob = {
+    id: payload.jobId,
+    status: "completed",
+    stage: null,
+    outcome: payload.outcome,
+    errorCode: null,
+    resultUrl: payload.resultUrl,
+    candidateRubric: payload.candidateRubric,
+    fidelity: payload.fidelity,
+    attemptNumber: payload.attemptNumber ?? 1,
+  };
+  const rest = photo.versions.filter((v) => v.id !== entry.id);
+  return [...rest, entry].slice(-3);
 }
 
 function newId(): string {
@@ -361,10 +398,12 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
                   ? {
                       ...updated,
                       backgroundRefining: nextRefinementActive,
+                      versions: withVersion(cur, payload),
+                      selectedJobId: payload.jobId,
                       keepNote:
                         typeof existingScore === "number"
                           ? `We kept improving in the background. This version scored ${newScore.toFixed(1)} versus your earlier ${existingScore.toFixed(1)}, so it is now the recommended version. Your earlier version is still available.`
-                          : `Background refinement finished with a ${newScore.toFixed(1)}. It is now the recommended version.`,
+                          : `We finished checking another version. It scored ${newScore.toFixed(1)} and is now recommended.`,
                     }
                   : p
               )
@@ -372,8 +411,9 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
           } else {
             patch(photoId, {
               backgroundRefining: nextRefinementActive,
+              versions: withVersion(cur, payload),
               keepNote:
-                "Background refinement finished. Your current version stayed the strongest, so we kept it.",
+                "We finished checking another version. Your current photo stayed the strongest, so we kept it.",
             });
           }
         } else if (cur.keepNote === REFINING_NOTE) {
@@ -422,6 +462,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             improveStage: undefined,
             improveError: undefined,
             canRetry: typeof existingScore !== "number" || existingScore < 8,
+            versions: withVersion(cur, payload),
             keepNote:
               typeof existingScore === "number"
                 ? `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the better one. You can try again.`
@@ -448,6 +489,9 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
               ? {
                   ...updated,
                   backgroundRefining: refinementActive,
+                  versions: withVersion(cur, payload),
+                  selectedJobId:
+                    payload.keptPrevious === true ? cur.selectedJobId : payload.jobId,
                   keepNote: refinementActive ? REFINING_NOTE : undefined,
                 }
               : p
@@ -659,6 +703,73 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
     [activeId, applyJobPayload, patch, pollJob, stopPolling]
   );
 
+  // ------------------------------------------------------------------
+  // Manual version selection: the seller's pick is final. The server locks it
+  // (selection_source = 'user') so background results never overwrite it.
+  // ------------------------------------------------------------------
+  const [versionBusy, setVersionBusy] = useState<string | null>(null);
+
+  const handleSelectVersion = useCallback(
+    async (jobId: string | null) => {
+      const photo = photosRef.current.find((p) => p.id === activeId);
+      if (!photo || versionBusy) return;
+      setVersionBusy(jobId ?? "original");
+      try {
+        const res = await fetch("/api/photos/select-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photoId: photo.id, jobId }),
+        });
+        const body = (await res.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        if (!res.ok) {
+          throw new Error(body?.error || "The selection could not be saved.");
+        }
+        if (jobId === null) {
+          patch(photo.id, {
+            selectedJobId: null,
+            freePreview: false,
+            freePreviewMsg: undefined,
+            keepNote: "The original is now your selected photo.",
+            audit: {
+              ...photo.audit,
+              improvedSrc: undefined,
+              improvedAudit: undefined,
+              improvedScore: undefined,
+              improvedVerdict: undefined,
+            },
+          });
+        } else {
+          const version = photo.versions.find((v) => v.id === jobId);
+          if (version) {
+            const updated = applyCompletedJob({ ...photo, keepNote: undefined }, version);
+            setPhotos((prev) =>
+              prev.map((p) =>
+                p.id === photo.id
+                  ? {
+                      ...updated,
+                      selectedJobId: jobId,
+                      keepNote: "This version is now your selected photo.",
+                    }
+                  : p
+              )
+            );
+          } else {
+            patch(photo.id, { selectedJobId: jobId });
+          }
+        }
+      } catch (err) {
+        setNotice(
+          err instanceof Error ? err.message : "The selection could not be saved."
+        );
+      } finally {
+        setVersionBusy(null);
+      }
+    },
+    [activeId, patch, versionBusy]
+  );
+
   const handleImprove = useCallback(() => runImprove(false), [runImprove]);
   const handleEdit = useCallback(
     (instruction: string, source: "original" | "preview") =>
@@ -734,9 +845,9 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             | null;
           throw new Error(
             b?.code === "allowance_exhausted"
-              ? "You have used this month's photo assessments, so this photo was not rated. They refresh with your next billing period."
+              ? "You have used this month's Photo Credits, so this photo was not rated. They refresh with your next billing period."
               : b?.code === "subscription_required" || b?.code === "subscription_past_due"
-              ? "An active subscription is needed to rate photos. Check your plan on the subscribe page."
+              ? "An active plan is needed to rate photos. Check Settings to update billing."
               : b?.error || `Score failed (${res.status})`
           );
         }
@@ -813,6 +924,56 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
 
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
   const digitalMain = active.kind === "main" && active.isDigital;
+
+  // Simple version picker: Original + up to 3 completed versions with honest
+  // scores. The strongest version carries the "Recommended" hint; the seller's
+  // explicit pick is final (server-locked against automatic replacement).
+  const versionEntries = active.versions
+    .map((v, i) => {
+      const score = v.candidateRubric
+        ? active.kind === "supporting"
+          ? rubricToSupportingAuditResult(v.candidateRubric).overallScore
+          : rubricToAuditResult(v.candidateRubric).overallScore
+        : null;
+      return {
+        jobId: v.id as string | null,
+        label: `Version ${i + 1}`,
+        imageSrc: v.resultUrl ?? "",
+        score,
+        warning:
+          v.outcome === "useful_free_preview"
+            ? "Review the result before using it"
+            : null,
+        recommended: false,
+      };
+    })
+    .filter((v) => v.imageSrc);
+  const comparableVersions: VersionView[] = [
+    {
+      jobId: null,
+      label: "Original",
+      imageSrc: active.imageSrc,
+      score: active.audit.overallScore ?? null,
+      warning: null,
+      recommended: false,
+    },
+    ...versionEntries,
+  ];
+  const recommendedIndex = comparableVersions.reduce((best, version, index) => {
+    const score = version.score;
+    const bestScore = comparableVersions[best]?.score;
+    if (score === null) return best;
+    if (bestScore === null || bestScore === undefined || score > bestScore) return index;
+    return best;
+  }, 0);
+  const versionViews: VersionView[] =
+    active.status === "graded" && versionEntries.length > 0
+      ? comparableVersions.map((version, index) => ({
+          ...version,
+          recommended: index === recommendedIndex,
+        }))
+      : [];
+
   const slotViews: SlotView[] = photos.map((p) => ({
     id: p.id,
     label: p.kind === "main" ? "Main photo" : "Supporting",
@@ -870,6 +1031,15 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         coveredShotIds={active.kind === "main" ? [...covered] : undefined}
         animate
       />
+      {active.status === "graded" && versionViews.length > 1 && (
+        <VersionStrip
+          versions={versionViews}
+          selectedJobId={active.selectedJobId}
+          busyId={versionBusy}
+          disabled={active.improveStatus === "generating"}
+          onSelect={(jobId) => void handleSelectVersion(jobId)}
+        />
+      )}
     </>
   );
 }

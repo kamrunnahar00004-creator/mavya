@@ -5,7 +5,37 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { loadPendingPhoto } from "@/lib/pending-photo";
 import { cn } from "@/lib/utils";
+
+/**
+ * Paid-only beta routing after a successful sign-in (server-verified via
+ * /api/billing/status — never a client flag):
+ *  - pending landing photo -> "/" so the stash resumes (subscribe if unpaid)
+ *  - active subscriber     -> /dashboard
+ *  - past_due              -> /dashboard (warning shown there; AI is blocked
+ *                             server-side)
+ *  - everyone else         -> /subscribe
+ */
+async function postAuthDestination(): Promise<string> {
+  let hasPendingPhoto = false;
+  try {
+    hasPendingPhoto = Boolean(await loadPendingPhoto());
+  } catch {
+    // Stash unavailable: billing routing decides alone.
+  }
+  try {
+    const res = await fetch("/api/billing/status");
+    if (!res.ok) return "/subscribe";
+    const body = (await res.json()) as { active?: boolean; reason?: string };
+    if (body.active) return hasPendingPhoto ? "/" : "/dashboard";
+    if (body.reason === "past_due") return "/dashboard";
+    return "/subscribe";
+  } catch {
+    // Status unreachable: the dashboard's server gate re-checks anyway.
+    return "/dashboard";
+  }
+}
 
 type Mode = "login" | "signup";
 
@@ -43,10 +73,20 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
     setError(null);
     setLoading(true);
     try {
+      // A pending landing photo must survive the OAuth round-trip: send the
+      // callback back to the landing so the stash resumes automatically.
+      let redirectTo = `${window.location.origin}/auth/callback`;
+      try {
+        if (await loadPendingPhoto()) {
+          redirectTo += `?next=${encodeURIComponent("/")}`;
+        }
+      } catch {
+        // Stash unavailable: default callback routing applies.
+      }
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
+        options: { redirectTo },
       });
       if (error) throw error;
       // Browser redirects to Google; nothing else to do.
@@ -103,7 +143,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
         });
         if (error) throw error;
       }
-      router.push("/dashboard");
+      router.push(await postAuthDestination());
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");

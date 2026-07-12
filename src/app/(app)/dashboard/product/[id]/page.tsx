@@ -8,6 +8,7 @@ import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
+import { getEntitlement } from "@/lib/entitlements";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,7 @@ type PhotoRow = {
   created_at: string;
   audits: AuditRow[] | null;
   selected_generation_job_id: string | null;
+  selection_source: "auto" | "user" | null;
 };
 type JobRow = {
   id: string;
@@ -51,6 +53,13 @@ export default async function ProductPage({
   const user = await getSessionUser();
   if (!user) redirect("/?auth=login");
 
+  // Paid-only gate: no/expired plan -> credits page. past_due may still VIEW
+  // saved results (new AI usage is blocked server-side).
+  const entitlement = await getEntitlement(user.id);
+  if (!entitlement.active && entitlement.reason !== "past_due") {
+    redirect("/subscribe");
+  }
+
   const supabase = await createSupabaseServerClient();
 
   const { data: product } = await supabase
@@ -62,7 +71,7 @@ export default async function ProductPage({
 
   const { data: photoData } = await supabase
     .from("photos")
-    .select("id, role, storage_path, position, created_at, selected_generation_job_id, audits(rubric, created_at)")
+    .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, audits(rubric, created_at)")
     .eq("product_id", product.id)
     .order("role", { ascending: true })
     .order("position", { ascending: true })
@@ -102,6 +111,46 @@ export default async function ProductPage({
       const jobRow = jobsByPhoto.get(row.id) ?? null;
       let lastJob: InitialJob | null = null;
       let selectedJob: InitialJob | null = null;
+
+      const selectedRow = row.selected_generation_job_id
+        ? jobsById.get(row.selected_generation_job_id) ?? null
+        : null;
+
+      // Completed versions for the picker (oldest first, max 3). Always retain
+      // the seller's selected version even when it is older than the latest
+      // three, otherwise refresh would show no selected card.
+      const allCompletedRows = [...jobsById.values()]
+        .filter((j) => j.photo_id === row.id && j.status === "completed" && j.result_storage_path)
+        .sort((a, b) => a.created_at.localeCompare(b.created_at));
+      let completedRows = allCompletedRows.slice(-3);
+      if (
+        selectedRow?.status === "completed" &&
+        selectedRow.result_storage_path &&
+        !completedRows.some((job) => job.id === selectedRow.id)
+      ) {
+        completedRows = [
+          selectedRow,
+          ...allCompletedRows.filter((job) => job.id !== selectedRow.id).slice(-2),
+        ].sort((a, b) => a.created_at.localeCompare(b.created_at));
+      }
+      const versions: InitialJob[] = [];
+      for (const v of completedRows) {
+        const { data: signedVersion } = await supabase.storage
+          .from("product-photos")
+          .createSignedUrl(v.result_storage_path!, SIGNED_URL_TTL);
+        if (!signedVersion?.signedUrl) continue;
+        versions.push({
+          id: v.id,
+          status: v.status,
+          stage: v.stage,
+          outcome: v.outcome,
+          errorCode: v.error_code,
+          resultUrl: signedVersion.signedUrl,
+          candidateRubric: v.candidate_rubric,
+          fidelity: v.fidelity,
+          attemptNumber: v.attempt_number ?? 1,
+        });
+      }
       if (jobRow) {
         let resultUrl: string | null = null;
         if (jobRow.status === "completed" && jobRow.result_storage_path) {
@@ -123,9 +172,6 @@ export default async function ProductPage({
         };
       }
 
-      const selectedRow = row.selected_generation_job_id
-        ? jobsById.get(row.selected_generation_job_id) ?? null
-        : null;
       if (selectedRow?.status === "completed" && selectedRow.result_storage_path) {
         const { data: signedSelected } = await supabase.storage
           .from("product-photos")
@@ -152,7 +198,10 @@ export default async function ProductPage({
         rubric: latest.rubric,
         lastJob,
         selectedJob,
-      } satisfies InitialPhoto;
+        selectedJobId: row.selected_generation_job_id,
+        selectionSource: row.selection_source ?? "auto",
+        versions,
+      } satisfies InitialPhoto as InitialPhoto;
     })
   );
   const initialPhotos: InitialPhoto[] = signed.filter(

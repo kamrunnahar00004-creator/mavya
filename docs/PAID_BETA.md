@@ -225,6 +225,12 @@ also tightened. See `docs/CODEX_PAID_BETA_FIX_REPORT.md`.
   priority issue, intended change, seller instruction) is passed to the
   GENERATION prompt today; threading it into the fidelity prompt is a queued
   improvement.
-- Version-comparison UI (Original / V1 / V2 / V3 strip with scores + warnings
-  + select buttons wired to /api/photos/select-version) — server side is done;
-  the workspace UI currently shows the recommended version + honest notes.
+- Version comparison is now wired end to end: the workspace shows the original
+  plus up to three completed versions with scores, safety copy, recommendation,
+  and manual selection through `/api/photos/select-version`. The selected
+  version is retained across refreshes and cannot be overwritten automatically.
+- Paid onboarding now routes users by server-derived entitlement: unpaid and
+  expired accounts go to `/subscribe`, active accounts go to `/dashboard`, and
+  past-due accounts retain read access with billing warnings. `/subscribe` and
+  `/settings` expose the two monthly allowances as customer-facing Photo Credits
+  and Improvement Credits; cancellation remains in Stripe's customer portal.

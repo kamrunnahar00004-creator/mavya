@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, LogOut } from "lucide-react";
+import { LayoutGrid, LogOut, Settings } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "./auth-modal";
 
@@ -102,6 +102,14 @@ export function AuthControls() {
           >
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Dashboard
+          </Link>
+          <Link
+            href="/settings"
+            prefetch
+            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+          >
+            <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+            <span className="hidden sm:inline">Settings</span>
           </Link>
           <button
             type="button"

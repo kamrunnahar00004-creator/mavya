@@ -77,12 +77,12 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
           | null;
         if (body?.code === "allowance_exhausted") {
           throw new Error(
-            "You have used this month's photo assessments. They refresh with your next billing period."
+            "You have used this month's Photo Credits. They refresh with your next billing period."
           );
         }
         if (body?.code === "subscription_required" || body?.code === "subscription_past_due") {
           throw new Error(
-            "An active subscription is needed to rate photos. Check your plan on the subscribe page."
+            "An active plan is needed to rate photos. Check Settings to update billing."
           );
         }
         if (body?.code === "unauthenticated") {

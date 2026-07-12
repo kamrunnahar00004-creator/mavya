@@ -237,10 +237,13 @@ limitation); everything was run INSIDE WSL with `bash -ic`.
   but are not yet populated (OpenAI client doesn't surface metadata yet).
 - OCR text comparison: designed (docs/PAID_BETA.md), not built; fidelity's
   `text_or_pattern_drift` remains the guard and hard-blocks recommendation.
-- Version-comparison UI (Original/V1/V2/V3 strip with per-version scores,
-  warnings, select buttons): server side complete (persisted candidates +
-  select-version API); the workspace currently shows the recommended version
-  with honest replace/keep notes. UI strip is the top follow-up.
+- Version comparison is complete: Original plus up to three completed versions,
+  scores, warnings, recommendation, and manual selection are shown in the
+  workspace. The selected version survives refresh and stays protected from
+  automatic replacement.
+- Paid onboarding and account billing UI are complete: entitlement-aware auth
+  routing, the credits-based `/subscribe` page, `/settings`, past-due read-only
+  dashboard access, and Stripe-portal billing management are wired.
 - Refinement latency depends on `after()` on Hobby-plan Vercel (see §10).
 - `eval_consent_at` is also touched on consent=false (records the revocation
   time; intentional).
