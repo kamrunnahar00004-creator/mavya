@@ -31,14 +31,13 @@ async function handle(req: NextRequest) {
   const admin = createSupabaseAdminClient();
   const staleFailed = await recoverStaleJobs(admin);
 
-  // Process up to 2 queued refinements per tick (each is minutes of provider
-  // work; the 240s route budget bounds the real number).
+  // Process one queued refinement per tick. Each attempt can take minutes, so
+  // a second attempt in the same serverless invocation risks being killed at
+  // the route limit. A scheduler can invoke this endpoint again for the next
+  // queued attempt.
   const processed: string[] = [];
-  for (let i = 0; i < 2; i++) {
-    const jobId = await runQueuedRefinementOnce();
-    if (!jobId) break;
-    processed.push(jobId);
-  }
+  const jobId = await runQueuedRefinementOnce();
+  if (jobId) processed.push(jobId);
 
   logEvent("worker.tick", { staleFailed, processed: processed.length });
   return NextResponse.json(

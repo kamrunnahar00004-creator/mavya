@@ -176,7 +176,9 @@ export async function recoverStaleJobs(admin: AdminClient): Promise<number> {
   // up in the same pass, so only actively-running states are recovered here.
   const { data: stale } = await admin
     .from("generation_jobs")
-    .select("id, attempt_number, allowance_key, credit_key")
+    .select(
+      "id, user_id, product_id, photo_id, source_audit_id, operation, workflow_id, attempt_number, allowance_key, credit_key"
+    )
     .in("status", ["generating", "fidelity_check", "rescoring"])
     .lt("updated_at", cutoff)
     .limit(20);
@@ -201,6 +203,23 @@ export async function recoverStaleJobs(admin: AdminClient): Promise<number> {
       if ((job.attempt_number ?? 1) === 1 && job.allowance_key) {
         await refundAllowance(job.allowance_key);
       }
+      // A timeout is still a failed bounded attempt. Queue the next attempt
+      // immediately so recovery does not wait for the next scheduler tick.
+      await maybeQueueRefinement({
+        admin,
+        completedJob: {
+          id: job.id,
+          user_id: job.user_id,
+          product_id: job.product_id,
+          photo_id: job.photo_id,
+          source_audit_id: job.source_audit_id,
+          operation: job.operation,
+          workflow_id: job.workflow_id,
+          attempt_number: job.attempt_number,
+          allowance_key: job.allowance_key,
+        },
+        acceptedRawScore: null,
+      });
       logEvent("refine.stale_failed", { jobId: job.id });
     }
   }

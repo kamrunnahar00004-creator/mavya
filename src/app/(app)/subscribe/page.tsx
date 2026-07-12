@@ -93,7 +93,7 @@ function SubscribeInner() {
         | null;
       if (!res.ok) throw new Error(body?.error || "Checkout could not be started.");
       if (body?.alreadySubscribed) {
-        window.location.href = "/";
+        window.location.href = body.url || "/subscribe";
         return;
       }
       if (body?.url) {
@@ -130,6 +130,8 @@ function SubscribeInner() {
 
   const pastDue = status?.reason === "past_due";
   const active = Boolean(status?.active);
+  const billingConfigurationIssue =
+    status?.reason === "wrong_plan" || status?.reason === "expired";
 
   return (
     <main className="mx-auto max-w-[560px] px-6 py-12">
@@ -163,6 +165,19 @@ function SubscribeInner() {
           <p className="text-[13.5px] leading-relaxed text-[var(--color-ink)]">
             Your payment did not go through. Update your payment method to keep
             rating photos. Your saved results are safe.
+          </p>
+        </div>
+      )}
+
+      {billingConfigurationIssue && (
+        <div className="mt-6 flex items-start gap-2.5 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-[var(--color-tint)] p-4">
+          <AlertCircle
+            className="mt-0.5 h-4.5 w-4.5 shrink-0 text-[var(--color-primary)]"
+            aria-hidden="true"
+          />
+          <p className="text-[13.5px] leading-relaxed text-[var(--color-ink)]">
+            We found an older or expired billing plan. Manage billing to update
+            it safely; we will not start a second subscription by accident.
           </p>
         </div>
       )}

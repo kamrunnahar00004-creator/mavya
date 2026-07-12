@@ -58,6 +58,28 @@ export async function POST(req: NextRequest) {
       if (error) throw error;
     }
 
+    // The local webhook row can be stale or can refer to an old price. Check
+    // Stripe before creating a new subscription so a missed webhook or price
+    // rotation cannot make the customer pay twice.
+    const subscriptions = await stripe.subscriptions.list({
+      customer: customerId,
+      status: "all",
+      limit: 100,
+    });
+    const liveSubscription = subscriptions.data.find((subscription) =>
+      ["active", "trialing", "past_due"].includes(subscription.status)
+    );
+    if (liveSubscription) {
+      const portal = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: `${req.nextUrl.origin}/subscribe`,
+      });
+      return NextResponse.json(
+        { ok: true, alreadySubscribed: true, url: portal.url },
+        { status: 200 }
+      );
+    }
+
     const openSessions = await stripe.checkout.sessions.list({
       customer: customerId,
       status: "open",
