@@ -69,6 +69,7 @@ type Photo = {
   improveStartedAt?: number;
   improveStage?: string;
   improveError?: string;
+  backgroundRefining: boolean;
   /** Operation of the in-flight/last job (drives keep-better on retries). */
   pendingOp?: "improve" | "edit" | "retry";
   /** Honest "kept the better version" status after an unhelpful retry. */
@@ -163,6 +164,7 @@ function makePhoto(p: InitialPhoto): Photo {
     supportingRole: p.rubric.supporting_photo_role,
     productSummary: isMain ? p.rubric.product_summary : undefined,
     improveStatus: "idle",
+    backgroundRefining: false,
     freePreview: false,
     canRetry: false,
     unresolved: null,
@@ -178,7 +180,7 @@ function makePhoto(p: InitialPhoto): Photo {
       if ((p.lastJob.attemptNumber ?? 1) > 1) {
         // Background refinement runs quietly: no spinner, keep the current
         // version usable, and show the honest refining note instead.
-        photo = { ...photo, keepNote: REFINING_NOTE };
+        photo = { ...photo, backgroundRefining: true, keepNote: REFINING_NOTE };
       } else {
         photo = {
           ...photo,
@@ -218,6 +220,7 @@ function analyzingPhoto(id: string, imageSrc: string): Photo {
     status: "analyzing",
     isDigital: false,
     improveStatus: "idle",
+    backgroundRefining: false,
     freePreview: false,
     canRetry: false,
     unresolved: null,
@@ -324,6 +327,9 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
       // current version and never alarms the seller.
       if (isRefinement) {
         if (ACTIVE_JOB_STATUSES.has(payload.status)) return;
+        const nextRefinementActive = Boolean(
+          payload.refinement && ACTIVE_JOB_STATUSES.has(payload.refinement.status)
+        );
         if (
           payload.status === "completed" &&
           payload.resultUrl &&
@@ -354,6 +360,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
                 p.id === photoId
                   ? {
                       ...updated,
+                      backgroundRefining: nextRefinementActive,
                       keepNote:
                         typeof existingScore === "number"
                           ? `We kept improving in the background. This version scored ${newScore.toFixed(1)} versus your earlier ${existingScore.toFixed(1)}, so it is now the recommended version. Your earlier version is still available.`
@@ -364,19 +371,20 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             );
           } else {
             patch(photoId, {
+              backgroundRefining: nextRefinementActive,
               keepNote:
                 "Background refinement finished. Your current version stayed the strongest, so we kept it.",
             });
           }
         } else if (cur.keepNote === REFINING_NOTE) {
           // Refinement ended without a usable result: clear the quiet note.
-          patch(photoId, { keepNote: undefined });
+          patch(photoId, {
+            backgroundRefining: nextRefinementActive,
+            keepNote: nextRefinementActive ? REFINING_NOTE : undefined,
+          });
         }
         // Chain to the next bounded attempt when one was queued.
-        if (
-          payload.refinement &&
-          ACTIVE_JOB_STATUSES.has(payload.refinement.status)
-        ) {
+        if (nextRefinementActive && payload.refinement) {
           patch(photoId, { keepNote: REFINING_NOTE });
           pollJobRef.current?.(photoId, `id=${payload.refinement.jobId}`);
         }
@@ -437,7 +445,11 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         setPhotos((prev) =>
           prev.map((p) =>
             p.id === photoId
-              ? { ...updated, keepNote: refinementActive ? REFINING_NOTE : undefined }
+              ? {
+                  ...updated,
+                  backgroundRefining: refinementActive,
+                  keepNote: refinementActive ? REFINING_NOTE : undefined,
+                }
               : p
           )
         );
@@ -454,6 +466,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
       ]).has(payload.errorCode ?? "");
       patch(photoId, {
         improveStatus: hasPreview ? "idle" : "error",
+        backgroundRefining: refinementActive,
         improveStartedAt: undefined,
         improveStage: undefined,
         improveError:
@@ -556,6 +569,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
       const useBase = (retry || (isEdit && editSource === "preview")) && photo.lastJobId;
       patch(photo.id, {
         improveStatus: "generating",
+        backgroundRefining: false,
         improveStartedAt: Date.now(),
         improveStage: JOB_STAGE_LABELS.queued,
         improveError: undefined,
@@ -646,7 +660,6 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
   );
 
   const handleImprove = useCallback(() => runImprove(false), [runImprove]);
-  const handleRetry = useCallback(() => runImprove(true), [runImprove]);
   const handleEdit = useCallback(
     (instruction: string, source: "original" | "preview") =>
       runImprove(false, instruction, source),
@@ -843,12 +856,10 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         }
         onCta={() => router.push("/dashboard")}
         onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
-        onRetryImprove={
-          !wrongProduct && !digitalMain && active.canRetry ? handleRetry : undefined
-        }
         onEdit={digitalMain || wrongProduct ? undefined : handleEdit}
         onRevert={active.revertSnap ? handleRevert : undefined}
         improveLoading={active.improveStatus === "generating"}
+        backgroundRefining={active.backgroundRefining}
         improveStartedAt={active.improveStartedAt}
         improveStage={active.improveStage}
         improveError={active.improveError}

@@ -38,6 +38,12 @@ const IMPROVE_STATUSES = [
 
 const IMPROVE_ESTIMATE_SECONDS = 56;
 
+const BACKGROUND_REFINING_STATUSES = [
+  "This photo is better than your previous photo, but we think we can do better.",
+  "We are improving it in the background. You do not need to do anything.",
+  "We are checking another version to deliver the best photo possible.",
+];
+
 const SUPPORTING_ANALYZING_STATUSES = [
   "Reading this listing photo…",
   "Checking detail and trust…",
@@ -54,9 +60,9 @@ type Props = {
    * `improvedSrc` + `improvedAudit` before the promise resolves.
    */
   onImprove?: () => Promise<void> | void;
-  /** When present, a failed attempt shows a retry control that runs this. */
-  onRetryImprove?: () => Promise<void> | void;
   improveLoading?: boolean;
+  /** Attempts 2-3 are running while the current safe preview remains usable. */
+  backgroundRefining?: boolean;
   /** Epoch ms when the active slot started improving. Preserves countdown across slot switches. */
   improveStartedAt?: number;
   improveError?: string;
@@ -98,8 +104,8 @@ export function AuditWorkspace({
   uploadedSrc,
   onCta,
   onImprove,
-  onRetryImprove,
   improveLoading = false,
+  backgroundRefining = false,
   improveStartedAt,
   improveError,
   improveStage,
@@ -124,6 +130,7 @@ export function AuditWorkspace({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);
+  const [backgroundStatusIdx, setBackgroundStatusIdx] = useState(0);
   const [analyzingIdx, setAnalyzingIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<"original" | "preview">(
     initialPreview ? "preview" : "original"
@@ -167,9 +174,6 @@ export function AuditWorkspace({
       ? `${state.overallScore.toFixed(1)} -> ${activeAudit.overallScore.toFixed(1)}`
       : "";
   const previewBelowPublishReady = previewActive && activeAudit.overallScore < 8;
-  // On the AI-improved view: a strong (8+) preview greys out the One-click fix
-  // ("Preview generated"); a sub-8 preview keeps it active to regenerate.
-  const oneClickFixDisabled = previewActive && activeAudit.overallScore >= 8;
 
   useEffect(() => {
     if (!canShowImprovement || !improvedSrc) return;
@@ -217,6 +221,24 @@ export function AuditWorkspace({
   // Prefer the truthful job-stage label when the caller provides one; the
   // rotating copy is only the fallback for flows without job state.
   const improveStatus = improveStage ?? IMPROVE_STATUSES[improveStatusIdx];
+
+  useEffect(() => {
+    if (!backgroundRefining) return;
+    const reset = window.setTimeout(() => setBackgroundStatusIdx(0), 0);
+    const rotate = window.setInterval(
+      () =>
+        setBackgroundStatusIdx(
+          (i) => (i + 1) % BACKGROUND_REFINING_STATUSES.length
+        ),
+      2000
+    );
+    return () => {
+      window.clearTimeout(reset);
+      window.clearInterval(rotate);
+    };
+  }, [backgroundRefining]);
+
+  const backgroundStatus = BACKGROUND_REFINING_STATUSES[backgroundStatusIdx];
 
   // Inline supporting-photo analyzing status rotation (right panel only).
   useEffect(() => {
@@ -277,7 +299,7 @@ export function AuditWorkspace({
               }
               contain
             />
-            {onEdit && !improveLoading && editImageSrc && (
+            {onEdit && !improveLoading && !backgroundRefining && editImageSrc && (
               <button
                 type="button"
                 onClick={() => setEditModalOpen(true)}
@@ -491,52 +513,37 @@ export function AuditWorkspace({
                     {freePreviewMessage}
                   </div>
                 )}
-                {keepNote && previewBelowPublishReady && (
+                {backgroundRefining && previewBelowPublishReady ? (
+                  <div
+                    className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
+                    role="status"
+                    aria-live="polite"
+                  >
+                    {backgroundStatus}
+                  </div>
+                ) : keepNote && previewBelowPublishReady ? (
                   <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
                     {keepNote}
                   </div>
-                )}
-                {/* One-click fix on the AI-improved view. Below 8 it stays active
-                    and regenerates from the current improved image; at 8+ it is
-                    greyed out ("Preview generated"). No paywall/download here —
-                    downloads are deferred to the later monetization gate. */}
-                {improveLoading ? (
-                  <div className="flex flex-wrap items-center gap-3">
-                    <PrimaryButton
-                      onClick={() => undefined}
-                      variant="primary"
-                      disabled
-                    >
-                      <Loader2
-                        className="h-4 w-4 animate-spin"
-                        aria-hidden="true"
-                      />
-                      {improveCountdown}
-                    </PrimaryButton>
-                    <span
-                      className="text-[12.5px] text-[var(--color-ink-soft)]"
-                      aria-live="polite"
-                    >
-                      {improveStatus}
-                    </span>
-                  </div>
-                ) : (
-                  <PrimaryButton
-                    onClick={() => onRetryImprove?.()}
-                    variant={oneClickFixDisabled ? "neutral" : "primary"}
-                    disabled={oneClickFixDisabled || !onRetryImprove}
-                  >
-                    <WandSparkles className="h-4 w-4" aria-hidden="true" />
-                    {oneClickFixDisabled ? "Preview generated" : "One-click fix"}
-                  </PrimaryButton>
-                )}
+                ) : null}
                 {(onEdit || onRevert) && !improveLoading && (
                   <div className="flex flex-wrap items-center gap-3">
                     {onEdit && (
                       <button
                         type="button"
                         onClick={() => setEditModalOpen(true)}
-                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                        disabled={backgroundRefining}
+                        aria-label={
+                          backgroundRefining
+                            ? "Edit photo after background improvement finishes"
+                            : "Edit photo"
+                        }
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]",
+                          backgroundRefining
+                            ? "background-refining-button cursor-wait border-transparent"
+                            : "border-[var(--color-border)]"
+                        )}
                       >
                         <Wrench className="h-4 w-4" aria-hidden="true" />
                         Edit photo
@@ -566,7 +573,7 @@ export function AuditWorkspace({
                   activeTab === "original" &&
                   (hasImprovement || onImprove) && (
                     <div className="flex flex-wrap items-center gap-3">
-                      <PrimaryButton
+                      {!generatedPreviewExists && <PrimaryButton
                         onClick={async () => {
                           if (generatedPreviewExists) {
                             return;
@@ -581,8 +588,8 @@ export function AuditWorkspace({
                             onCta();
                           }
                         }}
-                        variant={generatedPreviewExists ? "neutral" : "primary"}
-                        disabled={improveLoading || generatedPreviewExists}
+                        variant="primary"
+                        disabled={improveLoading}
                       >
                         {improveLoading ? (
                           <Loader2
@@ -597,10 +604,9 @@ export function AuditWorkspace({
                         )}
                         {improveLoading
                           ? improveCountdown
-                          : generatedPreviewExists
-                          ? "Preview generated"
                           : "One-click fix"}
                       </PrimaryButton>
+                      }
                       {onEdit && !improveLoading && (
                         <button
                           type="button"

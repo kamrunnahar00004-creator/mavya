@@ -181,3 +181,33 @@
   .progress-indeterminate { animation: none; left: 0; width: 100%; opacity: 0.4; }
   * { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
+@property --refining-progress {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes background-refining-ring {
+  to {
+    --refining-progress: 1turn;
+  }
+}
+
+.background-refining-button {
+  background:
+    linear-gradient(white, white) padding-box,
+    conic-gradient(
+        from -90deg,
+        var(--color-primary) var(--refining-progress),
+        var(--color-border) 0
+      )
+      border-box;
+  animation: background-refining-ring 2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .background-refining-button {
+    animation: none;
+    --refining-progress: 1turn;
+  }
+}

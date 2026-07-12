@@ -67,6 +67,12 @@ rescoring → completed | rejected | failed | cancelled).
    usable versions, never downgrade the seller.
 6. Seller-directed **edits** are never auto-refined (their result is exactly
    what the seller asked to see).
+7. **One-click means one workflow.** After the seller starts it, the improve
+   button does not appear again on the generated preview. While attempts 2-3
+   run, the current safe result stays visible with rotating background-progress
+   copy; manual edit shows a progress ring and unlocks when refinement ends.
+   After the bounded workflow ends, the seller keeps the strongest safe result
+   and may download it or use manual edit. There is no fourth automatic try.
 
 Execution/durability (no new queue dependency): queued attempts are claimed
 with an atomic `queued → generating` compare-and-set. Triggers: (a) `after()`
