@@ -120,10 +120,8 @@ export default function Page() {
             router.push("/subscribe");
             return;
           }
-          if (body?.code === "allowance_exhausted") {
-            throw new Error(
-              "You have used this month's Photo Credits. They refresh with your next billing period."
-            );
+          if (body?.code === "insufficient_credits") {
+            throw new Error("Your rating credit ran out");
           }
           throw new Error(body?.error || `Score request failed (${res.status})`);
         }

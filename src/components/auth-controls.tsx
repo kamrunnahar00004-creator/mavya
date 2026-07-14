@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { LayoutGrid, LogOut, Settings } from "lucide-react";
+import { LayoutGrid, LogOut, Settings, ChevronDown } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "./auth-modal";
 
@@ -22,6 +22,8 @@ export function AuthControls() {
   const router = useRouter();
   const [modal, setModal] = useState<ModalState>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +79,18 @@ export function AuthControls() {
     router.refresh();
   }, [router]);
 
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (settingsRef.current && !settingsRef.current.contains(e.target as Node)) {
+        setSettingsOpen(false);
+      }
+    }
+    if (settingsOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [settingsOpen]);
+
   // While the auth state is still unknown, render an empty slot instead of the
   // logged-out buttons — otherwise the orange "Sign up" flashes on every
   // authenticated page load before getUser() resolves.
@@ -103,22 +117,39 @@ export function AuthControls() {
             <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
             Dashboard
           </Link>
-          <Link
-            href="/settings"
-            prefetch
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
-          >
-            <Settings className="h-3.5 w-3.5" aria-hidden="true" />
-            <span className="hidden sm:inline">Settings</span>
-          </Link>
-          <button
-            type="button"
-            onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
-          >
-            <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
-            Log out
-          </button>
+          <div className="relative" ref={settingsRef}>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen(!settingsOpen)}
+              className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+            >
+              <Settings className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Settings</span>
+              <ChevronDown className="h-3 w-3" aria-hidden="true" />
+            </button>
+            {settingsOpen && (
+              <div className="absolute right-0 top-full mt-2 w-48 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[var(--shadow-lg)]">
+                <Link
+                  href="/settings"
+                  prefetch
+                  className="block px-4 py-3 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page)] first:rounded-t-[var(--radius-xl)] last:rounded-b-[var(--radius-xl)]"
+                  onClick={() => setSettingsOpen(false)}
+                >
+                  Account & Plan
+                </Link>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleLogout();
+                    setSettingsOpen(false);
+                  }}
+                  className="w-full px-4 py-3 text-left text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page)] first:rounded-t-[var(--radius-xl)] last:rounded-b-[var(--radius-xl)]"
+                >
+                  Log out
+                </button>
+              </div>
+            )}
+          </div>
         </>
       ) : (
         <>

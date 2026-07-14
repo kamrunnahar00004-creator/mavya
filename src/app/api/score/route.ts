@@ -190,9 +190,9 @@ export async function POST(req: NextRequest) {
     return apiError("ai_disabled", "Daily capacity reached. Try again tomorrow.");
   }
 
-  // 7. Atomic allowance charge (1 of 20 monthly assessments). Idempotency =
+  // 7. Atomic credit charge (10 credits per rating). Idempotency =
   //    user + image + version + context, so a double-submit of the same photo
-  //    cannot consume two assessments.
+  //    cannot consume two charges.
   const chargeKey = `${user.id}:score:${entitlement.periodKey}:${imageHash}:${scoringMode}:${rubricVersion}:${contextHash}`;
   const charge = await consumeAllowance({
     userId: user.id,
@@ -201,10 +201,10 @@ export async function POST(req: NextRequest) {
     idempotencyKey: chargeKey,
   });
   if (!charge.ok) {
-    if (charge.code === "allowance_exhausted") {
+    if (charge.code === "insufficient_credits") {
       return apiError(
-        "allowance_exhausted",
-        "You have used this month's 20 Photo Credits. They refresh with your next billing period.",
+        "insufficient_credits",
+        "Your rating credit ran out",
         { remaining: charge.remaining ?? 0, renewsAt: entitlement.currentPeriodEnd }
       );
     }
@@ -226,7 +226,7 @@ export async function POST(req: NextRequest) {
       err instanceof ScorePhotoError
         ? err
         : new ScorePhotoError("AI scoring failed. Try again.", "vision_failed");
-    // Provider/parse failure: refund the assessment (policy: infra failures refund).
+    // Provider/parse failure: refund the rating (policy: infra failures refund).
     if (!charge.duplicate) await refundAllowance(chargeKey);
     logEvent("score.failed", {
       userId: user.id,
@@ -289,7 +289,7 @@ export async function POST(req: NextRequest) {
     score: rubric.overall_score,
     cached: false,
     latencyMs: Date.now() - startedAt,
-    remainingAssessments: charge.remaining,
+    creditsRemaining: charge.remaining,
   });
 
   return NextResponse.json(
@@ -299,7 +299,7 @@ export async function POST(req: NextRequest) {
       imageHash,
       rubricVersion,
       scoreCacheId,
-      assessmentsRemaining: charge.remaining,
+      creditsRemaining: charge.remaining,
     },
     { status: 200 }
   );

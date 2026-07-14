@@ -4,12 +4,11 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
+  Coins,
   CreditCard,
-  ImageUp,
   Loader2,
   LogOut,
   Mail,
-  Wand2,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -20,9 +19,10 @@ type BillingStatus = {
   status: string | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
-  allowances: {
-    assessments: { used: number; limit: number };
-    workflows: { used: number; limit: number };
+  credits: {
+    used: number;
+    remaining: number;
+    limit: number;
   };
 };
 
@@ -195,7 +195,7 @@ export default function SettingsPage() {
         </div>
 
         <p className="mt-2.5 text-[15px] font-semibold text-[var(--color-ink)]">
-          Founding Beta — $19/month
+          Most Popular - $19/month
         </p>
 
         {status?.reason === "past_due" && (
@@ -204,8 +204,8 @@ export default function SettingsPage() {
               className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-weak)]"
               aria-hidden="true"
             />
-            Your payment did not go through, so new Photo Credits and
-            Improvement Credits are paused. Your saved photos are safe.
+            Your payment did not go through. New credits are paused. Your saved
+            photos are safe.
           </p>
         )}
 
@@ -213,28 +213,14 @@ export default function SettingsPage() {
           <div className="mt-4 space-y-3">
             <div className="flex items-center justify-between gap-3">
               <span className="flex items-center gap-2 text-[14px] text-[var(--color-ink)]">
-                <ImageUp
+                <Coins
                   className="h-4 w-4 text-[var(--color-ink-soft)]"
                   aria-hidden="true"
                 />
-                Photo Credits
+                Credits this month
               </span>
               <span className="text-[14px] font-semibold text-[var(--color-ink)]">
-                {status.allowances.assessments.used} of{" "}
-                {status.allowances.assessments.limit} used
-              </span>
-            </div>
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-[14px] text-[var(--color-ink)]">
-                <Wand2
-                  className="h-4 w-4 text-[var(--color-ink-soft)]"
-                  aria-hidden="true"
-                />
-                Improvement Credits
-              </span>
-              <span className="text-[14px] font-semibold text-[var(--color-ink)]">
-                {status.allowances.workflows.used} of{" "}
-                {status.allowances.workflows.limit} used
+                {status.credits.remaining} of {status.credits.limit} remaining
               </span>
             </div>
             {status.currentPeriodEnd && (

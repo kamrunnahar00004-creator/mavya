@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AuthControls } from "./auth-controls";
@@ -13,7 +14,7 @@ export function AppHeader({ showNewAudit = false, onNewAudit }: Props) {
   return (
     <header className="border-b border-[var(--color-border-soft)] bg-[color-mix(in_srgb,var(--color-page)_88%,white)] backdrop-blur-sm">
       <div className="mx-auto flex h-16 max-w-[1200px] items-center justify-between px-6">
-        <div className="flex items-center gap-2.5">
+        <Link href="/dashboard" className="flex items-center gap-2.5 transition-opacity hover:opacity-75">
           <span className="relative h-8 w-8 flex-shrink-0 overflow-hidden">
             {/* Use the provided logo PNG directly; do not reprocess it through Next image optimization. */}
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -26,7 +27,7 @@ export function AppHeader({ showNewAudit = false, onNewAudit }: Props) {
           <span className="text-[17px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
             Mavya
           </span>
-        </div>
+        </Link>
         <div className="flex items-center gap-2">
           {showNewAudit && (
             <button

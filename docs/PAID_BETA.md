@@ -1,6 +1,6 @@
 # Mavya Founding Beta — Paid-Only ($19/month)
 
-Last updated: 2026-07-12. This document is the source of truth for the paid
+Last updated: 2026-07-14. This document is the source of truth for the paid
 beta and SUPERSEDES older docs that describe a free validation product, a
 $4.99 download, rejection of weak source images, or "publish-ready" results.
 Those are no longer active founder decisions.
@@ -8,8 +8,9 @@ Those are no longer active founder decisions.
 ## Founder decisions (active)
 
 - Paid-only beta at **$19/month**. No free AI usage. No free signup credits.
-- **20 photo assessments** per billing month.
-- **12 image-improvement workflows** per billing month.
+- **1,000 shared credits** per Stripe billing period, reset with no rollover.
+- Internal conversion (not customer-facing): a non-cached rating costs 10
+  credits; Improve, Manual Edit, and user Retry cost 20 credits each.
 - One workflow = one user-requested improvement, containing up to **3 total
   generation attempts** (attempt 1 user-visible; attempts 2-3 are automatic
   background refinement — internal quality work, never charged again).
@@ -51,8 +52,8 @@ One workflow (root job id = workflow_id), max 3 attempts, each attempt is one
 `generation_jobs` row (status: queued → generating → fidelity_check →
 rescoring → completed | rejected | failed | cancelled).
 
-1. **Attempt 1** runs in-request (`POST /api/generate`), charges 1 workflow
-   allowance, and is shown immediately when safe. The user never waits for
+1. **Attempt 1** runs in-request (`POST /api/generate`), charges 20 shared
+   credits, and is shown immediately when safe. The user never waits for
    refinements.
 2. If the accepted raw score is **>= 7.5**: displays as 8.0, automatic
    generation STOPS.
@@ -79,7 +80,7 @@ with an atomic `queued → generating` compare-and-set. Triggers: (a) `after()`
 in the generate route — best-effort, same invocation; (b) `/api/generate/worker`
 — the durable backstop (Vercel Cron hourly by default, or any scheduler with
 `Authorization: Bearer $WORKER_SECRET`), which also recovers stale jobs
-(>10 min active → failed, attempt-1 allowance refunded). A cron tick and an
+(>10 min active → failed, attempt-1 credits refunded). A cron tick and an
 `after()` run can never double-execute one attempt (CAS), and the partial
 unique index allows only one active refinement per workflow. Honest
 limitation: on the Vercel Hobby plan cron fires at most daily, so `after()` is
@@ -115,12 +116,14 @@ the practical trigger and the cron is recovery.
   cancel-at-period-end stays active until the period ends; past_due → new AI
   blocked (saved results stay readable); anything else → blocked. Lookup
   failures FAIL CLOSED.
-- Allowances (src/lib/allowances.ts + `consume_allowance` SECURITY DEFINER,
-  service-role only): per (user, billing period) counters, period key =
+- Shared credits (src/lib/allowances.ts + `consume_monthly_credits` SECURITY
+  DEFINER, service-role only): per (user, billing period) counter, period key =
   `current_period_start`. Renewal refreshes exactly once because the period
   key changes exactly once — a duplicate webhook cannot double-grant.
   Consumption is atomic + idempotent (unique key); infrastructure failures
-  refund (`refund_allowance`), honest quality rejections do not.
+  refund their exact charge (`refund_monthly_credits`), honest quality
+  rejections do not. Legacy allowance RPC names remain temporary wrappers for
+  deployment compatibility.
 - Checkout (`POST /api/billing/checkout`): creates/links the Stripe customer
   server-side (metadata.user_id + client_reference_id). The success redirect
   proves nothing; `/subscription/success` polls `GET /api/billing/status`
@@ -129,12 +132,12 @@ the practical trigger and the cron is recovery.
 
 ## Route access matrix
 
-| Route | Auth | Subscription | Allowance |
+| Route | Auth | Subscription | Shared credits |
 |---|---|---|---|
-| POST /api/score | yes | active required | 1 of 20 assessments (cache hit free) |
+| POST /api/score | yes | active required | 10 (cache hit free) |
 | POST /api/checklist | yes | active required | none (bundled) |
 | POST /api/audits | yes | active required | none (persists a paid score) |
-| POST /api/generate | yes | active required | 1 of 12 workflows |
+| POST /api/generate | yes | active required | 20 for a user-started action; automatic refinements free |
 | GET /api/generate | yes | no (read own job) | none |
 | POST /api/photos/select-version | yes | no (managing existing results) | none |
 | GET/POST /api/billing/*, /api/consent, /api/feedback/workflow | yes | no | none |
@@ -170,7 +173,7 @@ Recorded per candidate on `generation_jobs`: raw/calibrated score, calibration
 rule, latency_ms, provider model + prompt version, and columns reserved for
 provider_request_id / provider_usage / estimated_cost_usd (populated as the
 provider client exposes them — see Known gaps). Hard limits: 3 attempts per
-workflow (DB), 12 workflows + 20 assessments per month (atomic counters),
+workflow (DB), 1,000 shared credits per billing period (atomic counter),
 per-user rate limits, `GLOBAL_DAILY_AI_ACTIONS` cost-weighted global ceiling,
 `AI_DISABLED` / `GENERATION_DISABLED` kill switches. The beta may lose money
 to collect data; losses stay visible (job records) and bounded (limits above).
@@ -232,5 +235,5 @@ also tightened. See `docs/CODEX_PAID_BETA_FIX_REPORT.md`.
 - Paid onboarding now routes users by server-derived entitlement: unpaid and
   expired accounts go to `/subscribe`, active accounts go to `/dashboard`, and
   past-due accounts retain read access with billing warnings. `/subscribe` and
-  `/settings` expose the two monthly allowances as customer-facing Photo Credits
-  and Improvement Credits; cancellation remains in Stripe's customer portal.
+  `/settings` expose one shared monthly credit balance; cancellation remains in
+  Stripe's customer portal.

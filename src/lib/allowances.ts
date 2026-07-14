@@ -2,39 +2,30 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/errors";
 
 /**
- * Paid-beta monthly allowances (founder decisions):
- *  - 20 photo assessments per billing month.
- *  - 12 image-improvement workflows per billing month.
- *  - Up to 3 total generation attempts inside one workflow (attempts 2-3 are
- *    internal background refinement and never consume a second workflow).
+ * Shared monthly credits (founder decisions, 2026-07-14):
+ *  - 1,000 credits per Stripe billing period.
+ *  - photo rating: 10 credits (internal kind='assessment')
+ *  - Improve, Manual Edit, user Retry: 20 credits each (internal kind='workflow')
+ *  - Automatic attempts 2-3: free (operation='refine')
+ *  - Internal candidate rescoring: free
+ *  - Score cache hits: free (no provider work)
  *
- * Allowances are ACTIONS, not dollars. They are metered per Stripe billing
- * period (period key = current_period_start), consumed atomically via the
- * SECURITY DEFINER consume_allowance() function that only the service role can
- * execute. Renewal refreshes exactly once because the period key changes
- * exactly once. Infrastructure failures refund (refund_allowance) so a failed
- * workflow is not consumed permanently; honest quality rejections are NOT
- * refunded (the provider cost was genuinely incurred).
+ * Credits are consumed atomically per Stripe billing period (period key =
+ * current_period_start) via SECURITY DEFINER functions (service-role only).
+ * Renewal refreshes exactly once (period key changes once per renewal). Refunds
+ * occur for infrastructure failures only; honest rejections do not refund.
  */
-export const ASSESSMENTS_PER_PERIOD = 20;
-export const WORKFLOWS_PER_PERIOD = 12;
+export const CREDITS_PER_PERIOD = 1000;
+export const RATING_COST = 10;
+export const WORKFLOW_COST = 20;
 
 export type AllowanceKind = "assessment" | "workflow";
 
-const LIMITS: Record<AllowanceKind, number> = {
-  assessment: ASSESSMENTS_PER_PERIOD,
-  workflow: WORKFLOWS_PER_PERIOD,
-};
-
-export function allowanceLimit(kind: AllowanceKind): number {
-  return LIMITS[kind];
-}
-
 export type AllowanceResult =
   | { ok: true; remaining: number; duplicate: boolean }
-  | { ok: false; code: "allowance_exhausted" | "internal_error"; remaining?: number };
+  | { ok: false; code: "insufficient_credits" | "internal_error"; remaining?: number };
 
-/** Atomically consume one unit of an allowance for the given billing period. */
+/** Atomically consume credits for an action (rating, improve, edit, retry). */
 export async function consumeAllowance(args: {
   userId: string;
   kind: AllowanceKind;
@@ -44,11 +35,13 @@ export async function consumeAllowance(args: {
 }): Promise<AllowanceResult> {
   try {
     const admin = createSupabaseAdminClient();
-    const { data, error } = await admin.rpc("consume_allowance", {
+    const cost = args.kind === "assessment" ? RATING_COST : WORKFLOW_COST;
+    const { data, error } = await admin.rpc("consume_monthly_credits", {
       p_user: args.userId,
       p_kind: args.kind,
       p_period: args.periodKey,
-      p_limit: LIMITS[args.kind],
+      p_cost: cost,
+      p_limit: CREDITS_PER_PERIOD,
       p_key: args.idempotencyKey,
       p_ref: args.refId ?? null,
     });
@@ -56,7 +49,7 @@ export async function consumeAllowance(args: {
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) throw new Error("consume_allowance returned no row");
     if (!row.ok) {
-      return { ok: false, code: "allowance_exhausted", remaining: row.remaining ?? 0 };
+      return { ok: false, code: "insufficient_credits", remaining: row.remaining ?? 0 };
     }
     return { ok: true, remaining: row.remaining, duplicate: Boolean(row.duplicate) };
   } catch (err) {
@@ -73,7 +66,7 @@ export async function consumeAllowance(args: {
 export async function refundAllowance(idempotencyKey: string): Promise<boolean> {
   try {
     const admin = createSupabaseAdminClient();
-    const { data, error } = await admin.rpc("refund_allowance", {
+    const { data, error } = await admin.rpc("refund_monthly_credits", {
       p_key: idempotencyKey,
     });
     if (error) throw error;
@@ -91,20 +84,19 @@ export async function refundAllowance(idempotencyKey: string): Promise<boolean> 
 export async function getAllowanceUsage(
   userId: string,
   periodKey: string
-): Promise<{ assessmentsUsed: number; workflowsUsed: number }> {
+): Promise<{ creditsUsed: number }> {
   try {
     const admin = createSupabaseAdminClient();
     const { data } = await admin
       .from("usage_periods")
-      .select("assessments_used, workflows_used")
+      .select("credits_used")
       .eq("user_id", userId)
       .eq("period_key", periodKey)
       .maybeSingle();
     return {
-      assessmentsUsed: data?.assessments_used ?? 0,
-      workflowsUsed: data?.workflows_used ?? 0,
+      creditsUsed: Math.max(0, data?.credits_used ?? 0),
     };
   } catch {
-    return { assessmentsUsed: 0, workflowsUsed: 0 };
+    return { creditsUsed: 0 };
   }
 }

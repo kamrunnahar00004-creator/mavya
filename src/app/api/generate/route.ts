@@ -439,7 +439,7 @@ export async function POST(req: NextRequest) {
     });
   };
 
-  // Atomic workflow allowance charge (1 of 12; duplicates never double-charge).
+  // Atomic workflow credit charge (20 credits per improvement; duplicates never double-charge).
   const charge = await consumeAllowance({
     userId: user.id,
     kind: "workflow",
@@ -451,13 +451,13 @@ export async function POST(req: NextRequest) {
     await patchJob({
       status: "cancelled",
       error_code:
-        charge.code === "allowance_exhausted" ? "allowance_exhausted" : "internal_error",
+        charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
       completed_at: new Date().toISOString(),
     });
-    if (charge.code === "allowance_exhausted") {
+    if (charge.code === "insufficient_credits") {
       return apiError(
-        "allowance_exhausted",
-        "You have used this month's 12 Improvement Credits. They refresh with your next billing period.",
+        "insufficient_credits",
+        "Your product improvement credit ran out",
         { remaining: charge.remaining ?? 0, renewsAt: entitlement.currentPeriodEnd }
       );
     }
@@ -634,7 +634,7 @@ export async function POST(req: NextRequest) {
         error_code: null,
       },
       {
-        workflowsRemaining: charge.remaining,
+        creditsRemaining: charge.remaining,
         keptPrevious: !selected,
         refinement: refinementJobId
           ? { jobId: refinementJobId, status: "queued", attemptNumber: 2 }

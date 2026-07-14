@@ -7,8 +7,9 @@ import {
   shouldQueueRefinement,
 } from "@/lib/workflow-rules";
 import {
-  ASSESSMENTS_PER_PERIOD,
-  WORKFLOWS_PER_PERIOD,
+  CREDITS_PER_PERIOD,
+  RATING_COST,
+  WORKFLOW_COST,
 } from "@/lib/allowances";
 import type { FidelityReport } from "@/lib/fidelity";
 
@@ -26,10 +27,11 @@ const safeFidelity: FidelityReport = {
   reason: "Faithful.",
 };
 
-describe("paid-beta allowance constants (founder decisions)", () => {
-  it("locks 20 assessments / 12 workflows / 3 attempts", () => {
-    expect(ASSESSMENTS_PER_PERIOD).toBe(20);
-    expect(WORKFLOWS_PER_PERIOD).toBe(12);
+describe("paid-beta shared-credit constants (founder decisions)", () => {
+  it("locks 1,000 monthly credits, action costs, and 3 attempts", () => {
+    expect(CREDITS_PER_PERIOD).toBe(1000);
+    expect(RATING_COST).toBe(10);
+    expect(WORKFLOW_COST).toBe(20);
     expect(MAX_ATTEMPTS_PER_WORKFLOW).toBe(3);
     expect(REFINEMENT_STOP_RAW_SCORE).toBe(7.5);
   });

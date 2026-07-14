@@ -7,10 +7,7 @@ import {
   AlertCircle,
   Check,
   Coins,
-  ImageUp,
   Loader2,
-  Sparkles,
-  Wand2,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "@/components/auth-modal";
@@ -21,31 +18,25 @@ type BillingStatus = {
   status: string | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
-  allowances: {
-    assessments: { used: number; limit: number };
-    workflows: { used: number; limit: number };
+  credits: {
+    used: number;
+    remaining: number;
+    limit: number;
   };
 };
 
 /**
  * Customer-facing pricing. Internal terms (assessments, workflows, attempts,
- * refinement jobs) never appear here — everything is a "credit".
+ * refinement jobs) never appear here — everything is one shared "credit" balance.
+ * Features listed by capability, not cost conversion.
  */
-const PLAN_ROWS: { label: string; value: string; icon: typeof Coins }[] = [
-  { label: "Photo Credits", value: "20 every month", icon: ImageUp },
-  { label: "Improvement Credits", value: "12 every month", icon: Wand2 },
-  {
-    label: "Automatic improvement",
-    value: "Your improvement continues in the background",
-    icon: Sparkles,
-  },
-  {
-    label: "Best version",
-    value: "The strongest safe version is selected for you",
-    icon: Check,
-  },
-  { label: "Final choice", value: "You choose the final image", icon: Check },
-  { label: "Cancel", value: "Anytime", icon: Check },
+const FEATURES = [
+  "Product photo ratings",
+  "Thumbnail improvements",
+  "Supporting photo improvements",
+  "Automatic background processing",
+  "Best version selected for you",
+  "Cancel anytime",
 ];
 
 function formatDate(iso: string | null): string {
@@ -202,50 +193,50 @@ function SubscribeInner() {
         </Banner>
       )}
 
-      <div className="mt-8 overflow-hidden rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white shadow-[var(--shadow-soft)]">
+      <div className="mt-8 overflow-hidden rounded-[var(--radius-2xl)] border-2 border-[var(--color-primary)] bg-white shadow-[var(--shadow-soft)]">
+        {/* Most popular badge */}
+        <div className="flex items-center justify-center bg-[var(--color-primary)] px-6 py-3">
+          <span className="text-[13px] font-semibold text-white">Most popular</span>
+        </div>
+
         {/* Price header */}
-        <div className="flex flex-col gap-5 p-6 sm:flex-row sm:items-end sm:justify-between sm:p-8">
+        <div className="flex flex-col gap-2 px-6 py-6 sm:px-8 sm:py-8">
+          <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">
+            Early user discount
+          </p>
+          <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">
+            Lock in this price forever
+          </p>
           <div>
-            <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">
-              Founding Beta
-            </p>
-            <p className="mt-1 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
-              One plan. Everything included.
-            </p>
-          </div>
-          <div className="sm:text-right">
-            <p className="text-[11.5px] font-semibold uppercase tracking-[0.1em] text-[var(--color-ink-soft)]">
-              Monthly
-            </p>
             <p className="font-display text-[40px] font-bold leading-none tracking-[-0.03em] text-[var(--color-ink)]">
               $19
               <span className="text-[16px] font-semibold tracking-normal text-[var(--color-ink-muted)]">
                 /month
               </span>
             </p>
+            <p className="mt-2 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
+              Up to 1,000 AI credits per month
+            </p>
+            <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
+              Need more credits?{" "}
+              <a href="mailto:hello@mavya.ai" className="font-semibold text-[var(--color-primary)]">
+                Contact us
+              </a>
+              .
+            </p>
           </div>
         </div>
 
-        {/* Comparison-style rows */}
-        <div className="border-t border-[var(--color-border-soft)]">
-          {PLAN_ROWS.map((row) => (
-            <div
-              key={row.label}
-              className="flex items-start gap-4 border-b border-[var(--color-border-soft)] px-6 py-3.5 last:border-b-0 sm:px-8"
-            >
-              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-strong-soft)] text-[var(--color-strong)]">
-                <row.icon className="h-3.5 w-3.5" aria-hidden="true" />
-              </span>
-              <div className="flex min-w-0 flex-1 flex-col gap-0.5 sm:flex-row sm:items-baseline sm:justify-between sm:gap-4">
-                <span className="text-[14px] font-semibold text-[var(--color-ink)]">
-                  {row.label}
-                </span>
-                <span className="text-[14px] leading-relaxed text-[var(--color-ink-muted)] sm:text-right">
-                  {row.value}
-                </span>
-              </div>
-            </div>
-          ))}
+        {/* Features list */}
+        <div className="border-t border-[var(--color-border-soft)] px-6 py-6 sm:px-8 sm:py-8">
+          <ul className="space-y-3">
+            {FEATURES.map((feature) => (
+              <li key={feature} className="flex items-start gap-3">
+                <Check className="mt-0.5 h-5 w-5 shrink-0 text-[var(--color-primary)]" />
+                <span className="text-[15px] text-[var(--color-ink)]">{feature}</span>
+              </li>
+            ))}
+          </ul>
         </div>
 
         {/* Action area */}
@@ -256,33 +247,17 @@ function SubscribeInner() {
                 <p className="text-[12.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
                   This billing month
                 </p>
-                <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                  <div>
-                    <p className="text-[13.5px] font-semibold text-[var(--color-ink)]">
-                      Photo Credits
-                    </p>
-                    <p className="text-[13px] text-[var(--color-ink-muted)]">
-                      {status.allowances.assessments.used} of{" "}
-                      {status.allowances.assessments.limit} used
-                    </p>
-                    <UsageBar
-                      used={status.allowances.assessments.used}
-                      limit={status.allowances.assessments.limit}
-                    />
-                  </div>
-                  <div>
-                    <p className="text-[13.5px] font-semibold text-[var(--color-ink)]">
-                      Improvement Credits
-                    </p>
-                    <p className="text-[13px] text-[var(--color-ink-muted)]">
-                      {status.allowances.workflows.used} of{" "}
-                      {status.allowances.workflows.limit} used
-                    </p>
-                    <UsageBar
-                      used={status.allowances.workflows.used}
-                      limit={status.allowances.workflows.limit}
-                    />
-                  </div>
+                <div className="mt-3">
+                  <p className="text-[13.5px] font-semibold text-[var(--color-ink)]">
+                    Credits
+                  </p>
+                  <p className="text-[13px] text-[var(--color-ink-muted)]">
+                    {status.credits.remaining} of {status.credits.limit} remaining
+                  </p>
+                  <UsageBar
+                    used={status.credits.used}
+                    limit={status.credits.limit}
+                  />
                 </div>
                 {status.currentPeriodEnd && (
                   <p className="mt-3.5 text-[12.5px] text-[var(--color-ink-soft)]">

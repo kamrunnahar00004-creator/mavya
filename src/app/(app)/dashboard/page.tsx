@@ -95,8 +95,8 @@ export default async function DashboardPage() {
         aria-hidden="true"
       />
       <p className="text-[13.5px] leading-relaxed text-[var(--color-ink)]">
-        Your payment did not go through, so new Photo Credits and Improvement
-        Credits are paused. Your saved photos are safe.{" "}
+        Your payment did not go through, so new credits are paused. Your saved
+        photos are safe.{" "}
         <Link href="/settings" className="font-semibold underline">
           Fix billing in Settings
         </Link>
@@ -113,7 +113,7 @@ export default async function DashboardPage() {
           <ImageUp className="h-11 w-11" strokeWidth={1.5} aria-hidden="true" />
         </span>
         <h1 className="mt-7 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
-          {pastDue ? "Your Photo Credits are paused" : "Rate your first product thumbnail"}
+          {pastDue ? "Your credits are paused" : "Rate your first product thumbnail"}
         </h1>
         <p className="mt-3 max-w-[400px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
           {pastDue

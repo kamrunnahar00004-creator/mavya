@@ -669,7 +669,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             ok: false,
             jobId: "",
             status:
-              err.code === "allowance_exhausted" ||
+              err.code === "insufficient_credits" ||
               err.code === "subscription_required" ||
               err.code === "subscription_past_due"
                 ? "cancelled"
@@ -844,8 +844,8 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
             | { error?: string; code?: string }
             | null;
           throw new Error(
-            b?.code === "allowance_exhausted"
-              ? "You have used this month's Photo Credits, so this photo was not rated. They refresh with your next billing period."
+            b?.code === "insufficient_credits"
+              ? "Your rating credit ran out"
               : b?.code === "subscription_required" || b?.code === "subscription_past_due"
               ? "An active plan is needed to rate photos. Check Settings to update billing."
               : b?.error || `Score failed (${res.status})`

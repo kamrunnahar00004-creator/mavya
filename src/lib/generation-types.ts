@@ -45,8 +45,8 @@ export type GenerationJobPayload = {
   candidateRubric: RubricJson | null;
   fidelity: FidelityReport | null;
   unresolvedIssues?: string[];
-  /** Remaining improvement workflows this billing month. */
-  workflowsRemaining?: number;
+  /** Remaining shared credits in the current billing period. */
+  creditsRemaining?: number;
   /** A completed result was persisted but did not replace the stronger selection. */
   keptPrevious?: boolean;
   /** Which bounded attempt this job is (1 = user-visible, 2-3 = background refinement). */

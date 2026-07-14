@@ -5,6 +5,13 @@ NOT pushed. Working tree contains the full implementation for your independent
 review. Do not treat anything below as production-ready until you have
 verified it.
 
+Update 2026-07-14: migration 0009 supersedes the separate 20-assessment / 12-
+workflow customer allowance with 1,000 shared credits per Stripe billing
+period. Internal costs are 10 for a non-cached rating and 20 for a user-started
+Improve, Manual Edit, or Retry. Automatic attempts 2-3 and internal rescoring
+are free. Customer UI shows only the shared balance. Historical sections below
+describe the original 0006 implementation and should be read with this update.
+
 ## 1. Summary of what was implemented
 
 - Temporary beta score calibration (`near_eight_normalization_v1`): raw
@@ -283,8 +290,9 @@ WORKER_SECRET (Vercel also injects CRON_SECRET for the cron; either works).
 5. Improve a weak photo → first result appears; if its raw score < 7.5, the
    quiet refining note shows; a stronger version swaps in with the honest
    score note; a weaker background result keeps the current version.
-6. Rate 20 photos → 21st shows the allowance message; ledger rows visible in
-   `allowance_ledger`.
+6. In a test database, set the current period to 990 credits used: one rating
+   succeeds and leaves 0; another rating shows `Your rating credit ran out`.
+   Verify the 10-credit ledger amount in `allowance_ledger`.
 7. Billing portal: cancel at period end → /subscribe shows the end date and
    access continues; expire it (Stripe test clock) → AI blocked, dashboard
    still readable.
