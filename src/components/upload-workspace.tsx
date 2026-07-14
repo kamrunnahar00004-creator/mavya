@@ -10,9 +10,9 @@ type Props = {
 };
 
 const BENEFITS = [
-  "Rated in seconds",
-  "Fixed in one click",
-  "Founding Beta - $19/month",
+  "Get your score in 10 seconds",
+  "Improve it in one click",
+  "Early user price: $19/month",
 ];
 
 export function UploadWorkspace({ onFile, errorBanner }: Props) {
@@ -33,7 +33,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
   return (
     <main className="px-6 py-12 sm:py-16 lg:py-[7vh]">
       <div className="mx-auto grid max-w-[1120px] grid-cols-1 items-center gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-14">
-        {/* LEFT â€” message */}
+        {/* LEFT Ã¢â‚¬â€ message */}
         <div className="text-center lg:text-left">
           <h1 className="font-display text-[38px] font-bold leading-[1.06] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[46px] lg:text-[50px]">
             Your{" "}
@@ -68,7 +68,7 @@ export function UploadWorkspace({ onFile, errorBanner }: Props) {
           </ul>
         </div>
 
-        {/* RIGHT â€” the upload action, the focal point */}
+        {/* RIGHT Ã¢â‚¬â€ the upload action, the focal point */}
         <div className="flex flex-col gap-3.5">
           {errorBanner && (
             <div
