@@ -9,10 +9,9 @@ import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
+import { batchSignUrls } from "@/lib/batch-sign-urls";
 
 export const dynamic = "force-dynamic";
-
-const SIGNED_URL_TTL = 24 * 60 * 60; // 24h; /api/storage/sign refreshes on demand
 
 type AuditRow = { rubric: RubricJson; created_at: string };
 type PhotoRow = {
@@ -97,113 +96,163 @@ export default async function ProductPage({
     }
   }
 
-  const signed = await Promise.all(
-    rows.map(async (row) => {
-      const latest = [...(row.audits ?? [])].sort((a, b) =>
-        b.created_at.localeCompare(a.created_at)
-      )[0];
-      if (!latest?.rubric) return null;
-      const { data } = await supabase.storage
-        .from("product-photos")
-        .createSignedUrl(row.storage_path, SIGNED_URL_TTL);
-      if (!data?.signedUrl) return null;
+  // Pre-calculate selected and completed rows for each photo to avoid duplication.
+  // Only process photos with valid latest rubric.
+  type PhotoMetadata = {
+    selectedRow: JobRow | null;
+    completedRows: JobRow[];
+  };
+  const photoMetadata = new Map<string, PhotoMetadata>();
+  const validPhotoIds = new Set<string>();
 
+  for (const row of rows) {
+    // Determine if this photo is usable (has a valid latest rubric)
+    const latest = [...(row.audits ?? [])].sort((a, b) =>
+      b.created_at.localeCompare(a.created_at)
+    )[0];
+    if (!latest?.rubric) continue; // Skip unusable photos
+
+    validPhotoIds.add(row.id);
+
+    const selectedRow = row.selected_generation_job_id
+      ? jobsById.get(row.selected_generation_job_id) ?? null
+      : null;
+
+    const allCompletedRows = [...jobsById.values()]
+      .filter((j) => j.photo_id === row.id && j.status === "completed" && j.result_storage_path)
+      .sort((a, b) => a.created_at.localeCompare(b.created_at));
+    let completedRows = allCompletedRows.slice(-3);
+    if (
+      selectedRow?.status === "completed" &&
+      selectedRow.result_storage_path &&
+      !completedRows.some((job) => job.id === selectedRow.id)
+    ) {
+      completedRows = [
+        selectedRow,
+        ...allCompletedRows.filter((job) => job.id !== selectedRow.id).slice(-2),
+      ].sort((a, b) => a.created_at.localeCompare(b.created_at));
+    }
+
+    photoMetadata.set(row.id, { selectedRow, completedRows });
+  }
+
+  // Collect all unique storage paths and sign them in batch.
+  // Only collect paths for photos with valid rubrics.
+  const pathsToSign: (string | null)[] = [];
+  for (const row of rows) {
+    if (!validPhotoIds.has(row.id)) continue;
+
+    pathsToSign.push(row.storage_path); // Original photo
+
+    const metadata = photoMetadata.get(row.id);
+    if (metadata) {
+      // Add all result paths from completed versions
+      for (const v of metadata.completedRows) {
+        pathsToSign.push(v.result_storage_path);
+      }
+
+      // Add result path from latest job if completed
       const jobRow = jobsByPhoto.get(row.id) ?? null;
-      let lastJob: InitialJob | null = null;
-      let selectedJob: InitialJob | null = null;
-
-      const selectedRow = row.selected_generation_job_id
-        ? jobsById.get(row.selected_generation_job_id) ?? null
-        : null;
-
-      // Completed versions for the picker (oldest first, max 3). Always retain
-      // the seller's selected version even when it is older than the latest
-      // three, otherwise refresh would show no selected card.
-      const allCompletedRows = [...jobsById.values()]
-        .filter((j) => j.photo_id === row.id && j.status === "completed" && j.result_storage_path)
-        .sort((a, b) => a.created_at.localeCompare(b.created_at));
-      let completedRows = allCompletedRows.slice(-3);
-      if (
-        selectedRow?.status === "completed" &&
-        selectedRow.result_storage_path &&
-        !completedRows.some((job) => job.id === selectedRow.id)
-      ) {
-        completedRows = [
-          selectedRow,
-          ...allCompletedRows.filter((job) => job.id !== selectedRow.id).slice(-2),
-        ].sort((a, b) => a.created_at.localeCompare(b.created_at));
+      if (jobRow?.status === "completed" && jobRow.result_storage_path) {
+        pathsToSign.push(jobRow.result_storage_path);
       }
-      const versions: InitialJob[] = [];
-      for (const v of completedRows) {
-        const { data: signedVersion } = await supabase.storage
-          .from("product-photos")
-          .createSignedUrl(v.result_storage_path!, SIGNED_URL_TTL);
-        if (!signedVersion?.signedUrl) continue;
-        versions.push({
-          id: v.id,
-          status: v.status,
-          stage: v.stage,
-          outcome: v.outcome,
-          errorCode: v.error_code,
-          resultUrl: signedVersion.signedUrl,
-          candidateRubric: v.candidate_rubric,
-          fidelity: v.fidelity,
-          attemptNumber: v.attempt_number ?? 1,
-        });
+
+      // Add result path from selected job if completed
+      if (metadata.selectedRow?.status === "completed" && metadata.selectedRow.result_storage_path) {
+        pathsToSign.push(metadata.selectedRow.result_storage_path);
       }
-      if (jobRow) {
-        let resultUrl: string | null = null;
-        if (jobRow.status === "completed" && jobRow.result_storage_path) {
-          const { data: signedResult } = await supabase.storage
-            .from("product-photos")
-            .createSignedUrl(jobRow.result_storage_path, SIGNED_URL_TTL);
-          resultUrl = signedResult?.signedUrl ?? null;
-        }
-        lastJob = {
-          id: jobRow.id,
-          status: jobRow.status,
-          stage: jobRow.stage,
-          outcome: jobRow.outcome,
-          errorCode: jobRow.error_code,
+    }
+  }
+
+  // Sign all unique paths in one batch
+  const signedUrls = await batchSignUrls(supabase, pathsToSign);
+
+  // Build InitialPhotos using the signed URLs
+  const signed = rows.map((row) => {
+    // Skip photos without valid metadata (no valid rubric, no paths collected)
+    if (!validPhotoIds.has(row.id)) return null;
+
+    const metadata = photoMetadata.get(row.id);
+    if (!metadata) return null;
+
+    const { selectedRow, completedRows } = metadata;
+
+    // Get the latest rubric (we know it exists because validPhotoIds includes this photo)
+    const latest = [...(row.audits ?? [])].sort((a, b) =>
+      b.created_at.localeCompare(a.created_at)
+    )[0];
+
+    const imageSrc = signedUrls.get(row.storage_path);
+    if (!imageSrc) return null;
+    const jobRow = jobsByPhoto.get(row.id) ?? null;
+    let lastJob: InitialJob | null = null;
+    let selectedJob: InitialJob | null = null;
+
+    const versions: InitialJob[] = [];
+    for (const v of completedRows) {
+      const resultUrl = signedUrls.get(v.result_storage_path!) ?? null;
+      if (!resultUrl) continue;
+      versions.push({
+        id: v.id,
+        status: v.status,
+        stage: v.stage,
+        outcome: v.outcome,
+        errorCode: v.error_code,
+        resultUrl,
+        candidateRubric: v.candidate_rubric,
+        fidelity: v.fidelity,
+        attemptNumber: v.attempt_number ?? 1,
+      });
+    }
+
+    if (jobRow) {
+      let resultUrl: string | null = null;
+      if (jobRow.status === "completed" && jobRow.result_storage_path) {
+        resultUrl = signedUrls.get(jobRow.result_storage_path) ?? null;
+      }
+      lastJob = {
+        id: jobRow.id,
+        status: jobRow.status,
+        stage: jobRow.stage,
+        outcome: jobRow.outcome,
+        errorCode: jobRow.error_code,
+        resultUrl,
+        candidateRubric: jobRow.candidate_rubric,
+        fidelity: jobRow.fidelity,
+        attemptNumber: jobRow.attempt_number ?? 1,
+      };
+    }
+
+    if (selectedRow && selectedRow.status === "completed" && selectedRow.result_storage_path) {
+      const resultUrl = signedUrls.get(selectedRow.result_storage_path) ?? null;
+      if (resultUrl) {
+        selectedJob = {
+          id: selectedRow.id,
+          status: selectedRow.status,
+          stage: selectedRow.stage,
+          outcome: selectedRow.outcome,
+          errorCode: selectedRow.error_code,
           resultUrl,
-          candidateRubric: jobRow.candidate_rubric,
-          fidelity: jobRow.fidelity,
-          attemptNumber: jobRow.attempt_number ?? 1,
+          candidateRubric: selectedRow.candidate_rubric,
+          fidelity: selectedRow.fidelity,
         };
       }
+    }
 
-      if (selectedRow?.status === "completed" && selectedRow.result_storage_path) {
-        const { data: signedSelected } = await supabase.storage
-          .from("product-photos")
-          .createSignedUrl(selectedRow.result_storage_path, SIGNED_URL_TTL);
-        if (signedSelected?.signedUrl) {
-          selectedJob = {
-            id: selectedRow.id,
-            status: selectedRow.status,
-            stage: selectedRow.stage,
-            outcome: selectedRow.outcome,
-            errorCode: selectedRow.error_code,
-            resultUrl: signedSelected.signedUrl,
-            candidateRubric: selectedRow.candidate_rubric,
-            fidelity: selectedRow.fidelity,
-          };
-        }
-      }
+    return {
+      id: row.id,
+      role: row.role,
+      imageSrc,
+      storagePath: row.storage_path,
+      rubric: latest.rubric,
+      lastJob,
+      selectedJob,
+      selectedJobId: row.selected_generation_job_id,
+      selectionSource: row.selection_source ?? "auto",
+      versions,
+    } satisfies InitialPhoto as InitialPhoto;
+  });
 
-      return {
-        id: row.id,
-        role: row.role,
-        imageSrc: data.signedUrl,
-        storagePath: row.storage_path,
-        rubric: latest.rubric,
-        lastJob,
-        selectedJob,
-        selectedJobId: row.selected_generation_job_id,
-        selectionSource: row.selection_source ?? "auto",
-        versions,
-      } satisfies InitialPhoto as InitialPhoto;
-    })
-  );
   const initialPhotos: InitialPhoto[] = signed.filter(
     (p): p is InitialPhoto => p !== null
   );

@@ -5,6 +5,7 @@ import { AddProductCard } from "@/components/dashboard/add-product";
 import { ProductCard } from "@/components/dashboard/product-card";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
+import { batchSignUrls } from "@/lib/batch-sign-urls";
 
 export const dynamic = "force-dynamic";
 
@@ -54,39 +55,42 @@ export default async function DashboardPage() {
 
   const products = (data as ProductRow[] | null) ?? [];
 
-  // Build a signed thumbnail URL for each product's main photo.
-  const cards = await Promise.all(
-    products.map(async (p, index) => {
-      const main = (p.photos ?? []).find((ph) => ph.role === "main");
-      let thumbnailUrl: string | null = null;
-      let storagePath: string | null = null;
-      let score: number | null = null;
-      let topFix: string | null = null;
-      if (main) {
-        const { data: signed } = await supabase.storage
-          .from("product-photos")
-          .createSignedUrl(main.storage_path, 24 * 60 * 60);
-        thumbnailUrl = signed?.signedUrl ?? null;
-        storagePath = main.storage_path;
-        const latest = [...(main.audits ?? [])].sort((a, b) =>
-          b.created_at.localeCompare(a.created_at)
-        )[0];
-        score = typeof latest?.overall_score === "number" ? latest.overall_score : null;
-        // Show the top recommended fix only when the photo still needs work.
-        if (typeof score === "number" && score < 8) {
-          topFix = latest?.rubric?.priority_action?.trim() || null;
-        }
+  // Collect all main photo storage paths
+  const mainPhotoPaths = products
+    .map((p) => (p.photos ?? []).find((ph) => ph.role === "main")?.storage_path)
+    .filter((p): p is string => Boolean(p));
+
+  // Sign all main photo paths in one batch
+  const signedUrls = await batchSignUrls(supabase, mainPhotoPaths);
+
+  // Build cards using the signed URLs
+  const cards = products.map((p, index) => {
+    const main = (p.photos ?? []).find((ph) => ph.role === "main");
+    let thumbnailUrl: string | null = null;
+    let storagePath: string | null = null;
+    let score: number | null = null;
+    let topFix: string | null = null;
+    if (main) {
+      thumbnailUrl = signedUrls.get(main.storage_path) ?? null;
+      storagePath = main.storage_path;
+      const latest = [...(main.audits ?? [])].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at)
+      )[0];
+      score = typeof latest?.overall_score === "number" ? latest.overall_score : null;
+      // Show the top recommended fix only when the photo still needs work.
+      if (typeof score === "number" && score < 8) {
+        topFix = latest?.rubric?.priority_action?.trim() || null;
       }
-      return {
-        id: p.id,
-        name: p.name?.trim() || `Product ${index + 1}`,
-        thumbnailUrl,
-        storagePath,
-        score,
-        topFix,
-      };
-    })
-  );
+    }
+    return {
+      id: p.id,
+      name: p.name?.trim() || `Product ${index + 1}`,
+      thumbnailUrl,
+      storagePath,
+      score,
+      topFix,
+    };
+  });
 
   const pastDueBanner = pastDue ? (
     <div className="mx-auto mt-6 flex max-w-[1200px] items-start gap-2.5 rounded-[var(--radius-xl)] border border-[var(--color-weak)]/40 bg-[var(--color-weak-soft)] p-4">
