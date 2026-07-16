@@ -57,9 +57,18 @@ describe("reversible edit hydration", () => {
     expect(page).toContain("hasAlternateGeneration: row.has_alternate_generation");
   });
 
-  it("rehydrates the toggle and uses the atomic swap endpoint", () => {
+  it("rehydrates the durable pre-edit snapshot", () => {
     expect(workspace).toContain("if (p.hasAlternateGeneration)");
-    expect(workspace).toContain("body: JSON.stringify({ photoId: photo.id, swap: true })");
-    expect(workspace).toContain('active.reverted ? "Restore latest edit" : "Revert last edit"');
+  });
+
+  it("the version picker persists picks through select-version (last five, Original included)", () => {
+    // The swap toggle UI was superseded (founder decision, 2026-07-16) by a
+    // single version picker; the 0015 swap endpoint remains server-side.
+    expect(workspace).toContain(
+      "body: JSON.stringify({ photoId: photo.id, jobId })"
+    );
+    expect(workspace).toContain("versionOptions");
+    expect(workspace).toContain(".slice(-5)");
+    expect(workspace).toContain('label: "Original"');
   });
 });
