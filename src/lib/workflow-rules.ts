@@ -57,18 +57,19 @@ export function shouldQueueRefinement(args: {
 export type SelectionSource = "auto" | "user";
 
 /**
- * May a newly completed SAFE candidate become the selected (recommended)
+ * May a newly completed candidate become the selected (recommended)
  * version of the photo?
  *
- *  - Unsafe candidates never select (callers must check candidateIsSafe first;
- *    this function re-checks via `candidateSafe` as defense in depth).
- *  - A user's explicit manual selection is never overwritten automatically.
- *    Only a NEW user-requested operation (edit) may take selection again.
- *  - Automatic selection requires a STRICTLY higher raw score than the
- *    currently selected version. Ties keep the current version (never
- *    downgrade, never churn on equal quality).
  *  - A seller-directed edit is what the seller explicitly asked to see, so it
  *    selects even when its score is lower.
+ *  - A user's explicit manual pick (select-version / revert) blocks only
+ *    AUTOMATIC background refinement. A NEW seller-initiated operation
+ *    (improve/retry) is itself explicit intent, so keep-better applies.
+ *  - Selection requires a STRICTLY higher raw score than the currently
+ *    selected version. Ties keep the current version (never downgrade,
+ *    never churn on equal quality).
+ *  - Warnings (candidateSafe=false) never block: all generated images are
+ *    shown with honest scores and the seller decides.
  */
 export function resolveAutoSelection(args: {
   operation: "improve" | "edit" | "retry" | "refine";
@@ -80,10 +81,10 @@ export function resolveAutoSelection(args: {
   /** How the current selection was made; null when nothing is selected. */
   currentSelectionSource: SelectionSource | null;
 }): boolean {
-  // Score-based selection: warnings (candidateSafe=false) don't block.
-  // All generated images are shown. Seller chooses which to use.
   if (args.operation === "edit") return true;
-  if (args.currentSelectionSource === "user") return false;
+  if (args.operation === "refine" && args.currentSelectionSource === "user") {
+    return false;
+  }
   if (args.candidateRawScore === null) return false;
   if (args.currentRawScore === null) return true;
   return args.candidateRawScore > args.currentRawScore;

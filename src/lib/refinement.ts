@@ -112,6 +112,7 @@ export async function maybeQueueRefinement(args: {
     | "photo_id"
     | "source_audit_id"
     | "operation"
+    | "edit_instruction"
     | "workflow_id"
     | "attempt_number"
     | "allowance_key"
@@ -120,9 +121,6 @@ export async function maybeQueueRefinement(args: {
   acceptedRawScore: number | null;
 }): Promise<string | null> {
   const job = args.completedJob;
-  // Seller-directed edits are exactly what the seller asked to see; automatic
-  // refinement must not chase them with audit-driven changes.
-  if (job.operation === "edit") return null;
   if (generationDisabled()) return null;
   const workflowId = job.workflow_id ?? job.id;
   const attemptNumber = job.attempt_number ?? 1;
@@ -148,6 +146,9 @@ export async function maybeQueueRefinement(args: {
       status: "queued",
       stage: "queued",
       operation: "refine",
+      // Edit workflows carry the seller's instruction into attempts 2-3 so a
+      // fresh-from-original retry can re-apply exactly what was asked.
+      edit_instruction: job.edit_instruction ?? null,
       provider_model: getImageModel(),
       prompt_version: GENERATION_PROMPT_VERSION,
       workflow_id: workflowId,
@@ -177,7 +178,7 @@ export async function recoverStaleJobs(admin: AdminClient): Promise<number> {
   const { data: stale } = await admin
     .from("generation_jobs")
     .select(
-      "id, user_id, product_id, photo_id, source_audit_id, operation, workflow_id, attempt_number, allowance_key, credit_key"
+      "id, user_id, product_id, photo_id, source_audit_id, operation, edit_instruction, workflow_id, attempt_number, allowance_key, credit_key"
     )
     .in("status", ["generating", "fidelity_check", "rescoring"])
     .lt("updated_at", cutoff)
@@ -214,6 +215,7 @@ export async function recoverStaleJobs(admin: AdminClient): Promise<number> {
           photo_id: job.photo_id,
           source_audit_id: job.source_audit_id,
           operation: job.operation,
+          edit_instruction: job.edit_instruction,
           workflow_id: job.workflow_id,
           attempt_number: job.attempt_number,
           allowance_key: job.allowance_key,
@@ -406,6 +408,11 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
       extraConstraints,
       mainProductContext,
       mode,
+      // Edit workflow: when polishing FROM the parent's result the edit is
+      // already baked into the base image (re-applying could double-apply,
+      // e.g. "make the background darker"). Only a fresh attempt from the
+      // ORIGINAL must re-apply the seller's instruction.
+      editInstruction: baseBuffer ? undefined : job.edit_instruction ?? undefined,
       onStage: async (stage) => {
         await patch({ status: stage, stage });
       },

@@ -603,18 +603,19 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
           : "improve_clicked"
       );
 
-      const revertSnap: RevertSnap | null =
-        isEdit && photo.audit.improvedSrc
-          ? {
-              improvedSrc: photo.audit.improvedSrc,
-              improvedAudit: photo.audit.improvedAudit,
-              improvedScore: photo.audit.improvedScore,
-              improvedVerdict: photo.audit.improvedVerdict,
-              lastJobId: photo.lastJobId,
-              freePreview: photo.freePreview,
-              freePreviewMessage: photo.freePreviewMsg,
-            }
-          : photo.revertSnap;
+      // Snapshot BEFORE any edit (even from the original, where there is no
+      // preview yet) so "Revert last edit" can restore the exact prior state.
+      const revertSnap: RevertSnap | null = isEdit
+        ? {
+            improvedSrc: photo.audit.improvedSrc,
+            improvedAudit: photo.audit.improvedAudit,
+            improvedScore: photo.audit.improvedScore,
+            improvedVerdict: photo.audit.improvedVerdict,
+            lastJobId: photo.lastJobId,
+            freePreview: photo.freePreview,
+            freePreviewMessage: photo.freePreviewMsg,
+          }
+        : photo.revertSnap;
 
       const idempotencyKey = newId();
       const useBase = (retry || (isEdit && editSource === "preview")) && photo.lastJobId;
@@ -725,6 +726,7 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     const snap = photo.revertSnap;
     patch(photo.id, {
       lastJobId: snap.lastJobId,
+      selectedJobId: snap.lastJobId ?? null,
       freePreview: Boolean(snap.freePreview),
       freePreviewMsg: snap.freePreviewMessage,
       canRetry:
@@ -738,6 +740,22 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
         improvedVerdict: snap.improvedVerdict,
       },
     });
+    // Persist the revert so it survives refresh: reselect the previous version
+    // (or the original when there was no preview). selection_source becomes
+    // 'user', which blocks background refinement from re-replacing it.
+    void fetch("/api/photos/select-version", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ photoId: photo.id, jobId: snap.lastJobId ?? null }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error(String(res.status));
+      })
+      .catch(() => {
+        setNotice(
+          "The revert is showing here but could not be saved. It may reappear after a refresh."
+        );
+      });
   }, [activeId, patch]);
 
   const handleSelectSlot = useCallback((id: string) => {

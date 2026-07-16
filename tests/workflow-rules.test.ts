@@ -113,7 +113,7 @@ describe("resolveAutoSelection (score-based, never override the seller)", () => 
     ).toBe(true);
   });
 
-  it("the seller's manual pick is never overwritten automatically", () => {
+  it("the seller's manual pick is never overwritten by background refinement", () => {
     expect(
       resolveAutoSelection({
         operation: "refine",
@@ -123,11 +123,26 @@ describe("resolveAutoSelection (score-based, never override the seller)", () => 
         currentSelectionSource: "user",
       })
     ).toBe(false);
+  });
+
+  it("a NEW seller-initiated retry applies keep-better even after a manual pick", () => {
+    // The seller reverted (selection_source='user'), then asked for another
+    // version: that's explicit intent, so a strictly stronger result selects.
     expect(
       resolveAutoSelection({
         operation: "retry",
         candidateSafe: true,
         candidateRawScore: 9.9,
+        currentRawScore: 3.0,
+        currentSelectionSource: "user",
+      })
+    ).toBe(true);
+    // ...but a weaker one still keeps the seller's pick.
+    expect(
+      resolveAutoSelection({
+        operation: "retry",
+        candidateSafe: true,
+        candidateRawScore: 2.5,
         currentRawScore: 3.0,
         currentSelectionSource: "user",
       })

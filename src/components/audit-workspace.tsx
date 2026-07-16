@@ -530,7 +530,27 @@ export function AuditWorkspace({
                     {keepNote}
                   </div>
                 ) : null}
-                {(onEdit || onRevert) && !improveLoading && (
+                {improveLoading ? (
+                  // An edit (or retry) launched from the preview: keep the white
+                  // Edit-style button visible as a disabled loading state with
+                  // the same countdown treatment as One-click fix.
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      disabled
+                      className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                    >
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                      {improveCountdown}
+                    </button>
+                    <span
+                      className="text-[12.5px] text-[var(--color-ink-soft)]"
+                      aria-live="polite"
+                    >
+                      {improveStatus}
+                    </span>
+                  </div>
+                ) : (onEdit || onRevert) ? (
                   <div className="flex flex-wrap items-center gap-3">
                     {onEdit && (
                       <button
@@ -563,7 +583,7 @@ export function AuditWorkspace({
                       </button>
                     )}
                   </div>
-                )}
+                ) : null}
               </div>
             ) : (
               <>
