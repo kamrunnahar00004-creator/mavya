@@ -136,7 +136,7 @@ export function AuditWorkspace({
     initialPreview ? "preview" : "original"
   );
   const [previewUnlocked, setPreviewUnlocked] = useState(initialPreview);
-  const [hasImprovement, setHasImprovement] = useState(false);
+  const [hasImprovement, setHasImprovement] = useState(!!state.improvedSrc);
 
   useEffect(() => {
     if (!animate) return;

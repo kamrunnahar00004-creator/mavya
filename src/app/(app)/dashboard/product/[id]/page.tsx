@@ -54,12 +54,13 @@ export default async function ProductPage({
 
   // Paid-only gate: no/expired plan -> credits page. past_due may still VIEW
   // saved results (new AI usage is blocked server-side).
-  const entitlement = await getEntitlement(user.id);
+  const [entitlement, supabase] = await Promise.all([
+    getEntitlement(user.id),
+    createSupabaseServerClient(),
+  ]);
   if (!entitlement.active && entitlement.reason !== "past_due") {
     redirect("/subscribe");
   }
-
-  const supabase = await createSupabaseServerClient();
 
   const { data: product } = await supabase
     .from("products")
@@ -81,6 +82,7 @@ export default async function ProductPage({
 
   // Latest generation job per photo (RLS scopes to the owner).
   const jobsByPhoto = new Map<string, JobRow>();
+  const jobsByPhotoId = new Map<string, JobRow[]>();
   const jobsById = new Map<string, JobRow>();
   if (photoIds.length > 0) {
     const { data: jobData } = await supabase
@@ -93,6 +95,9 @@ export default async function ProductPage({
     for (const j of (jobData as JobRow[] | null) ?? []) {
       jobsById.set(j.id, j);
       if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
+      const list = jobsByPhotoId.get(j.photo_id) ?? [];
+      list.push(j);
+      jobsByPhotoId.set(j.photo_id, list);
     }
   }
 
@@ -118,8 +123,8 @@ export default async function ProductPage({
       ? jobsById.get(row.selected_generation_job_id) ?? null
       : null;
 
-    const allCompletedRows = [...jobsById.values()]
-      .filter((j) => j.photo_id === row.id && j.status === "completed" && j.result_storage_path)
+    const allCompletedRows = (jobsByPhotoId.get(row.id) ?? [])
+      .filter((j) => j.status === "completed" && j.result_storage_path)
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
     let completedRows = allCompletedRows.slice(-3);
     if (

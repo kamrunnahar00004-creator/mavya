@@ -295,6 +295,15 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
   }, [photos]);
 
   useEffect(() => {
+    setPhotos(initialPhotos.map(makePhoto));
+    setActiveId(
+      initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
+    );
+    setChecklist([]);
+    setNotice(null);
+  }, [initialPhotos]);
+
+  useEffect(() => {
     const timers = pollTimers.current;
     return () => {
       mountedRef.current = false;
