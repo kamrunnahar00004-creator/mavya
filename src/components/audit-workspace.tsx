@@ -61,6 +61,9 @@ type Props = {
    */
   onImprove?: () => Promise<void> | void;
   improveLoading?: boolean;
+  /** True when the running generation is a seller-directed EDIT: the loading
+   *  state renders as the white Edit-style button, never the orange CTA. */
+  editLoading?: boolean;
   /** Attempts 2-3 are running while the current safe preview remains usable. */
   backgroundRefining?: boolean;
   /** Epoch ms when the active slot started improving. Preserves countdown across slot switches. */
@@ -105,6 +108,7 @@ export function AuditWorkspace({
   onCta,
   onImprove,
   improveLoading = false,
+  editLoading = false,
   backgroundRefining = false,
   improveStartedAt,
   improveError,
@@ -136,7 +140,8 @@ export function AuditWorkspace({
     initialPreview ? "preview" : "original"
   );
   const [previewUnlocked, setPreviewUnlocked] = useState(initialPreview);
-  const [hasImprovement, setHasImprovement] = useState(false);
+  // An improved preview counts as present unless its URL failed to load.
+  const [brokenImprovedSrc, setBrokenImprovedSrc] = useState<string | null>(null);
 
   useEffect(() => {
     if (!animate) return;
@@ -152,6 +157,9 @@ export function AuditWorkspace({
   // supporting rubric. Strong photos are already affirmed; no improve.
   const canShowImprovement = isWeak || isMid;
   const improvedSrc = state.improvedSrc;
+  const hasImprovement = Boolean(
+    canShowImprovement && improvedSrc && improvedSrc !== brokenImprovedSrc
+  );
   const generatedPreviewExists = Boolean(improvedSrc && hasImprovement);
   const previewActive =
     canShowImprovement &&
@@ -175,18 +183,15 @@ export function AuditWorkspace({
       : "";
   const previewBelowPublishReady = previewActive && activeAudit.overallScore < 8;
 
+  // Probe the preview URL in the background; a broken URL demotes the toggle
+  // back to the original. setState happens only in the async error callback.
   useEffect(() => {
-    if (!canShowImprovement || !improvedSrc) {
-      setHasImprovement(false);
-      return;
-    }
-    // improvedSrc exists — show toggle immediately, then verify image loads
-    setHasImprovement(true);
+    if (!canShowImprovement || !improvedSrc) return;
     let cancelled = false;
     const probe = new window.Image();
     probe.onerror = () => {
       if (!cancelled) {
-        setHasImprovement(false);
+        setBrokenImprovedSrc(improvedSrc);
         setActiveTab("original");
       }
     };
@@ -490,14 +495,25 @@ export function AuditWorkspace({
               </div>
             )}
             {improveLoading && !previewActive ? (
-              // Generating with no preview yet (fresh improve OR an edit from the
-              // original). Show the SAME prominent countdown as the AI-improve
-              // button, not just the small spinner on the image.
+              // Generating with no preview yet (fresh improve OR an edit from
+              // the original). A manual EDIT always shows the white Edit-style
+              // countdown; One-click fix keeps the orange CTA treatment.
               <div className="flex flex-wrap items-center gap-3">
-                <PrimaryButton onClick={() => undefined} variant="primary" disabled>
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                  {improveCountdown}
-                </PrimaryButton>
+                {editLoading ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                  >
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    {improveCountdown}
+                  </button>
+                ) : (
+                  <PrimaryButton onClick={() => undefined} variant="primary" disabled>
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    {improveCountdown}
+                  </PrimaryButton>
+                )}
                 <span
                   className="text-[12.5px] text-[var(--color-ink-soft)]"
                   aria-live="polite"

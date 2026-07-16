@@ -49,9 +49,15 @@ begin
   end if;
 
   -- Keep-better: only replace a currently selected version on a strictly
-  -- higher raw score.
+  -- higher raw score. Legacy selected jobs predating generation_jobs.raw_score
+  -- fall back to the rubric scores (preserved from migration 0008) so an old
+  -- strong version is never replaced by a weaker candidate.
   if v_photo.selected_generation_job_id is not null then
-    select raw_score into v_current_raw from generation_jobs
+    select coalesce(
+      raw_score,
+      nullif(candidate_rubric->>'raw_overall_score', '')::numeric,
+      nullif(candidate_rubric->>'overall_score', '')::numeric
+    ) into v_current_raw from generation_jobs
      where id = v_photo.selected_generation_job_id and user_id = p_user;
     if v_current_raw is not null and v_candidate.raw_score <= v_current_raw then
       return false;

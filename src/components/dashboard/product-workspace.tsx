@@ -720,10 +720,25 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
       runImprove(false, instruction, source),
     [runImprove]
   );
-  const handleRevert = useCallback(() => {
+  const handleRevert = useCallback(async () => {
     const photo = photosRef.current.find((p) => p.id === activeId);
     if (!photo?.revertSnap) return;
     const snap = photo.revertSnap;
+    // Persist FIRST (reselect the previous version, or the original when there
+    // was no preview; selection_source becomes 'user', which blocks background
+    // refinement from re-replacing it). The UI only changes once the database
+    // accepted the revert, so a refresh always matches what is on screen.
+    try {
+      const res = await fetch("/api/photos/select-version", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: photo.id, jobId: snap.lastJobId ?? null }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+    } catch {
+      setNotice("The revert could not be saved. Try again.");
+      return;
+    }
     patch(photo.id, {
       lastJobId: snap.lastJobId,
       selectedJobId: snap.lastJobId ?? null,
@@ -740,22 +755,6 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
         improvedVerdict: snap.improvedVerdict,
       },
     });
-    // Persist the revert so it survives refresh: reselect the previous version
-    // (or the original when there was no preview). selection_source becomes
-    // 'user', which blocks background refinement from re-replacing it.
-    void fetch("/api/photos/select-version", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ photoId: photo.id, jobId: snap.lastJobId ?? null }),
-    })
-      .then(async (res) => {
-        if (!res.ok) throw new Error(String(res.status));
-      })
-      .catch(() => {
-        setNotice(
-          "The revert is showing here but could not be saved. It may reappear after a refresh."
-        );
-      });
   }, [activeId, patch]);
 
   const handleSelectSlot = useCallback((id: string) => {
@@ -920,6 +919,9 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
         onEdit={digitalMain || wrongProduct ? undefined : handleEdit}
         onRevert={active.revertSnap ? handleRevert : undefined}
         improveLoading={active.improveStatus === "generating"}
+        editLoading={
+          active.improveStatus === "generating" && active.pendingOp === "edit"
+        }
         backgroundRefining={active.backgroundRefining}
         improveStartedAt={active.improveStartedAt}
         improveStage={active.improveStage}
