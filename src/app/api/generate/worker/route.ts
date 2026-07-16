@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { recoverStaleJobs, runQueuedRefinementOnce } from "@/lib/refinement";
+import {
+  recoverStaleRatingJobs,
+  runQueuedRatingOnce,
+} from "@/lib/rating-jobs";
 import { logEvent } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -30,18 +34,27 @@ async function handle(req: NextRequest) {
 
   const admin = createSupabaseAdminClient();
   const staleFailed = await recoverStaleJobs(admin);
+  const staleRatingsRecovered = await recoverStaleRatingJobs();
 
   // Process one queued refinement per tick. Each attempt can take minutes, so
   // a second attempt in the same serverless invocation risks being killed at
   // the route limit. A scheduler can invoke this endpoint again for the next
   // queued attempt.
   const processed: string[] = [];
-  const jobId = await runQueuedRefinementOnce();
+  const ratingJobId = await runQueuedRatingOnce();
+  if (ratingJobId) processed.push(ratingJobId);
+  // Keep one expensive AI operation per tick. The next scheduler invocation
+  // handles refinement when a durable rating consumed this invocation.
+  const jobId = ratingJobId ? null : await runQueuedRefinementOnce();
   if (jobId) processed.push(jobId);
 
-  logEvent("worker.tick", { staleFailed, processed: processed.length });
+  logEvent("worker.tick", {
+    staleFailed,
+    staleRatingsRecovered,
+    processed: processed.length,
+  });
   return NextResponse.json(
-    { ok: true, staleFailed, processed },
+    { ok: true, staleFailed, staleRatingsRecovered, processed },
     { status: 200 }
   );
 }

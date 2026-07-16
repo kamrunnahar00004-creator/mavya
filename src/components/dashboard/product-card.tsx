@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -24,6 +24,9 @@ type Props = {
   score: number | null;
   /** Highest-priority recommended fix (only for sub-8 photos). */
   topFix?: string | null;
+  ratingJobId?: string | null;
+  ratingStatus?: "queued" | "scoring" | "completed" | "failed" | "cancelled" | null;
+  ratingError?: string | null;
 };
 
 function scoreColors(score: number): { bg: string; fg: string } {
@@ -50,6 +53,9 @@ export function ProductCard({
   storagePath,
   score,
   topFix,
+  ratingJobId,
+  ratingStatus,
+  ratingError,
 }: Props) {
   const router = useRouter();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,6 +67,33 @@ export function ProductCard({
   const [imgSrc, setImgSrc] = useState<string | null>(thumbnailUrl);
   const refreshedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!ratingJobId || (ratingStatus !== "queued" && ratingStatus !== "scoring")) {
+      return;
+    }
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/score/jobs?id=${encodeURIComponent(ratingJobId)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { status?: string };
+        if (body.status && body.status !== "queued" && body.status !== "scoring") {
+          router.refresh();
+        }
+      } catch {
+        // The durable worker continues; the next poll can recover the UI.
+      }
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [ratingJobId, ratingStatus, router]);
 
   // Expired signed URL: re-sign once through the authenticated endpoint.
   async function refreshThumb() {
@@ -205,6 +238,22 @@ export function ProductCard({
                 {scoreBand(score)}
               </span>
             )}
+            {typeof score !== "number" &&
+              (ratingStatus === "queued" || ratingStatus === "scoring") && (
+                <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--color-primary)]">
+                  <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
+                  Rating…
+                </span>
+              )}
+            {typeof score !== "number" &&
+              (ratingStatus === "failed" || ratingStatus === "cancelled") && (
+                <span
+                  className="block truncate text-[11.5px] font-medium text-[var(--color-weak)]"
+                  title={ratingError ?? undefined}
+                >
+                  {ratingError || "Rating failed"}
+                </span>
+              )}
             {topFix && (
               <span className="mt-0.5 block truncate text-[11.5px] text-[var(--color-ink-muted)]">
                 Fix first: {topFix}

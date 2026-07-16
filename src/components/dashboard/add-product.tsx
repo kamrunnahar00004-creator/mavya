@@ -4,18 +4,16 @@ import { useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ImageUp, Loader2, Plus, X } from "lucide-react";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { prepareUploadImage } from "@/lib/client-image";
 import { cn } from "@/lib/utils";
 import { AnalyzingState } from "@/components/analyzing-state";
-import type { RubricJson } from "@/lib/rubric";
 
-type Step = "idle" | "scoring" | "saving";
+type Step = "idle" | "saving";
 
 /**
  * Add-product card. Opens a small dialog (name optional + photo), runs the
- * EXISTING scoring pipeline (/api/score), then persists product + main photo
- * (Storage) + audit under the user's RLS, and opens the new product.
+ * durable scoring pipeline. The server persists the product + photo first,
+ * then the dashboard card keeps polling while the rating finishes.
  */
 export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero" }) {
   const router = useRouter();
@@ -66,11 +64,15 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
     try {
       const prepared = await prepareUploadImage(f);
 
-      // 1. Score with the existing pipeline. Reject invalid before creating anything.
-      setStep("scoring");
+      // Persist first, then let the durable server worker own scoring. Once
+      // this request returns, navigation cannot interrupt the rating.
+      setStep("saving");
       const form = new FormData();
       form.set("image", prepared);
-      const res = await fetch("/api/score", { method: "POST", body: form });
+      form.set("request_id", crypto.randomUUID());
+      form.set("role", "main");
+      form.set("name", name.trim());
+      const res = await fetch("/api/score/jobs", { method: "POST", body: form });
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as
           | { error?: string; code?: string }
@@ -88,64 +90,13 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
         }
         throw new Error(body?.error || `Scoring failed (${res.status})`);
       }
-      const { rubric, scoreCacheId } = (await res.json()) as {
-        rubric: RubricJson;
-        scoreCacheId?: string | null;
-      };
-      if (rubric.upload_kind === "invalid") {
-        setStep("idle");
-        setError("That image is not a product photo. Try another.");
-        return;
-      }
+      const queued = (await res.json()) as { productId?: string };
+      if (!queued.productId) throw new Error("Could not create the product.");
 
-      // 2. Persist product + photo (Storage) + audit under RLS.
-      setStep("saving");
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Your session expired. Log in again.");
-
-      const { data: product, error: pErr } = await supabase
-        .from("products")
-        .insert({ user_id: user.id, name: name.trim() || null })
-        .select("id")
-        .single();
-      if (pErr || !product) throw new Error(pErr?.message || "Could not create product.");
-
-      const ext = prepared.type === "image/png" ? "png" : "jpg";
-      const photoId = crypto.randomUUID();
-      const path = `${user.id}/${product.id}/${photoId}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("product-photos")
-        .upload(path, prepared, { contentType: prepared.type });
-      if (upErr) throw new Error(upErr.message);
-
-      const { error: phErr } = await supabase.from("photos").insert({
-        id: photoId,
-        product_id: product.id,
-        role: "main",
-        storage_path: path,
-        mime: prepared.type,
-      });
-      if (phErr) throw new Error(phErr.message);
-
-      const auditRes = await fetch("/api/audits", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId, scoreCacheId }),
-      });
-      if (!auditRes.ok) {
-        const auditBody = (await auditRes.json().catch(() => null)) as
-          | { error?: string }
-          | null;
-        throw new Error(auditBody?.error || "Could not save the audit.");
-      }
-
-      // Invalidate the dashboard's Router Cache so the new product shows when the
-      // user navigates back, then open the product.
+      // The new card is already persisted and displays Rating… while the
+      // server worker finishes independently of this component.
       router.refresh();
-      router.push(`/dashboard/product/${product.id}`);
+      router.push("/dashboard");
     } catch (err) {
       setStep("idle");
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");

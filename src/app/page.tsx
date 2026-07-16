@@ -11,7 +11,6 @@ import { AnalyzingState } from "@/components/analyzing-state";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { InvalidUploadState } from "@/components/invalid-upload-state";
 import { DEMO_STATES, VERIFY_AMBER_DEMO } from "@/data/demo-states";
-import type { RubricJson } from "@/lib/rubric";
 import { trackClientEvent } from "@/lib/track-client";
 import { prepareUploadImage } from "@/lib/client-image";
 import {
@@ -19,7 +18,6 @@ import {
   loadPendingPhoto,
   clearPendingPhoto,
 } from "@/lib/pending-photo";
-import type { User } from "@supabase/supabase-js";
 
 type Mode = "upload" | "analyzing" | "invalid" | "weak" | "strong" | "verify";
 
@@ -88,13 +86,11 @@ export default function Page() {
   }, []);
 
   /**
-   * Run the paid assessment for an already-entitled user: score, persist as a
-   * new product, open its workspace. The pending stash is cleared only after
-   * the audit is fully persisted.
+   * Persist the upload and queue a durable assessment. The pending stash is
+   * cleared only after the server confirms the product/photo/job exist.
    */
   const runAssessment = useCallback(
-    async (file: File, user: User) => {
-      const supabase = createSupabaseBrowserClient();
+    async (file: File) => {
       const url = URL.createObjectURL(file);
       setPendingUrl(url);
       setMode("analyzing");
@@ -103,7 +99,9 @@ export default function Page() {
       try {
         const form = new FormData();
         form.set("image", file);
-        const res = await fetch("/api/score", { method: "POST", body: form });
+        form.set("request_id", crypto.randomUUID());
+        form.set("role", "main");
+        const res = await fetch("/api/score/jobs", { method: "POST", body: form });
         if (!res.ok) {
           const body = (await res.json().catch(() => null)) as
             | { error?: string; code?: string }
@@ -125,63 +123,15 @@ export default function Page() {
           }
           throw new Error(body?.error || `Score request failed (${res.status})`);
         }
-        const { rubric, scoreCacheId } = (await res.json()) as {
-          rubric: RubricJson;
-          scoreCacheId?: string | null;
-        };
-        if (rubric.upload_kind === "invalid") {
-          await clearPendingPhoto();
-          setMode("invalid");
-          return;
+        const queued = (await res.json()) as { productId?: string };
+        if (!queued.productId) {
+          throw new Error("Your photo could not be saved. Try again.");
         }
-        trackClientEvent("audit_completed");
 
         // Persist as a new product. Failures are VISIBLE — never a silent
-        // session-only fallback that pretends the product was saved.
-        const { data: product, error: pErr } = await supabase
-          .from("products")
-          .insert({ user_id: user.id, name: null })
-          .select("id")
-          .single();
-        if (pErr || !product) {
-          throw new Error(
-            "Your photo was rated but could not be saved. Try again from your dashboard."
-          );
-        }
-        const ext = file.type === "image/png" ? "png" : "jpg";
-        const photoId = crypto.randomUUID();
-        const path = `${user.id}/${product.id}/${photoId}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from("product-photos")
-          .upload(path, file, { contentType: file.type });
-        if (upErr) {
-          throw new Error(
-            "Your photo was rated but could not be saved. Try again from your dashboard."
-          );
-        }
-        const { error: phErr } = await supabase.from("photos").insert({
-          id: photoId,
-          product_id: product.id,
-          role: "main",
-          storage_path: path,
-          mime: file.type,
-        });
-        const auditRes = phErr
-          ? null
-          : await fetch("/api/audits", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ photoId, scoreCacheId }),
-            });
-        if (phErr || !auditRes?.ok) {
-          throw new Error(
-            "Your photo was rated but could not be saved. Try again from your dashboard."
-          );
-        }
-
         await clearPendingPhoto();
         router.refresh();
-        router.push(`/dashboard/product/${product.id}`);
+        router.push("/dashboard");
       } catch (err) {
         console.error("[landing] score/persist failed", err);
         setScoreError(
@@ -245,7 +195,7 @@ export default function Page() {
         return;
       }
 
-      await runAssessment(file, session.user);
+      await runAssessment(file);
     },
     [router, runAssessment, checkEntitled]
   );
@@ -266,7 +216,7 @@ export default function Page() {
       const entitled = await checkEntitled();
       if (cancelled) return;
       if (entitled) {
-        await runAssessment(file, session.user);
+        await runAssessment(file);
       } else if (entitled === false) {
         setScoreError(
           "Your photo is saved. Finish subscribing to rate it."

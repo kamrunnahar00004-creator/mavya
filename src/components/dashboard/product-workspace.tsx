@@ -21,7 +21,6 @@ import {
 } from "@/lib/generation-types";
 import { coveredShotIds } from "@/lib/checklist-coverage";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { prepareUploadImage } from "@/lib/client-image";
 import { trackClientEvent } from "@/lib/track-client";
 
@@ -56,7 +55,6 @@ export type InitialPhoto = {
 
 type Props = {
   productId: string;
-  userId: string;
   productName: string | null;
   initialPhotos: InitialPhoto[];
 };
@@ -274,7 +272,8 @@ function newId(): string {
  * through persisted, idempotent jobs (photoId contract; the server loads the
  * stored audit + image, so nothing here is trusted for billing or safety).
  */
-export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
+export function ProductWorkspace({ productId, initialPhotos }: Props) {
+  const mountedRef = useRef(true);
   const router = useRouter();
   const [photos, setPhotos] = useState<Photo[]>(() => initialPhotos.map(makePhoto));
   const [activeId, setActiveId] = useState<string>(
@@ -298,6 +297,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
   useEffect(() => {
     const timers = pollTimers.current;
     return () => {
+      mountedRef.current = false;
       Object.values(timers).forEach(clearInterval);
     };
   }, []);
@@ -756,9 +756,11 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
       try {
         const form = new FormData();
         form.set("image", prepared);
-        form.set("mode", "extra");
+        form.set("request_id", crypto.randomUUID());
+        form.set("role", "supporting");
         form.set("product_id", productId);
-        const res = await fetch("/api/score", { method: "POST", body: form });
+        form.set("photo_id", tempId);
+        const res = await fetch("/api/score/jobs", { method: "POST", body: form });
         if (!res.ok) {
           const b = (await res.json().catch(() => null)) as
             | { error?: string; code?: string }
@@ -771,59 +773,41 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
               : b?.error || `Score failed (${res.status})`
           );
         }
-        const { rubric, scoreCacheId } = (await res.json()) as {
-          rubric: RubricJson;
-          scoreCacheId?: string | null;
-        };
-        if (rubric.upload_kind === "invalid") {
-          setPhotos((prev) => prev.filter((p) => p.id !== tempId));
-          setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
-          setNotice("That image is not a product photo.");
-          return;
-        }
-        const audit = rubricToSupportingState({ rubric, imageSrc: blobUrl });
-        patch(tempId, {
-          status: "graded",
-          audit,
-          supportingRole: rubric.supporting_photo_role,
-        });
-        trackClientEvent("supporting_audit_completed");
+        const queued = (await res.json()) as { jobId?: string };
+        if (!queued.jobId) throw new Error("Could not queue the rating.");
 
-        // Persist. Failure is surfaced clearly; the graded result stays for this
-        // session only and the user is told exactly that.
-        try {
-          const supabase = createSupabaseBrowserClient();
-          const ext = prepared.type === "image/png" ? "png" : "jpg";
-          const path = `${userId}/${productId}/${tempId}.${ext}`;
-          const { error: upErr } = await supabase.storage
-            .from("product-photos")
-            .upload(path, prepared, { contentType: prepared.type });
-          if (upErr) throw upErr;
-          const { error: phErr } = await supabase.from("photos").insert({
-            id: tempId,
-            product_id: productId,
-            role: "supporting",
-            storage_path: path,
-            mime: prepared.type,
-          });
-          if (phErr) throw phErr;
-          const auditRes = await fetch("/api/audits", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ photoId: tempId, scoreCacheId }),
-          });
-          if (!auditRes.ok) {
-            const auditBody = (await auditRes.json().catch(() => null)) as
-              | { error?: string }
-              | null;
-            throw new Error(auditBody?.error || "Could not save the audit.");
-          }
-          patch(tempId, { storagePath: path });
-        } catch (persistErr) {
-          console.error("[product-workspace] supporting persist failed", persistErr);
-          setNotice(
-            "NOT SAVED: this photo was rated but could not be saved to your product. It will disappear when you leave this page. Re-add it to try saving again."
+        // Keep the local slot responsive while the persisted server job runs.
+        // If this component unmounts, the job continues and appears on refresh.
+        for (;;) {
+          await new Promise((resolve) => window.setTimeout(resolve, 2000));
+          if (!mountedRef.current) return;
+          const statusRes = await fetch(
+            `/api/score/jobs?id=${encodeURIComponent(queued.jobId)}`,
+            { cache: "no-store" }
           );
+          if (!statusRes.ok) continue;
+          const status = (await statusRes.json()) as {
+            status?: string;
+            message?: string | null;
+            rubric?: RubricJson | null;
+            storagePath?: string | null;
+          };
+          if (status.status === "queued" || status.status === "scoring") continue;
+          if (status.status !== "completed" || !status.rubric) {
+            throw new Error(status.message || "That photo could not be graded.");
+          }
+          const audit = rubricToSupportingState({
+            rubric: status.rubric,
+            imageSrc: blobUrl,
+          });
+          patch(tempId, {
+            status: "graded",
+            audit,
+            storagePath: status.storagePath ?? "",
+            supportingRole: status.rubric.supporting_photo_role,
+          });
+          trackClientEvent("supporting_audit_completed");
+          break;
         }
       } catch (err) {
         setPhotos((prev) => prev.filter((p) => p.id !== tempId));
@@ -831,7 +815,7 @@ export function ProductWorkspace({ productId, userId, initialPhotos }: Props) {
         setNotice(err instanceof Error ? err.message : "That photo could not be graded.");
       }
     },
-    [patch, productId, userId]
+    [patch, productId]
   );
 
   if (!active) {

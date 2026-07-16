@@ -15,10 +15,18 @@ type AuditRow = {
   rubric: { priority_action?: string } | null;
 };
 type PhotoRow = {
+  id: string;
   storage_path: string;
   role: string;
   created_at: string;
   audits: AuditRow[] | null;
+};
+type RatingJobRow = {
+  id: string;
+  photo_id: string;
+  status: "queued" | "scoring" | "completed" | "failed" | "cancelled";
+  error_message: string | null;
+  created_at: string;
 };
 type ProductRow = {
   id: string;
@@ -48,12 +56,28 @@ export default async function DashboardPage() {
   const { data } = await supabase
     .from("products")
     .select(
-      "id, name, position, created_at, photos(storage_path, role, created_at, audits(overall_score, created_at, rubric))"
+      "id, name, position, created_at, photos(id, storage_path, role, created_at, audits(overall_score, created_at, rubric))"
     )
     .order("position", { ascending: true })
     .order("created_at", { ascending: true });
 
   const products = (data as ProductRow[] | null) ?? [];
+  const photoIds = products.flatMap((product) =>
+    (product.photos ?? []).map((photo) => photo.id)
+  );
+  const ratingsByPhoto = new Map<string, RatingJobRow>();
+  if (photoIds.length > 0) {
+    const { data: ratingData } = await supabase
+      .from("rating_jobs")
+      .select("id, photo_id, status, error_message, created_at")
+      .in("photo_id", photoIds)
+      .order("created_at", { ascending: false });
+    for (const rating of (ratingData as RatingJobRow[] | null) ?? []) {
+      if (!ratingsByPhoto.has(rating.photo_id)) {
+        ratingsByPhoto.set(rating.photo_id, rating);
+      }
+    }
+  }
 
   // Collect all main photo storage paths
   const mainPhotoPaths = products
@@ -70,6 +94,7 @@ export default async function DashboardPage() {
     let storagePath: string | null = null;
     let score: number | null = null;
     let topFix: string | null = null;
+    const rating = main ? ratingsByPhoto.get(main.id) ?? null : null;
     if (main) {
       thumbnailUrl = signedUrls.get(main.storage_path) ?? null;
       storagePath = main.storage_path;
@@ -89,6 +114,9 @@ export default async function DashboardPage() {
       storagePath,
       score,
       topFix,
+      ratingJobId: rating?.id ?? null,
+      ratingStatus: rating?.status ?? null,
+      ratingError: rating?.error_message ?? null,
     };
   });
 
@@ -160,6 +188,9 @@ export default async function DashboardPage() {
             storagePath={c.storagePath}
             score={c.score}
             topFix={c.topFix}
+            ratingJobId={c.ratingJobId}
+            ratingStatus={c.ratingStatus}
+            ratingError={c.ratingError}
           />
         ))}
         {!pastDue && <AddProductCard />}

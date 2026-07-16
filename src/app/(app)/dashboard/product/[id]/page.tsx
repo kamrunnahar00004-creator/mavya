@@ -262,7 +262,6 @@ export default async function ProductPage({
   return (
     <ProductWorkspace
       productId={product.id}
-      userId={user.id}
       productName={product.name}
       initialPhotos={initialPhotos}
     />
