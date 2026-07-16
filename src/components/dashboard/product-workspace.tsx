@@ -295,15 +295,6 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
   }, [photos]);
 
   useEffect(() => {
-    setPhotos(initialPhotos.map(makePhoto));
-    setActiveId(
-      initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
-    );
-    setChecklist([]);
-    setNotice(null);
-  }, [initialPhotos]);
-
-  useEffect(() => {
     const timers = pollTimers.current;
     return () => {
       mountedRef.current = false;
@@ -320,18 +311,17 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
   // ------------------------------------------------------------------
   // Checklist (background hydrate) + covered-shot diffing.
   // ------------------------------------------------------------------
+  const mainPhotoId = initialPhotos.find((p) => p.role === "main")?.id;
   useEffect(() => {
-    if (!mainRubric || mainRubric.upload_kind === "invalid") return;
+    if (!mainRubric || mainRubric.upload_kind === "invalid" || !mainPhotoId) return;
     let alive = true;
     (async () => {
-      const mainPhoto = photosRef.current.find((photo) => photo.kind === "main");
-      if (!mainPhoto) return;
       setChecklistLoading(true);
       try {
         const res = await fetch("/api/checklist", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ photoId: mainPhoto.id }),
+          body: JSON.stringify({ photoId: mainPhotoId }),
         });
         const data = (await res.json().catch(() => null)) as
           | { supporting_photo_checklist?: SupportingPhotoChecklistItem[] }
@@ -346,7 +336,7 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     return () => {
       alive = false;
     };
-  }, [mainRubric]);
+  }, [mainRubric, mainPhotoId]);
 
   const covered = coveredShotIds(
     photos
@@ -565,6 +555,30 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Product switch: Next.js reuses this component instance across
+  // /dashboard/product/[id] navigations, so reseed all per-product state.
+  // Keyed on productId (NOT initialPhotos: the server sends a fresh array
+  // reference on every re-render, which must not wipe live client state).
+  const prevProductIdRef = useRef(productId);
+  useEffect(() => {
+    if (prevProductIdRef.current === productId) return;
+    prevProductIdRef.current = productId;
+    Object.values(pollTimers.current).forEach(clearInterval);
+    pollTimers.current = {};
+    setPhotos(initialPhotos.map(makePhoto));
+    setActiveId(
+      initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
+    );
+    setChecklist([]);
+    setChecklistLoading(false);
+    setNotice(null);
+    for (const p of initialPhotos) {
+      if (p.lastJob && ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
+        pollJob(p.id, `id=${p.lastJob.id}`);
+      }
+    }
+  }, [productId, initialPhotos, pollJob]);
 
   // ------------------------------------------------------------------
   // One-click fix / Edit / Retry — persisted, idempotent generation jobs.
@@ -870,6 +884,7 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
             ? { ...active.audit, supportingChecklist: checklist }
             : active.audit
         }
+        initialPreview={Boolean(active.audit.improvedSrc)}
         uploadedSrc={active.imageSrc}
         panelMode={active.kind === "main" ? "main" : "extra"}
         analyzing={active.status === "analyzing"}
