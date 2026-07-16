@@ -499,6 +499,7 @@ async function scoreAndFidelity(args: {
       imageMimeType: "image/png",
       systemPrompt: args.systemPrompt,
       mainProductContext: args.mainProductContext,
+      isGeneratedCandidate: true,
     }),
     evaluateFidelity({
       originalBuffer: args.originalBuffer,

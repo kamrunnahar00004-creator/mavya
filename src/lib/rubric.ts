@@ -169,6 +169,12 @@ export type RubricJson = {
   light_adjustment: null | { exposure: number; warmth: number };
   generation_risk: "standard" | "review_text" | "unsupported";
   generation_risk_reason: string;
+  /** Evidence-based provenance/trust risk. 'high' deterministically caps the
+   *  raw overall at 7.4 (never a strong/publish-ready verdict). Optional on
+   *  legacy rubrics persisted before main-v7. */
+  trust_risk?: "none" | "moderate" | "high";
+  /** One sentence naming the concrete visible evidence; "" when none. */
+  trust_evidence?: string;
 };
 
 export const RUBRIC_PROMPT = `You are Mavya, an Etsy product-photo auditor.
@@ -214,7 +220,7 @@ Score four visible pillars from 0 to 10 using integers:
 - A product sitting in a real photographed environment — a real surface (wood, table, fabric, shelf, counter), real background objects, and a natural contact shadow under the product — is NOT a cutout or pasted composite, even when its printed design is bold, colorful, or graphic. Raise the cutout/pasted finding ONLY on actual edge artifacts: a visible halo or fringe around the product outline, jagged or matte-cut edges, the product floating with no contact shadow, or the product dropped on a flat single-color void. A bold or busy print ON the product is NOT cutout evidence. When unsure whether it is a real photo or a cutout, treat it as a real photo and do NOT use cutout/pasted language.
 - Apply any authenticity penalty only when visible evidence is present.
 - Do not guess hidden fraud, IP issues, brand positioning, or seller intent.
-- Reward genuine buyer desire, but only as a bonus on top of a sound photo. When the product is ALREADY clear, complete, readable, and trustworthy, a photo that also shows strong giftability, emotional pull, specific use, or an obvious reason to want it should score click_appeal 7-9. Desire never rescues a weak photo: if thumbnail clarity, lighting, full-product visibility, or authenticity/trust are weak, click_appeal stays low no matter how appealing the styling, mood, or scene looks. Styling cannot lift click_appeal when the product is unclear, cut off, dirty, AI-looking, or pasted-in. All AI/mockup/cutout caps above still apply.
+- Reward genuine buyer desire, but only as a bonus on top of a sound photo. When the product is ALREADY clear, complete, readable, and trustworthy, a photo that also shows strong giftability, emotional pull, specific use, or an obvious reason to want it should score click_appeal 7-9. Desire never rescues a weak photo: if thumbnail clarity, lighting, or full-product visibility are weak, click_appeal stays low no matter how appealing the styling, mood, or scene looks. Styling cannot lift click_appeal when the product is unclear, cut off, or dirty. Evidence-based trust findings are reported in the trust lane per the authenticity rules below, not by suppressing click_appeal.
 
 ${classifierPromptBlock()}
 
@@ -254,14 +260,13 @@ Priority rule:
 - Attractive styling cannot lift a photo into the 8.0-10.0 band when the product type is unclear or major visible flaws remain, such as direct flash glare, dirty presentation, severe blur, or visibly rough unfinished product detail.
 - If the product type cannot be identified confidently from the image alone, return detected_category: "other" and do not use 8+ keep/add framing.
 
-AI-looking, rough cutouts, and cheap print-on-demand are always failed images:
-- If the photo looks synthetic, AI-generated, or rendered (catalog gloss, implausibly clean, malformed or implausibly dense text, warped product detail, fake hands, pasted composition, duplicated product, plastic-smooth materials, impossible reflections, artificial backdrop continuity, synthetic or waxy skin, too-perfect cinematic lighting, uncanny faces/hands), authenticity is the first finding.
-- If the physical product may be real but the listing image looks pasted into the frame (rough cutout edge, halo/fringe around the product, no believable shadow, floating on a flat black or white field, or product edges that look clipped from another image), authenticity/trust is still the first finding. Do NOT bury this under lighting, glare, contrast, or label-readability advice.
-- This ALSO applies when the PRODUCT design is a cheap print-on-demand AI mashup: a busy clip-art collage of many unrelated elements, garbled or nonsensical template text (e.g. "CELEBRATING 250 YEARS" that makes no sense), melted/warped lettering, or generic mass-produced template graphics. Do not mistake busy AI clip-art clutter for rich product detail — it is a trust problem, not a strength.
-- For any AI-looking or cheap-template image, set click_appeal between 1 and 3, do not return an overall score above 5.9, and make the priority_action name it: "Replace the AI-looking mockup with a real product photo." or "Photograph the real physical product — this design looks like a cheap AI print-on-demand mockup."
-- Use this priority_explanation when AI-looking: "The image looks artificially generated, which makes it difficult for buyers to trust that the delivered item will match the listing. Photograph the physical product directly in soft natural light and show the complete item clearly."
-- For rough cutout/composite product photos, use this kind of priority_action: "Replace the pasted-looking cutout photo." Use this kind of priority_explanation: "The product looks cut out and pasted onto the background, with visible edge artifacts that make the listing feel fake. Buyers need a real product photo with natural shadows, clean edges, and believable placement."
-- Never reward cleanliness over buyer trust.
+Authenticity concerns require VISIBLE EVIDENCE (trust lane, never a pillar execution):
+- You may claim an image is AI-generated, a mockup, a rough cutout, or pasted ONLY when you can name specific visible evidence in THIS image: warped or melted lettering, garbled nonsensical template text, malformed hands/faces/anatomy, impossible product scale, duplicated product, a hard cutout edge or halo/fringe, a floating product with NO contact shadow, or impossible reflections. A clean studio look, a plain seamless background, soft even lighting, or a simple uncluttered composition is NOT evidence — professional product photos legitimately look like that. If you cannot point at concrete pixels, you MUST NOT use the words "AI-looking", "mockup", "pasted", "cutout", "floating", or "fake" anywhere in the output.
+- With visible evidence, authenticity is the FIRST finding: priority_issue_family "trust", and priority_action names it plainly, e.g. "Replace the pasted-looking cutout photo." or "Photograph the real physical product." The priority_explanation must cite the specific evidence you saw (e.g. "the lettering is warped and the product floats with no shadow").
+- Busy print-on-demand clip-art mashups (a collage of many unrelated elements, generic template graphics, nonsensical celebratory text) are a trust finding on the PRODUCT DESIGN: name it in the trust lane. Do not mistake busy AI clip-art clutter for rich product detail.
+- Pillars always score what a buyer SEES, even for a suspected fake: a dramatic, detailed, well-lit image can have high click_appeal AND a trust priority at the same time — the trust warning lives in trust_risk/trust_evidence and the priority, not in pillar suppression. Do NOT force click_appeal down because of suspected provenance. Fidelity of AI-improved previews is checked by a separate dedicated system; your job here is photographic quality plus honestly-evidenced trust findings.
+- Set trust_risk honestly: "none" without concrete evidence (trust_evidence ""), "moderate" for one minor/ambiguous artifact, "high" for clear evidence (AI-invented product design, garbled text, warped anatomy, impossible scale, hard cutout). trust_risk "high" means the photo can never be a strong/keep verdict: the overall score must not exceed 7.4 (the product also enforces this cap deterministically), and priority framing must be the trust finding, never praise.
+- Never reward cleanliness over buyer trust, and never punish cleanliness as if it were evidence of fakery.
 
 Full product visibility outranks polish:
 - If the product is cut off, hidden, or impossible to understand at thumbnail size, that is the priority finding before lighting or background.
@@ -368,7 +373,9 @@ Invalid-input JSON:
   "crop_suggestion": null,
   "light_adjustment": null,
   "generation_risk": "unsupported",
-  "generation_risk_reason": "No product photo is available to improve."
+  "generation_risk_reason": "No product photo is available to improve.",
+  "trust_risk": "none",
+  "trust_evidence": ""
 }
 
 Valid JSON shape:
@@ -397,7 +404,9 @@ Valid JSON shape:
   "crop_suggestion": null OR { "x": 0..1, "y": 0..1, "w": 0..1, "h": 0..1 },
   "light_adjustment": null OR { "exposure": number -1..1, "warmth": number -1..1 },
   "generation_risk": "standard" | "review_text" | "unsupported",
-  "generation_risk_reason": string
+  "generation_risk_reason": string,
+  "trust_risk": "none" | "moderate" | "high" (evidence-based provenance/trust risk; "none" without concrete visible evidence; "moderate" for minor evidence such as a slight halo or one ambiguous artifact; "high" for clear evidence: AI-invented product design, garbled/melted text, warped anatomy, impossible scale, hard cutout with no contact shadow),
+  "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none". Never claim evidence you cannot point at.)
 }`;
 
 export const INVALID_RESPONSE: RubricJson = {
@@ -438,20 +447,30 @@ export const INVALID_RESPONSE: RubricJson = {
   light_adjustment: null,
   generation_risk: "unsupported",
   generation_risk_reason: "No product photo is available to improve.",
+  trust_risk: "none",
+  trust_evidence: "",
 };
 
 /**
  * Backend-authoritative overall score computation per locked weights.
  * Rounded to one decimal.
  */
-export function computeOverall(pillars: RubricJson["pillars"]): number {
+export function computeOverall(
+  pillars: RubricJson["pillars"],
+  trustRisk?: RubricJson["trust_risk"]
+): number {
   const raw =
     pillars.thumbnail * PILLAR_WEIGHTS.thumbnail +
     pillars.lighting * PILLAR_WEIGHTS.lighting +
     pillars.background * PILLAR_WEIGHTS.background +
     pillars.click_appeal * PILLAR_WEIGHTS.click_appeal;
   const weighted = Math.round(raw * 10) / 10;
-  return pillars.click_appeal < 5 ? Math.min(weighted, 6.9) : weighted;
+  let capped = pillars.click_appeal < 5 ? Math.min(weighted, 6.9) : weighted;
+  // Deterministic trust verdict gate: EVIDENCED high provenance/trust risk can
+  // never present as a strong/publish-ready photo, regardless of how clickable
+  // the image is. Runs BEFORE calibration, so 7.4 is never promoted to 8.0.
+  if (trustRisk === "high") capped = Math.min(capped, 7.4);
+  return capped;
 }
 
 /**
@@ -459,13 +478,18 @@ export function computeOverall(pillars: RubricJson["pillars"]): number {
  * click_appeal cap here: for supporting photos click_appeal maps to Presentation
  * (only 15% weight), so a low value must not cap the whole score.
  */
-export function computeSupportingOverall(pillars: RubricJson["pillars"]): number {
+export function computeSupportingOverall(
+  pillars: RubricJson["pillars"],
+  trustRisk?: RubricJson["trust_risk"]
+): number {
   const raw =
     pillars.thumbnail * SUPPORTING_PILLAR_WEIGHTS.thumbnail +
     pillars.lighting * SUPPORTING_PILLAR_WEIGHTS.lighting +
     pillars.background * SUPPORTING_PILLAR_WEIGHTS.background +
     pillars.click_appeal * SUPPORTING_PILLAR_WEIGHTS.click_appeal;
-  return Math.round(raw * 10) / 10;
+  const weighted = Math.round(raw * 10) / 10;
+  // Same deterministic trust verdict gate as main photos.
+  return trustRisk === "high" ? Math.min(weighted, 7.4) : weighted;
 }
 
 export function isRubricJson(x: unknown): x is RubricJson {
@@ -526,6 +550,17 @@ export function isRubricJson(x: unknown): x is RubricJson {
     return false;
   }
   if (typeof r.generation_risk_reason !== "string") return false;
+  // trust_risk/trust_evidence are REQUIRED from main-v7 prompts but optional
+  // on legacy persisted rubrics: validate only when present.
+  if (
+    r.trust_risk !== undefined &&
+    !["none", "moderate", "high"].includes(String(r.trust_risk))
+  ) {
+    return false;
+  }
+  if (r.trust_evidence !== undefined && typeof r.trust_evidence !== "string") {
+    return false;
+  }
   return true;
 }
 

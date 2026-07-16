@@ -48,7 +48,7 @@ Score four pillars from 0 to 10 using integers. The JSON keys stay the same; jud
 
 4. click_appeal = Presentation Quality (weight 15, smallest, judged RELATIVE to the role). Is the image clean, intentional, organized, and competent for its role — a packaging photo needs tidy framing not styling; a spec sheet needs layout hygiene not props. Penalize only: careless/messy execution, crooked or unreadable layout, clashing fonts, or a distracting background WHEN a clean background is part of the photo's job.
 
-AI-looking / fake is a hard trust failure and hits Accuracy & Specificity: a synthetic render passed off as a real product photo, or a cheap AI print-on-demand mashup (busy clip-art collage, garbled template text such as "CELEBRATING 250 YEARS", melted lettering), scores Accuracy 1-3 and the priority names it. An AI-styled scene AROUND a real product is acceptable; an AI-INVENTED product is not.
+AI-looking / fake findings require VISIBLE EVIDENCE: garbled or melted template text (e.g. "CELEBRATING 250 YEARS" that makes no sense), warped anatomy or product detail, impossible scale, a hard cutout edge or halo, or a floating product with no contact shadow. A clean studio look, plain background, or soft even lighting is NOT evidence — never use "AI-looking", "mockup", "pasted", or "fake" without naming the concrete evidence. WITH evidence that a synthetic render is passed off as the real product, or that the design is a cheap AI print-on-demand mashup, Accuracy scores low because the image no longer honestly shows what the buyer receives, and the priority names the evidence. An AI-styled scene AROUND a real product is acceptable; an AI-INVENTED product is not.
 
 buyer_question_answered: the ONE buyer question this photo answers, e.g. "How big is this in real life?", "What exactly comes in the box?", "Will this arrive gift-ready?", "What do the planner pages look like?", "What texture/material am I getting?". Empty only if it answers nothing.
 supporting_verdict: one short honest sentence, e.g. "Strong scale photo.", "Useful packaging photo, but the insert text is too small.", "Weak supporting photo — it repeats the main image."
@@ -58,7 +58,7 @@ Role-conditioned rules (never penalize a role for doing its job): packaging — 
 Honesty rules:
 - Clear is not enough. Do NOT score 7+ just because the product is visible or detailed. The photo must also look clean, intentional, and trustworthy.
 - A clear product on an ugly, dirty, or cheap background is NOT strong.
-- An AI-looking or cheap-template image is NOT strong, no matter how sharp.
+- An image with visible AI/mockup evidence (per the evidence rule above) is NOT strong, no matter how sharp.
 - Judge clarity and visible technical quality before mood or styling.
 - Apply authenticity penalties only when visible evidence is present.
 - Do not guess hidden fraud, IP issues, brand positioning, or seller intent.
@@ -138,7 +138,9 @@ Invalid-input JSON:
   "crop_suggestion": null,
   "light_adjustment": null,
   "generation_risk": "unsupported",
-  "generation_risk_reason": "No product photo is available to grade."
+  "generation_risk_reason": "No product photo is available to grade.",
+  "trust_risk": "none",
+  "trust_evidence": ""
 }
 
 Valid JSON shape:
@@ -162,5 +164,7 @@ Valid JSON shape:
   "crop_suggestion": null OR { "x": 0..1, "y": 0..1, "w": 0..1, "h": 0..1 },
   "light_adjustment": null OR { "exposure": number -1..1, "warmth": number -1..1 },
   "generation_risk": "standard" | "review_text" | "unsupported",
-  "generation_risk_reason": string
+  "generation_risk_reason": string,
+  "trust_risk": "none" | "moderate" | "high" ("none" without concrete visible evidence; "moderate" for one minor/ambiguous artifact; "high" for clear evidence per the evidence rule above. "high" means this photo can never be a strong verdict; the backend caps the overall at 7.4),
+  "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none")
 }`;

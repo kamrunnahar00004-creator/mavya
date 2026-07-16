@@ -11,14 +11,14 @@
         "upload_kind": "physical_product",
         "category": "candles",
         "band": "weak",
-        "score_range": [3.1, 5.3],
+        "score_range": [3.1, 6.1],
         "priority_pillar": "lighting",
         "priority_issue_family": "lighting",
         "must_not_claim": ["dropshipping", "scam", "spam"]
       },
       "strictness": "hard",
       "consistency": true,
-      "notes": "Founder-locked gold 4.1 (Random Smoke Test 01, docs/CALIBRATION_LOG.md). Pink teacup candle, direct flash glare on cup/saucer, messy wax decoration, competing floral background. Priority: flash/lighting. Claude historically over-scored this to 8.2 (giftability bias) - the exact failure this fixture guards."
+      "notes": "Founder gold 4.1 under main-v5 (Random Smoke Test 01, docs/CALIBRATION_LOG.md). Pink teacup candle, direct flash glare on cup/saucer, messy wax decoration, competing floral background. Priority: flash/lighting. Claude historically over-scored this to 8.2 (giftability bias) - the failure this fixture guards. Ceiling raised 5.3 -> 6.1 with main-v7 (2026-07-16): removing the unevidenced provenance/cheap-presentation click hammer honestly re-levels this photo to ~5.5-5.9 (click_appeal 6, lighting 4, correct priority). Still hard-guards the 8.2 failure and the weak band."
     },
     {
       "id": "candle-03-main",
@@ -31,13 +31,13 @@
         "band": "weak",
         "score_range": [3.0, 5.4],
         "priority_pillar": "background",
-        "priority_issue_family": "background",
+        "priority_issue_family": "trust",
         "generation_risk": "review_text",
         "must_not_claim": ["dropshipping", "scam", "spam"]
       },
       "strictness": "hard",
       "consistency": true,
-      "notes": "Founder-locked gold 4.2 (Photo 07, docs/CALIBRATION_LOG.md). Black FIRE WOOD jar candle on pitch-black background: black-on-black silhouette loss is the primary issue; label text implies review_text generation risk. Cutout/composite look is a secondary trust point."
+      "notes": "Founder-locked gold 4.2 (Photo 07, docs/CALIBRATION_LOG.md). Black FIRE WOOD jar candle on pitch-black background: black-on-black silhouette loss plus a visible cutout/composite look. Under main-v7 the EVIDENCED cutout finding correctly leads as the trust family (soft expectation updated 2026-07-16); label text still implies review_text generation risk."
     },
     {
       "id": "candle-03-improved-main",

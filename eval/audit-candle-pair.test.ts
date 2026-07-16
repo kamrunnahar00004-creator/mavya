@@ -43,12 +43,24 @@ async function download(storagePath: string): Promise<Buffer> {
   return Buffer.from(await res.arrayBuffer());
 }
 
+const PROVENANCE_WORDS = /ai-looking|mockup|pasted|cutout|floating|fake/i;
+
 function pillarLine(rubric: AnyRow | null | undefined): string {
   if (!rubric) return "(none)";
   const p = (rubric.pillars ?? {}) as Record<string, number>;
-  const keys = Object.keys(p);
-  const pills = keys.map((k) => `${k}=${p[k]}`).join(" ");
-  return `overall=${rubric.overall_score} raw=${rubric.raw_overall_score} ${pills}`;
+  const pills = Object.keys(p)
+    .map((k) => `${k}=${p[k]}`)
+    .join(" ");
+  const overall = Number(rubric.overall_score);
+  const band = overall >= 8 ? "STRONG" : overall >= 6 ? "mid" : "weak";
+  const prose = `${rubric.priority_action} ${rubric.priority_explanation} ${JSON.stringify(
+    rubric.next_steps ?? ""
+  )}`;
+  return (
+    `overall=${rubric.overall_score} raw=${rubric.raw_overall_score} band=${band} ${pills} ` +
+    `trust=${rubric.trust_risk ?? "(absent)"} evidence="${rubric.trust_evidence ?? ""}" ` +
+    `provenance_wording=${PROVENANCE_WORDS.test(prose)}`
+  );
 }
 
 describe.skipIf(!RUN)("all-products score audit", () => {
@@ -70,6 +82,10 @@ describe.skipIf(!RUN)("all-products score audit", () => {
         let mainContext: string | undefined;
 
         for (const photo of photos) {
+          // Optional focus: score only one photo id (fast targeted validation).
+          if (process.env.AUDIT_PHOTO && photo.id !== process.env.AUDIT_PHOTO) {
+            continue;
+          }
           const audits = await rest<AnyRow[]>(
             `audits?select=id,rubric,created_at&photo_id=eq.${photo.id}&order=created_at.desc&limit=1`
           );

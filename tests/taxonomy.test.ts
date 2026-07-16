@@ -91,9 +91,10 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    // v6 = strong praise band aligned to the calibrated 7.5+ display.
-    expect(RUBRIC_VERSION).toBe("main-v6");
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v4");
+    // v7 = evidence-based trust findings; click_appeal never punishes
+    // suspected provenance; praise band aligned to calibrated 7.5+ display.
+    expect(RUBRIC_VERSION).toBe("main-v7");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v5");
   });
 });
 

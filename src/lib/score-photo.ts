@@ -90,11 +90,19 @@ export async function scorePhoto(args: {
   /** Descriptive main-listing product (e.g. "pink candle in a glass cup with a
    *  leaf design"). Only used when scoring a SUPPORTING photo, for relevance. */
   mainProductContext?: string;
+  /** True when scoring an AI-improved CANDIDATE from our own pipeline: its
+   *  fidelity is verified by a separate dedicated check, so the scorer grades
+   *  photographic quality only and never speculates about provenance. */
+  isGeneratedCandidate?: boolean;
 }): Promise<RubricJson> {
   const dataUrl = `data:${args.imageMimeType};base64,${args.imageBuffer.toString("base64")}`;
 
   const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
-  const basePrompt = args.systemPrompt ?? RUBRIC_PROMPT;
+  const CANDIDATE_CONTEXT =
+    "\n\nContext for THIS image: it is an AI-improved candidate produced by this product's own pipeline. Its fidelity to the seller's original photo is verified by a separate dedicated check. Score photographic quality exactly as you would any listing photo. Do NOT speculate about whether the image is AI-generated and do NOT raise provenance findings unless the concrete visible evidence defined above is present. Never advise re-photographing; phrase advice as what a stronger version of this image would change.";
+  const basePrompt =
+    (args.systemPrompt ?? RUBRIC_PROMPT) +
+    (args.isGeneratedCandidate ? CANDIDATE_CONTEXT : "");
 
   // One controlled retry on parse/schema failure with a stricter instruction.
   // Provider/network failures are NOT retried here (route-level policy decides).
@@ -148,8 +156,8 @@ export async function scorePhoto(args: {
   parsed.overall_score = isInvalid
     ? 0
     : supporting
-    ? computeSupportingOverall(parsed.pillars)
-    : computeOverall(parsed.pillars);
+    ? computeSupportingOverall(parsed.pillars, parsed.trust_risk)
+    : computeOverall(parsed.pillars, parsed.trust_risk);
 
   // Beta calibration LAST: computeOverall already applied the trust ceiling, so
   // a score reduced below 7.5 by authenticity/trust can never be promoted to

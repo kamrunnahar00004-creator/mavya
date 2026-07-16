@@ -38,12 +38,16 @@ const RUBRIC_RESPONSE_SCHEMA = {
       "light_adjustment",
       "generation_risk",
       "generation_risk_reason",
+      "trust_risk",
+      "trust_evidence",
     ],
     properties: {
       upload_kind: {
         type: "string",
         enum: ["physical_product", "digital_product", "invalid"],
       },
+      trust_risk: { type: "string", enum: ["none", "moderate", "high"] },
+      trust_evidence: { type: "string" },
       checklist_category: { type: "string" },
       supporting_photo_checklist: {
         type: "array",
