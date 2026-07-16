@@ -10,7 +10,11 @@ const nextConfig: NextConfig = {
     // instead of serving a stale Router Cache entry.
     staleTimes: {
       dynamic: 0,
-      static: 30,
+      // Fully-prefetched routes stay warm for 5 minutes: an idle seller's
+      // first click reuses the prefetch instead of a cold server round trip.
+      // Safe because every mutation path calls router.refresh()/push, which
+      // bypasses and repopulates the Router Cache.
+      static: 300,
     },
   },
 };

@@ -48,11 +48,14 @@ export default async function DashboardPage() {
   // Paid-only beta gate (server-side, not a client redirect): no plan or an
   // expired/cancelled plan goes to the credits page. past_due stays here so
   // saved photos remain visible; the backend already blocks new AI usage.
-  const entitlement = await getEntitlement(user.id);
+  // Entitlement and client setup are independent: run them concurrently.
+  const [entitlement, supabase] = await Promise.all([
+    getEntitlement(user.id),
+    createSupabaseServerClient(),
+  ]);
   const pastDue = entitlement.reason === "past_due";
   if (!entitlement.active && !pastDue) redirect("/subscribe");
 
-  const supabase = await createSupabaseServerClient();
   const { data } = await supabase
     .from("products")
     .select(
@@ -65,27 +68,30 @@ export default async function DashboardPage() {
   const photoIds = products.flatMap((product) =>
     (product.photos ?? []).map((photo) => photo.id)
   );
-  const ratingsByPhoto = new Map<string, RatingJobRow>();
-  if (photoIds.length > 0) {
-    const { data: ratingData } = await supabase
-      .from("rating_jobs")
-      .select("id, photo_id, status, error_message, created_at")
-      .in("photo_id", photoIds)
-      .order("created_at", { ascending: false });
-    for (const rating of (ratingData as RatingJobRow[] | null) ?? []) {
-      if (!ratingsByPhoto.has(rating.photo_id)) {
-        ratingsByPhoto.set(rating.photo_id, rating);
-      }
-    }
-  }
-
-  // Collect all main photo storage paths
   const mainPhotoPaths = products
     .map((p) => (p.photos ?? []).find((ph) => ph.role === "main")?.storage_path)
     .filter((p): p is string => Boolean(p));
 
-  // Sign all main photo paths in one batch
-  const signedUrls = await batchSignUrls(supabase, mainPhotoPaths);
+  // Rating jobs and thumbnail signing are independent of each other: run them
+  // concurrently. The rating query is BOUNDED: cards only need the latest job
+  // per photo, so four rows per photo is plenty even with retries in between.
+  const [ratingResult, signedUrls] = await Promise.all([
+    photoIds.length > 0
+      ? supabase
+          .from("rating_jobs")
+          .select("id, photo_id, status, error_message, created_at")
+          .in("photo_id", photoIds)
+          .order("created_at", { ascending: false })
+          .limit(photoIds.length * 4)
+      : Promise.resolve({ data: null }),
+    batchSignUrls(supabase, mainPhotoPaths),
+  ]);
+  const ratingsByPhoto = new Map<string, RatingJobRow>();
+  for (const rating of (ratingResult.data as RatingJobRow[] | null) ?? []) {
+    if (!ratingsByPhoto.has(rating.photo_id)) {
+      ratingsByPhoto.set(rating.photo_id, rating);
+    }
+  }
 
   // Build cards using the signed URLs
   const cards = products.map((p, index) => {

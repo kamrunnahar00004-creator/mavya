@@ -83,24 +83,51 @@ export default async function ProductPage({
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);
 
-  // Latest generation job per photo (RLS scopes to the owner).
+  // Recent generation jobs per photo (RLS scopes to the owner). BOUNDED: the
+  // UI needs the latest job, the selected/alternate versions, and the last
+  // five completed results — twelve newest rows per photo covers that with
+  // margin, and keeps the page fast for heavy generators. Per-photo queries
+  // run concurrently (a product has at most one main + a few supporting).
+  const JOB_SELECT =
+    "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, created_at";
   const jobsByPhoto = new Map<string, JobRow>();
   const jobsByPhotoId = new Map<string, JobRow[]>();
   const jobsById = new Map<string, JobRow>();
+  const registerJob = (j: JobRow) => {
+    if (jobsById.has(j.id)) return;
+    jobsById.set(j.id, j);
+    const list = jobsByPhotoId.get(j.photo_id) ?? [];
+    list.push(j);
+    jobsByPhotoId.set(j.photo_id, list);
+  };
   if (photoIds.length > 0) {
-    const { data: jobData } = await supabase
-      .from("generation_jobs")
-      .select(
-        "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, created_at"
+    const perPhoto = await Promise.all(
+      photoIds.map((photoId) =>
+        supabase
+          .from("generation_jobs")
+          .select(JOB_SELECT)
+          .eq("photo_id", photoId)
+          .order("created_at", { ascending: false })
+          .limit(12)
       )
-      .in("photo_id", photoIds)
-      .order("created_at", { ascending: false });
-    for (const j of (jobData as JobRow[] | null) ?? []) {
-      jobsById.set(j.id, j);
-      if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
-      const list = jobsByPhotoId.get(j.photo_id) ?? [];
-      list.push(j);
-      jobsByPhotoId.set(j.photo_id, list);
+    );
+    for (const result of perPhoto) {
+      for (const j of (result.data as JobRow[] | null) ?? []) {
+        registerJob(j);
+        if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
+      }
+    }
+    // A selected/alternate version older than the recent window must still
+    // hydrate: fetch any referenced ids the bounded query missed.
+    const missingIds = rows
+      .flatMap((r) => [r.selected_generation_job_id, r.alternate_generation_job_id])
+      .filter((id): id is string => Boolean(id) && !jobsById.has(id as string));
+    if (missingIds.length > 0) {
+      const { data: extra } = await supabase
+        .from("generation_jobs")
+        .select(JOB_SELECT)
+        .in("id", missingIds);
+      for (const j of (extra as JobRow[] | null) ?? []) registerJob(j);
     }
   }
 

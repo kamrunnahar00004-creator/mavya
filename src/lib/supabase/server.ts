@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
@@ -39,11 +40,15 @@ export async function createSupabaseServerClient() {
 
 /**
  * Convenience: return the current signed-in user (or null) from the request.
+ * Wrapped in React cache(): getUser() always makes a network round trip to
+ * Supabase, so layouts/pages/components sharing one request share ONE call.
+ * (The middleware's session-refresh getUser is a separate request lifecycle
+ * and intentionally stays: it is what rotates the auth cookie.)
  */
-export async function getSessionUser() {
+export const getSessionUser = cache(async () => {
   const supabase = await createSupabaseServerClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   return user;
-}
+});

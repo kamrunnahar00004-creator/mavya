@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowRight,
   Check,
+  Download,
   Info,
   Loader2,
   MoreVertical,
@@ -337,9 +338,10 @@ export function AuditWorkspace({
                 Edit
               </button>
             )}
-            {/* Version picker: the ONLY version control. Original + last 5
-                generated versions, newest first, persisted on pick. */}
-            {versionOptions && versionOptions.length >= 2 && onSelectVersion && (
+            {/* Version picker + Download: the ONLY photo controls. Original +
+                last 5 generated versions, newest first, persisted on pick.
+                Photos without versions still get the menu for Download. */}
+            {onSelectVersion && (
               <div className="absolute right-3 top-3">
                 <button
                   type="button"
@@ -365,7 +367,7 @@ export function AuditWorkspace({
                       onClick={() => setVersionMenuOpen(false)}
                     />
                     <div className="absolute right-0 top-11 z-30 w-60 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-soft-strong)]">
-                      {versionOptions.map((opt) => (
+                      {(versionOptions ?? []).map((opt) => (
                         <button
                           key={opt.jobId ?? "original"}
                           type="button"
@@ -403,6 +405,41 @@ export function AuditWorkspace({
                           </span>
                         </button>
                       ))}
+                      {versionOptions && versionOptions.length > 0 && (
+                        <div className="my-1 border-t border-[var(--color-border-soft)]" />
+                      )}
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          setVersionMenuOpen(false);
+                          // Download exactly the photo currently ON SCREEN:
+                          // the shown tab/version of THIS photo (main or
+                          // supporting), nothing else.
+                          const url = editImageSrc;
+                          try {
+                            const res = await fetch(url);
+                            if (!res.ok) throw new Error(String(res.status));
+                            const blob = await res.blob();
+                            const objectUrl = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = objectUrl;
+                            a.download = "mavya-photo.png";
+                            document.body.appendChild(a);
+                            a.click();
+                            a.remove();
+                            URL.revokeObjectURL(objectUrl);
+                          } catch {
+                            window.open(url, "_blank", "noopener");
+                          }
+                        }}
+                        className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13.5px] font-semibold text-[var(--color-ink)] hover:bg-[var(--color-page-deep)]"
+                      >
+                        <Download
+                          className="h-4 w-4 text-[var(--color-ink-soft)]"
+                          aria-hidden="true"
+                        />
+                        Download
+                      </button>
                     </div>
                   </>
                 )}
