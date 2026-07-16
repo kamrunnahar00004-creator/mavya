@@ -37,6 +37,16 @@ export type InitialJob = {
   fidelity: FidelityReport | null;
   /** 1 = user-visible attempt; 2-3 = quiet background refinement. */
   attemptNumber?: number;
+  /** ISO timestamp of the version's completion (for picker labels). */
+  createdAt?: string;
+};
+
+export type VersionOption = {
+  /** null = the original photo. */
+  jobId: string | null;
+  label: string;
+  sub?: string;
+  current: boolean;
 };
 
 export type InitialPhoto = {
@@ -55,7 +65,7 @@ export type InitialPhoto = {
   alternateJob?: InitialJob | null;
   hasAlternateGeneration?: boolean;
   selectionIsReverted?: boolean;
-  /** Completed versions for the picker (oldest first, max 3). */
+  /** Completed versions for the picker (oldest first, max 5). */
   versions?: InitialJob[];
 };
 
@@ -291,9 +301,10 @@ function withVersion(photo: Photo, payload: GenerationJobPayload): InitialJob[] 
     candidateRubric: payload.candidateRubric,
     fidelity: payload.fidelity,
     attemptNumber: payload.attemptNumber ?? 1,
+    createdAt: new Date().toISOString(),
   };
   const rest = photo.versions.filter((v) => v.id !== entry.id);
-  return [...rest, entry].slice(-3);
+  return [...rest, entry].slice(-5);
 }
 
 function newId(): string {
@@ -847,64 +858,58 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       runImprove(false, instruction, source),
     [runImprove]
   );
-  const handleRevert = useCallback(async () => {
-    const photo = photosRef.current.find((p) => p.id === activeId);
-    if (!photo?.revertSnap) return;
-    const snap = photo.revertSnap;
-    // Persist FIRST. The database atomically swaps the selected and alternate
-    // versions, including the valid null/original side of the pair.
-    let saved: { selectedJobId: string | null; selectionIsReverted: boolean };
-    try {
-      const res = await fetch("/api/photos/select-version", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId: photo.id, swap: true }),
-      });
-      const body = (await res.json().catch(() => null)) as {
-        selectedJobId?: string | null;
-        selectionIsReverted?: boolean;
-      } | null;
-      if (!res.ok || !body || typeof body.selectionIsReverted !== "boolean") {
-        throw new Error(String(res.status));
+  // Single version picker (replaces the revert/restore link): the seller can
+  // jump to the ORIGINAL or any of the last five generated versions. The
+  // selection persists first (selection_source='user': background refinement
+  // never overrides an explicit pick), then the preview updates.
+  const [versionBusy, setVersionBusy] = useState(false);
+  const handleSelectVersion = useCallback(
+    async (jobId: string | null) => {
+      const photo = photosRef.current.find((p) => p.id === activeId);
+      if (!photo || versionBusy) return;
+      const target = jobId ? (photo.versions ?? []).find((v) => v.id === jobId) : null;
+      if (jobId && !target) return;
+      setVersionBusy(true);
+      try {
+        const res = await fetch("/api/photos/select-version", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ photoId: photo.id, jobId }),
+        });
+        if (!res.ok) throw new Error(String(res.status));
+      } catch {
+        setNotice("The version could not be changed. Try again.");
+        setVersionBusy(false);
+        return;
       }
-      saved = {
-        selectedJobId: body.selectedJobId ?? null,
-        selectionIsReverted: body.selectionIsReverted,
-      };
-    } catch {
-      setNotice("The photo could not be changed. Try again.");
-      return;
-    }
-    // SWAP, don't consume: the state being replaced becomes the new snapshot,
-    // so revert and restore interchange freely ("Revert last edit" <->
-    // "Restore latest edit"). Both versions stay persisted in generation_jobs.
-    const counterSnap: RevertSnap = {
-      improvedSrc: photo.audit.improvedSrc,
-      improvedAudit: photo.audit.improvedAudit,
-      improvedScore: photo.audit.improvedScore,
-      improvedVerdict: photo.audit.improvedVerdict,
-      lastJobId: photo.lastJobId,
-      freePreview: photo.freePreview,
-      freePreviewMessage: photo.freePreviewMsg,
-    };
-    patch(photo.id, {
-      lastJobId: snap.lastJobId,
-      selectedJobId: saved.selectedJobId,
-      freePreview: Boolean(snap.freePreview),
-      freePreviewMsg: snap.freePreviewMessage,
-      canRetry:
-        typeof snap.improvedScore === "number" ? snap.improvedScore < 8 : photo.canRetry,
-      revertSnap: counterSnap,
-      reverted: saved.selectionIsReverted,
-      audit: {
-        ...photo.audit,
-        improvedSrc: snap.improvedSrc,
-        improvedAudit: snap.improvedAudit,
-        improvedScore: snap.improvedScore,
-        improvedVerdict: snap.improvedVerdict,
-      },
-    });
-  }, [activeId, patch]);
+      if (!jobId) {
+        patch(photo.id, {
+          selectedJobId: null,
+          freePreview: false,
+          freePreviewMsg: undefined,
+          keepNote: undefined,
+          audit: {
+            ...photo.audit,
+            improvedSrc: undefined,
+            improvedAudit: undefined,
+            improvedScore: undefined,
+            improvedVerdict: undefined,
+          },
+        });
+      } else if (target) {
+        const updated = applyCompletedJob({ ...photo, keepNote: undefined }, target);
+        setPhotos((prev) =>
+          prev.map((p) =>
+            p.id === photo.id
+              ? { ...updated, selectedJobId: jobId, lastJobId: jobId }
+              : p
+          )
+        );
+      }
+      setVersionBusy(false);
+    },
+    [activeId, patch, versionBusy]
+  );
 
   const handleSelectSlot = useCallback((id: string) => {
     setActiveId(id);
@@ -1023,8 +1028,43 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
   const digitalMain = active.kind === "main" && active.isDigital;
 
-  // Version picker UI hidden: seller sees one current improved preview, not 1/2/3 comparison.
-  // Database maintains generation history; score-based auto-selection chooses current best.
+  // Version picker (top-right menu on the photo): Original + the last five
+  // generated versions of the ACTIVE photo, newest first, current checkmarked.
+  const activeVersions = (active.versions ?? []).slice(-5);
+  const versionOptions: VersionOption[] | undefined =
+    active.status === "graded" && activeVersions.length > 0
+      ? [
+          ...activeVersions
+            .map((v, i) => ({
+              jobId: v.id as string | null,
+              label: `Version ${i + 1}`,
+              sub: [
+                typeof v.candidateRubric?.overall_score === "number"
+                  ? v.candidateRubric.overall_score.toFixed(1)
+                  : null,
+                v.createdAt
+                  ? new Date(v.createdAt).toLocaleString([], {
+                      month: "short",
+                      day: "numeric",
+                      hour: "numeric",
+                      minute: "2-digit",
+                    })
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+              current:
+                active.selectedJobId === v.id && Boolean(active.audit.improvedSrc),
+            }))
+            .reverse(),
+          {
+            jobId: null,
+            label: "Original",
+            sub: "",
+            current: !active.audit.improvedSrc,
+          },
+        ]
+      : undefined;
 
   const slotViews: SlotView[] = photos.map((p) => ({
     id: p.id,
@@ -1073,8 +1113,9 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         onCta={() => router.push("/dashboard")}
         onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
         onEdit={digitalMain || wrongProduct ? undefined : handleEdit}
-        onRevert={active.revertSnap ? handleRevert : undefined}
-        revertLabel={active.reverted ? "Restore latest edit" : "Revert last edit"}
+        versionOptions={versionOptions}
+        onSelectVersion={handleSelectVersion}
+        versionBusy={versionBusy}
         improveLoading={active.improveStatus === "generating"}
         editLoading={
           active.improveStatus === "generating" && active.pendingOp === "edit"

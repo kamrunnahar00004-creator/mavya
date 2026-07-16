@@ -133,7 +133,9 @@ export default async function ProductPage({
     const allCompletedRows = (jobsByPhotoId.get(row.id) ?? [])
       .filter((j) => j.status === "completed" && j.result_storage_path)
       .sort((a, b) => a.created_at.localeCompare(b.created_at));
-    let completedRows = allCompletedRows.slice(-3);
+    // Version picker shows the last FIVE versions; the selected one is always
+    // included even when older than that window.
+    let completedRows = allCompletedRows.slice(-5);
     if (
       selectedRow?.status === "completed" &&
       selectedRow.result_storage_path &&
@@ -141,7 +143,7 @@ export default async function ProductPage({
     ) {
       completedRows = [
         selectedRow,
-        ...allCompletedRows.filter((job) => job.id !== selectedRow.id).slice(-2),
+        ...allCompletedRows.filter((job) => job.id !== selectedRow.id).slice(-4),
       ].sort((a, b) => a.created_at.localeCompare(b.created_at));
     }
 
@@ -218,6 +220,7 @@ export default async function ProductPage({
         candidateRubric: v.candidate_rubric,
         fidelity: v.fidelity,
         attemptNumber: v.attempt_number ?? 1,
+        createdAt: v.created_at,
       });
     }
 

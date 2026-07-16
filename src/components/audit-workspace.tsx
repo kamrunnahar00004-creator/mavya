@@ -4,8 +4,10 @@ import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  Check,
   Info,
   Loader2,
+  MoreVertical,
   Sparkles,
   WandSparkles,
   Wrench,
@@ -78,10 +80,15 @@ type Props = {
     instruction: string,
     source: "original" | "preview"
   ) => Promise<void> | void;
-  /** Swap between the latest edit and the version before it. Shown only when a snapshot exists. */
-  onRevert?: () => void;
-  /** Action label: "Revert last edit" or "Restore latest edit" after reverting. */
-  revertLabel?: string;
+  /** Version picker entries (Original + last 5 versions, newest first). */
+  versionOptions?: Array<{
+    jobId: string | null;
+    label: string;
+    sub?: string;
+    current: boolean;
+  }>;
+  onSelectVersion?: (jobId: string | null) => void;
+  versionBusy?: boolean;
   /** True while the supporting-photo checklist is still hydrating in the background. */
   checklistLoading?: boolean;
   /** First generation failed and nothing is saved: keep the panel with a retry. */
@@ -117,8 +124,9 @@ export function AuditWorkspace({
   keepNote,
   coveredShotIds,
   onEdit,
-  onRevert,
-  revertLabel = "Revert last edit",
+  versionOptions,
+  onSelectVersion,
+  versionBusy = false,
   checklistLoading = false,
   checklistError = false,
   onChecklistRetry,
@@ -134,6 +142,7 @@ export function AuditWorkspace({
   const isExtra = panelMode === "extra";
   const [revealed, setRevealed] = useState(!animate);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);
   const [backgroundElapsed, setBackgroundElapsed] = useState(0);
@@ -327,6 +336,77 @@ export function AuditWorkspace({
                 <Wrench className="h-4 w-4" aria-hidden="true" />
                 Edit
               </button>
+            )}
+            {/* Version picker: the ONLY version control. Original + last 5
+                generated versions, newest first, persisted on pick. */}
+            {versionOptions && versionOptions.length >= 2 && onSelectVersion && (
+              <div className="absolute right-3 top-3">
+                <button
+                  type="button"
+                  aria-label="Photo versions"
+                  aria-expanded={versionMenuOpen}
+                  disabled={versionBusy}
+                  onClick={() => setVersionMenuOpen((v) => !v)}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-[var(--color-ink)] shadow-[var(--shadow-soft)] backdrop-blur-sm transition-colors hover:bg-white disabled:opacity-60"
+                >
+                  {versionBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <MoreVertical className="h-4 w-4" aria-hidden="true" />
+                  )}
+                </button>
+                {versionMenuOpen && (
+                  <>
+                    <button
+                      type="button"
+                      aria-hidden="true"
+                      tabIndex={-1}
+                      className="fixed inset-0 z-10 cursor-default"
+                      onClick={() => setVersionMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 top-11 z-30 w-60 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-soft-strong)]">
+                      {versionOptions.map((opt) => (
+                        <button
+                          key={opt.jobId ?? "original"}
+                          type="button"
+                          disabled={versionBusy || opt.current}
+                          onClick={() => {
+                            setVersionMenuOpen(false);
+                            if (opt.current) return;
+                            onSelectVersion(opt.jobId);
+                            if (opt.jobId) {
+                              setPreviewUnlocked(true);
+                              setActiveTab("preview");
+                            } else {
+                              setActiveTab("original");
+                            }
+                          }}
+                          className="flex w-full items-center gap-2.5 px-3 py-2 text-left hover:bg-[var(--color-page-deep)] disabled:cursor-default disabled:hover:bg-white"
+                        >
+                          <span className="flex h-4 w-4 flex-shrink-0 items-center justify-center">
+                            {opt.current && (
+                              <Check
+                                className="h-4 w-4 text-[var(--color-primary)]"
+                                aria-hidden="true"
+                              />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-[13.5px] font-semibold text-[var(--color-ink)]">
+                              {opt.label}
+                            </span>
+                            {opt.sub && (
+                              <span className="block text-[12px] text-[var(--color-ink-soft)]">
+                                {opt.sub}
+                              </span>
+                            )}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
           </div>
 
@@ -581,28 +661,17 @@ export function AuditWorkspace({
                       </span>
                     )}
                   </div>
-                ) : (onEdit || onRevert) ? (
+                ) : onEdit ? (
                   <div className="flex flex-wrap items-center gap-3">
-                    {onEdit && (
-                      <button
-                        type="button"
-                        onClick={() => setEditModalOpen(true)}
-                        aria-label="Edit photo"
-                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                      >
-                        <Wrench className="h-4 w-4" aria-hidden="true" />
-                        Edit photo
-                      </button>
-                    )}
-                    {onRevert && (
-                      <button
-                        type="button"
-                        onClick={onRevert}
-                        className="text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
-                      >
-                        {revertLabel}
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setEditModalOpen(true)}
+                      aria-label="Edit photo"
+                      className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                    >
+                      <Wrench className="h-4 w-4" aria-hidden="true" />
+                      Edit photo
+                    </button>
                   </div>
                 ) : null}
               </div>
@@ -672,15 +741,6 @@ export function AuditWorkspace({
                         >
                           <Wrench className="h-4 w-4" aria-hidden="true" />
                           Edit photo
-                        </button>
-                      )}
-                      {onRevert && !improveLoading && !refiningVisible && (
-                        <button
-                          type="button"
-                          onClick={onRevert}
-                          className="text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
-                        >
-                          {revertLabel}
                         </button>
                       )}
                       {improveLoading && (
