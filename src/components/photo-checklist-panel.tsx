@@ -19,6 +19,9 @@ type Props = {
   checklist: SupportingPhotoChecklistItem[];
   /** True while the checklist hydrates in the background (score already shown). */
   loading?: boolean;
+  /** First generation failed and nothing is saved yet: show a quiet retry. */
+  error?: boolean;
+  onRetry?: () => void;
   /** Shot ids already covered by uploaded supporting photos (auto-marked "Added"). */
   coveredShotIds?: string[];
 };
@@ -32,6 +35,8 @@ type Props = {
 export function PhotoChecklistPanel({
   checklist,
   loading = false,
+  error = false,
+  onRetry,
   coveredShotIds,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -40,7 +45,33 @@ export function PhotoChecklistPanel({
   const covered = new Set(coveredShotIds ?? []);
 
   // Nothing to show and nothing coming: render nothing.
-  if (!checklist.length && !loading) return null;
+  if (!checklist.length && !loading && !error) return null;
+
+  // First generation failed with nothing saved: keep the section present with
+  // a quiet retry instead of disappearing.
+  if (!checklist.length && !loading && error) {
+    return (
+      <div className="flex items-center gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white/70 px-4 py-3">
+        <span className="min-w-0 flex-1">
+          <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)]">
+            Suggested supporting shots
+          </span>
+          <span className="mt-0.5 block text-[12px] text-[var(--color-ink-soft)]">
+            Suggestions are unavailable right now.
+          </span>
+        </span>
+        {onRetry && (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="flex-shrink-0 text-[12.5px] font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline"
+          >
+            Try again
+          </button>
+        )}
+      </div>
+    );
+  }
 
   // Score is already visible; the checklist is still hydrating in the background.
   // Show a calm placeholder so the card is present but adds no friction.

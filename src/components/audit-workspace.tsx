@@ -88,6 +88,9 @@ type Props = {
   onRevert?: () => void;
   /** True while the supporting-photo checklist is still hydrating in the background. */
   checklistLoading?: boolean;
+  /** First generation failed and nothing is saved: keep the panel with a retry. */
+  checklistError?: boolean;
+  onChecklistRetry?: () => void;
   /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
   panelMode?: "main" | "extra";
   /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
@@ -120,6 +123,8 @@ export function AuditWorkspace({
   onEdit,
   onRevert,
   checklistLoading = false,
+  checklistError = false,
+  onChecklistRetry,
   panelMode = "main",
   slots,
   onSelectSlot,
@@ -378,11 +383,14 @@ export function AuditWorkspace({
 
           {!isExtra &&
             (checklistLoading ||
+              checklistError ||
               (state.supportingChecklist &&
                 state.supportingChecklist.length > 0)) && (
               <PhotoChecklistPanel
                 checklist={state.supportingChecklist ?? []}
                 loading={checklistLoading}
+                error={checklistError}
+                onRetry={onChecklistRetry}
                 coveredShotIds={coveredShotIds}
               />
             )}

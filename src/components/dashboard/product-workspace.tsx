@@ -20,6 +20,7 @@ import {
   type GenerationJobStatus,
 } from "@/lib/generation-types";
 import { coveredShotIds } from "@/lib/checklist-coverage";
+import { mergeChecklist, parseSavedChecklist } from "@/lib/checklist-store";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { prepareUploadImage } from "@/lib/client-image";
 import { trackClientEvent } from "@/lib/track-client";
@@ -279,8 +280,18 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
   const [activeId, setActiveId] = useState<string>(
     () => initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
   );
-  const [checklist, setChecklist] = useState<SupportingPhotoChecklistItem[]>([]);
+  // Seed synchronously from the persisted audit rubric: saved suggestions
+  // render on first paint and no provider round-trip happens for them.
+  const [checklist, setChecklist] = useState<SupportingPhotoChecklistItem[]>(
+    () =>
+      parseSavedChecklist(
+        initialPhotos.find((p) => p.role === "main")?.rubric
+          .supporting_photo_checklist
+      ) ?? []
+  );
   const [checklistLoading, setChecklistLoading] = useState(false);
+  const [checklistError, setChecklistError] = useState(false);
+  const [checklistRetryNonce, setChecklistRetryNonce] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
 
   const photosRef = useRef<Photo[]>(photos);
@@ -312,10 +323,16 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
   // Checklist (background hydrate) + covered-shot diffing.
   // ------------------------------------------------------------------
   const mainPhotoId = initialPhotos.find((p) => p.role === "main")?.id;
+  const checklistSeeded = checklist.length > 0;
   useEffect(() => {
     if (!mainRubric || mainRubric.upload_kind === "invalid" || !mainPhotoId) return;
+    // A saved (or already-loaded) checklist never refetches: it is durable
+    // user data served from the audit rubric, not a per-mount provider call.
+    if (checklistSeeded) return;
     let alive = true;
-    (async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const deadline = Date.now() + 45_000;
+    const attempt = async () => {
       setChecklistLoading(true);
       try {
         const res = await fetch("/api/checklist", {
@@ -323,20 +340,47 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ photoId: mainPhotoId }),
         });
-        const data = (await res.json().catch(() => null)) as
-          | { supporting_photo_checklist?: SupportingPhotoChecklistItem[] }
-          | null;
-        if (alive) setChecklist(data?.supporting_photo_checklist ?? []);
+        const data = (await res.json().catch(() => null)) as {
+          status?: string;
+          supporting_photo_checklist?: unknown;
+        } | null;
+        if (!alive) return;
+        const items = parseSavedChecklist(data?.supporting_photo_checklist);
+        if (items) {
+          setChecklist((cur) => mergeChecklist(cur, items));
+          setChecklistError(false);
+          setChecklistLoading(false);
+          return;
+        }
+        // Another request owns the generation claim: re-poll briefly for the
+        // saved result instead of clearing anything.
+        if (data?.status === "pending" && Date.now() < deadline) {
+          timer = setTimeout(() => void attempt(), 2000);
+          return;
+        }
+        setChecklistLoading(false);
+        setChecklistError(true);
       } catch {
-        // best-effort
-      } finally {
-        if (alive) setChecklistLoading(false);
+        if (!alive) return;
+        if (Date.now() < deadline) {
+          timer = setTimeout(() => void attempt(), 2000);
+          return;
+        }
+        setChecklistLoading(false);
+        setChecklistError(true);
       }
-    })();
+    };
+    void attempt();
     return () => {
       alive = false;
+      if (timer) clearTimeout(timer);
     };
-  }, [mainRubric, mainPhotoId]);
+  }, [mainRubric, mainPhotoId, checklistSeeded, checklistRetryNonce]);
+
+  const handleChecklistRetry = useCallback(() => {
+    setChecklistError(false);
+    setChecklistRetryNonce((n) => n + 1);
+  }, []);
 
   const covered = coveredShotIds(
     photos
@@ -575,8 +619,16 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     setActiveId(
       initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
     );
-    setChecklist([]);
+    // Reseed from the INCOMING product's saved rubric — never carry another
+    // product's suggestions, never wipe saved ones.
+    setChecklist(
+      parseSavedChecklist(
+        initialPhotos.find((p) => p.role === "main")?.rubric
+          .supporting_photo_checklist
+      ) ?? []
+    );
     setChecklistLoading(false);
+    setChecklistError(false);
     setNotice(null);
     for (const p of initialPhotos) {
       if (p.lastJob && ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
@@ -919,6 +971,8 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
               "Digital product detected. AI improvement is disabled for digital listings because exact text and layout cannot be guaranteed yet."
             : notice ?? undefined
         }
+        checklistError={checklistError}
+        onChecklistRetry={handleChecklistRetry}
         onCta={() => router.push("/dashboard")}
         onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
         onEdit={digitalMain || wrongProduct ? undefined : handleEdit}

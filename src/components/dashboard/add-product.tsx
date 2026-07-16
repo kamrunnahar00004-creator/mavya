@@ -5,6 +5,10 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AlertCircle, ImageUp, Loader2, Plus, X } from "lucide-react";
 import { prepareUploadImage } from "@/lib/client-image";
+import {
+  parseRatingQueueResponse,
+  ratingQueueErrorMessage,
+} from "@/lib/rating-queue";
 import { cn } from "@/lib/utils";
 import { AnalyzingState } from "@/components/analyzing-state";
 
@@ -74,29 +78,21 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
       form.set("name", name.trim());
       const res = await fetch("/api/score/jobs", { method: "POST", body: form });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as
-          | { error?: string; code?: string }
-          | null;
-        if (body?.code === "insufficient_credits") {
-          throw new Error("Your rating credit ran out");
-        }
-        if (body?.code === "subscription_required" || body?.code === "subscription_past_due") {
-          throw new Error(
-            "An active plan is needed to rate photos. Check Settings to update billing."
-          );
-        }
-        if (body?.code === "unauthenticated") {
-          throw new Error("Your session expired. Log in again.");
-        }
-        throw new Error(body?.error || `Scoring failed (${res.status})`);
+        throw new Error(
+          ratingQueueErrorMessage(await res.json().catch(() => null), res.status)
+        );
       }
-      const queued = (await res.json()) as { productId?: string };
-      if (!queued.productId) throw new Error("Could not create the product.");
+      const queued = parseRatingQueueResponse(await res.json().catch(() => null));
+      if (!queued.ok) throw new Error(queued.message);
 
-      // The new card is already persisted and displays Rating… while the
-      // server worker finishes independently of this component.
+      // The durable server job owns the rating from here. Close the overlay
+      // and dialog immediately; the refreshed dashboard shows the persisted
+      // card in its Rating… state and that card polls independently. No
+      // browser loop: navigating away can never cancel the job or cause a
+      // delayed redirect back.
+      reset();
+      setOpen(false);
       router.refresh();
-      router.push("/dashboard");
     } catch (err) {
       setStep("idle");
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
