@@ -50,6 +50,10 @@ export type InitialPhoto = {
   selectedJobId?: string | null;
   /** 'user' = the seller picked this version explicitly. */
   selectionSource?: "auto" | "user";
+  /** Other side of the durable latest-edit pair; null can mean original. */
+  alternateJob?: InitialJob | null;
+  hasAlternateGeneration?: boolean;
+  selectionIsReverted?: boolean;
   /** Completed versions for the picker (oldest first, max 3). */
   versions?: InitialJob[];
 };
@@ -85,6 +89,8 @@ type Photo = {
   canRetry: boolean;
   unresolved: string[] | null;
   revertSnap: RevertSnap | null;
+  /** True when the seller is currently on the reverted (pre-edit) side; flips the action label. */
+  reverted?: boolean;
   /** Completed versions available in the picker (oldest first). */
   versions: InitialJob[];
   /** Currently selected version (null = original). */
@@ -177,7 +183,33 @@ function makePhoto(p: InitialPhoto): Photo {
     revertSnap: null,
     versions: p.versions ?? [],
     selectedJobId: p.selectedJobId ?? p.selectedJob?.id ?? null,
+    reverted: p.selectionIsReverted ?? false,
   };
+  if (p.hasAlternateGeneration) {
+    if (p.alternateJob) {
+      const alternate = applyCompletedJob(photo, p.alternateJob);
+      photo.revertSnap = {
+        improvedSrc: alternate.audit.improvedSrc,
+        improvedAudit: alternate.audit.improvedAudit,
+        improvedScore: alternate.audit.improvedScore,
+        improvedVerdict: alternate.audit.improvedVerdict,
+        lastJobId: alternate.lastJobId,
+        freePreview: alternate.freePreview,
+        freePreviewMessage: alternate.freePreviewMsg,
+      };
+    } else {
+      // A saved null alternate is the original photo, not missing history.
+      photo.revertSnap = {
+        improvedSrc: undefined,
+        improvedAudit: undefined,
+        improvedScore: undefined,
+        improvedVerdict: undefined,
+        lastJobId: undefined,
+        freePreview: false,
+        freePreviewMessage: undefined,
+      };
+    }
+  }
   if (p.selectedJob) {
     photo = applyCompletedJob(photo, p.selectedJob);
   }
@@ -686,6 +718,7 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
         pendingOp: isEdit ? "edit" : retry ? "retry" : "improve",
         canRetry: false,
         revertSnap,
+        reverted: false,
       });
       pollJob(photo.id, `key=${idempotencyKey}`);
 
@@ -781,29 +814,51 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     const photo = photosRef.current.find((p) => p.id === activeId);
     if (!photo?.revertSnap) return;
     const snap = photo.revertSnap;
-    // Persist FIRST (reselect the previous version, or the original when there
-    // was no preview; selection_source becomes 'user', which blocks background
-    // refinement from re-replacing it). The UI only changes once the database
-    // accepted the revert, so a refresh always matches what is on screen.
+    // Persist FIRST. The database atomically swaps the selected and alternate
+    // versions, including the valid null/original side of the pair.
+    let saved: { selectedJobId: string | null; selectionIsReverted: boolean };
     try {
       const res = await fetch("/api/photos/select-version", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ photoId: photo.id, jobId: snap.lastJobId ?? null }),
+        body: JSON.stringify({ photoId: photo.id, swap: true }),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      const body = (await res.json().catch(() => null)) as {
+        selectedJobId?: string | null;
+        selectionIsReverted?: boolean;
+      } | null;
+      if (!res.ok || !body || typeof body.selectionIsReverted !== "boolean") {
+        throw new Error(String(res.status));
+      }
+      saved = {
+        selectedJobId: body.selectedJobId ?? null,
+        selectionIsReverted: body.selectionIsReverted,
+      };
     } catch {
-      setNotice("The revert could not be saved. Try again.");
+      setNotice("The photo could not be changed. Try again.");
       return;
     }
+    // SWAP, don't consume: the state being replaced becomes the new snapshot,
+    // so revert and restore interchange freely ("Revert last edit" <->
+    // "Restore latest edit"). Both versions stay persisted in generation_jobs.
+    const counterSnap: RevertSnap = {
+      improvedSrc: photo.audit.improvedSrc,
+      improvedAudit: photo.audit.improvedAudit,
+      improvedScore: photo.audit.improvedScore,
+      improvedVerdict: photo.audit.improvedVerdict,
+      lastJobId: photo.lastJobId,
+      freePreview: photo.freePreview,
+      freePreviewMessage: photo.freePreviewMsg,
+    };
     patch(photo.id, {
       lastJobId: snap.lastJobId,
-      selectedJobId: snap.lastJobId ?? null,
+      selectedJobId: saved.selectedJobId,
       freePreview: Boolean(snap.freePreview),
       freePreviewMsg: snap.freePreviewMessage,
       canRetry:
         typeof snap.improvedScore === "number" ? snap.improvedScore < 8 : photo.canRetry,
-      revertSnap: null,
+      revertSnap: counterSnap,
+      reverted: saved.selectionIsReverted,
       audit: {
         ...photo.audit,
         improvedSrc: snap.improvedSrc,
@@ -977,6 +1032,7 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
         onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
         onEdit={digitalMain || wrongProduct ? undefined : handleEdit}
         onRevert={active.revertSnap ? handleRevert : undefined}
+        revertLabel={active.reverted ? "Restore latest edit" : "Revert last edit"}
         improveLoading={active.improveStatus === "generating"}
         editLoading={
           active.improveStatus === "generating" && active.pendingOp === "edit"

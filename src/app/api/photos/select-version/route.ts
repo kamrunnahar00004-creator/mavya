@@ -13,6 +13,7 @@ export const dynamic = "force-dynamic";
  * 'user', which blocks all automatic (background-refinement) replacement.
  * Body: { photoId, jobId } — jobId null selects the ORIGINAL photo.
  *
+ * Passing swap=true atomically toggles the saved latest-edit pair.
  * The seller can select any completed version, including those with warnings
  * (drift, AI-looking, incomplete). The system never prevents manual selection.
  */
@@ -22,16 +23,17 @@ export async function POST(req: NextRequest) {
   const limit = await rateLimit(`select-version:u:${user.id}`, 30, 60_000);
   if (!limit.ok) return apiError("rate_limited", "Too many requests. Wait a minute.");
 
-  let body: { photoId?: unknown; jobId?: unknown };
+  let body: { photoId?: unknown; jobId?: unknown; swap?: unknown };
   try {
-    body = (await req.json()) as { photoId?: unknown; jobId?: unknown };
+    body = (await req.json()) as { photoId?: unknown; jobId?: unknown; swap?: unknown };
   } catch {
     return apiError("bad_request", "Invalid request body.");
   }
   const photoId = typeof body.photoId === "string" ? body.photoId : "";
+  const swap = body.swap === true;
   const jobId =
     body.jobId === null ? null : typeof body.jobId === "string" ? body.jobId : "";
-  if (!photoId || jobId === "") {
+  if (!photoId || (!swap && jobId === "")) {
     return apiError("bad_request", "Missing photo or version.");
   }
 
@@ -43,6 +45,37 @@ export async function POST(req: NextRequest) {
     .eq("id", photoId)
     .maybeSingle();
   if (!photo) return apiError("source_unavailable", "Photo not found.");
+
+  const admin = createSupabaseAdminClient();
+  if (swap) {
+    const { data, error } = await admin.rpc("swap_generation_selection", {
+      p_user: user.id,
+      p_photo: photo.id,
+    });
+    const result = Array.isArray(data) ? data[0] : data;
+    if (error || !result?.ok) {
+      logEvent("select_version.swap_failed", {
+        userId: user.id,
+        photoId,
+        error: error?.message ?? "No saved edit pair",
+      });
+      return apiError("persistence_failed", "The selection could not be changed. Try again.");
+    }
+    logEvent("select_version.swapped", {
+      userId: user.id,
+      photoId,
+      selectedJobId: result.selected_job_id,
+      reverted: result.selection_is_reverted,
+    });
+    return NextResponse.json(
+      {
+        ok: true,
+        selectedJobId: result.selected_job_id,
+        selectionIsReverted: result.selection_is_reverted,
+      },
+      { status: 200 }
+    );
+  }
 
   if (jobId !== null) {
     const { data: job } = await supabase
@@ -58,7 +91,6 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const admin = createSupabaseAdminClient();
   const { error } = await admin
     .from("photos")
     .update({ selected_generation_job_id: jobId, selection_source: "user" })

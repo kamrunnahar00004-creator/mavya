@@ -84,8 +84,10 @@ type Props = {
     instruction: string,
     source: "original" | "preview"
   ) => Promise<void> | void;
-  /** One-step revert to the pre-edit version. Shown only when a snapshot exists. */
+  /** Swap between the latest edit and the version before it. Shown only when a snapshot exists. */
   onRevert?: () => void;
+  /** Action label: "Revert last edit" or "Restore latest edit" after reverting. */
+  revertLabel?: string;
   /** True while the supporting-photo checklist is still hydrating in the background. */
   checklistLoading?: boolean;
   /** First generation failed and nothing is saved: keep the panel with a retry. */
@@ -122,6 +124,7 @@ export function AuditWorkspace({
   coveredShotIds,
   onEdit,
   onRevert,
+  revertLabel = "Revert last edit",
   checklistLoading = false,
   checklistError = false,
   onChecklistRetry,
@@ -569,22 +572,20 @@ export function AuditWorkspace({
                       className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-mid)]"
                       aria-hidden="true"
                     />
-                    <span className="flex flex-col gap-0.5">
-                      <span>{backgroundStatus}</span>
-                      <span className="text-[12px] font-semibold text-[var(--color-ink-muted)]">
-                        {backgroundCountdown}
-                      </span>
-                    </span>
+                    <span>{backgroundStatus}</span>
                   </div>
                 ) : keepNote && previewBelowPublishReady ? (
                   <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
                     {keepNote}
                   </div>
                 ) : null}
-                {improveLoading ? (
-                  // An edit (or retry) launched from the preview: keep the white
-                  // Edit-style button visible as a disabled loading state with
-                  // the same countdown treatment as One-click fix.
+                {improveLoading || (backgroundRefining && previewBelowPublishReady) ? (
+                  // A running generation (seller edit/retry, or a background
+                  // refinement below the 8.0 bar): the white Edit-style button
+                  // becomes a disabled loading state with the same countdown
+                  // treatment as One-click fix. At 8.0+ nothing renders as
+                  // "running" — a stray older attempt finishing in the
+                  // background can only quietly keep-better.
                   <div className="flex flex-wrap items-center gap-3">
                     <button
                       type="button"
@@ -592,14 +593,16 @@ export function AuditWorkspace({
                       className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
                     >
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      {improveCountdown}
+                      {improveLoading ? improveCountdown : backgroundCountdown}
                     </button>
-                    <span
-                      className="text-[12.5px] text-[var(--color-ink-soft)]"
-                      aria-live="polite"
-                    >
-                      {improveStatus}
-                    </span>
+                    {improveLoading && (
+                      <span
+                        className="text-[12.5px] text-[var(--color-ink-soft)]"
+                        aria-live="polite"
+                      >
+                        {improveStatus}
+                      </span>
+                    )}
                   </div>
                 ) : (onEdit || onRevert) ? (
                   <div className="flex flex-wrap items-center gap-3">
@@ -607,18 +610,8 @@ export function AuditWorkspace({
                       <button
                         type="button"
                         onClick={() => setEditModalOpen(true)}
-                        disabled={backgroundRefining}
-                        aria-label={
-                          backgroundRefining
-                            ? "Edit photo after background improvement finishes"
-                            : "Edit photo"
-                        }
-                        className={cn(
-                          "inline-flex items-center gap-2 rounded-full border bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]",
-                          backgroundRefining
-                            ? "background-refining-button cursor-wait border-transparent"
-                            : "border-[var(--color-border)]"
-                        )}
+                        aria-label="Edit photo"
+                        className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                       >
                         <Wrench className="h-4 w-4" aria-hidden="true" />
                         Edit photo
@@ -630,7 +623,7 @@ export function AuditWorkspace({
                         onClick={onRevert}
                         className="text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
                       >
-                        Revert last edit
+                        {revertLabel}
                       </button>
                     )}
                   </div>
@@ -698,7 +691,7 @@ export function AuditWorkspace({
                           onClick={onRevert}
                           className="text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline"
                         >
-                          Revert last edit
+                          {revertLabel}
                         </button>
                       )}
                       {improveLoading && (

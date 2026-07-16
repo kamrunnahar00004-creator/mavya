@@ -103,6 +103,53 @@ describe("select-version route", () => {
     });
   });
 
+  it("atomically swaps the durable before/after edit pair", async () => {
+    const userId = "user-123";
+    const photoId = "photo-456";
+    mockGetSessionUser.mockResolvedValue({ id: userId });
+    mockRateLimit.mockResolvedValue({ ok: true });
+
+    const mockSupabaseServer = {
+      from: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { id: photoId, product_id: "product-001", role: "main" },
+      }),
+    };
+    mockCreateSupabaseServerClient.mockResolvedValue(mockSupabaseServer);
+
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        {
+          ok: true,
+          selected_job_id: null,
+          selection_is_reverted: true,
+        },
+      ],
+      error: null,
+    });
+    mockCreateSupabaseAdminClient.mockReturnValue({ rpc });
+
+    const req = new NextRequest("http://localhost/api/photos/select-version", {
+      method: "POST",
+      body: JSON.stringify({ photoId, swap: true }),
+    });
+    const response = await POST(req);
+    const result = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(result).toMatchObject({
+      ok: true,
+      selectedJobId: null,
+      selectionIsReverted: true,
+    });
+    expect(rpc).toHaveBeenCalledWith("swap_generation_selection", {
+      p_user: userId,
+      p_photo: photoId,
+    });
+  });
+
   it("allows seller to select completed version even if AI-looking", async () => {
     const userId = "user-123";
     const photoId = "photo-456";

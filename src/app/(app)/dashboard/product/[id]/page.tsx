@@ -23,6 +23,9 @@ type PhotoRow = {
   audits: AuditRow[] | null;
   selected_generation_job_id: string | null;
   selection_source: "auto" | "user" | null;
+  alternate_generation_job_id: string | null;
+  has_alternate_generation: boolean;
+  selection_is_reverted: boolean;
 };
 type JobRow = {
   id: string;
@@ -71,7 +74,7 @@ export default async function ProductPage({
 
   const { data: photoData } = await supabase
     .from("photos")
-    .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, audits(rubric, created_at)")
+    .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(rubric, created_at)")
     .eq("product_id", product.id)
     .order("role", { ascending: true })
     .order("position", { ascending: true })
@@ -105,6 +108,7 @@ export default async function ProductPage({
   // Only process photos with valid latest rubric.
   type PhotoMetadata = {
     selectedRow: JobRow | null;
+    alternateRow: JobRow | null;
     completedRows: JobRow[];
   };
   const photoMetadata = new Map<string, PhotoMetadata>();
@@ -122,6 +126,9 @@ export default async function ProductPage({
     const selectedRow = row.selected_generation_job_id
       ? jobsById.get(row.selected_generation_job_id) ?? null
       : null;
+    const alternateRow = row.alternate_generation_job_id
+      ? jobsById.get(row.alternate_generation_job_id) ?? null
+      : null;
 
     const allCompletedRows = (jobsByPhotoId.get(row.id) ?? [])
       .filter((j) => j.status === "completed" && j.result_storage_path)
@@ -138,7 +145,7 @@ export default async function ProductPage({
       ].sort((a, b) => a.created_at.localeCompare(b.created_at));
     }
 
-    photoMetadata.set(row.id, { selectedRow, completedRows });
+    photoMetadata.set(row.id, { selectedRow, alternateRow, completedRows });
   }
 
   // Collect all unique storage paths and sign them in batch.
@@ -166,6 +173,9 @@ export default async function ProductPage({
       if (metadata.selectedRow?.status === "completed" && metadata.selectedRow.result_storage_path) {
         pathsToSign.push(metadata.selectedRow.result_storage_path);
       }
+      if (metadata.alternateRow?.status === "completed" && metadata.alternateRow.result_storage_path) {
+        pathsToSign.push(metadata.alternateRow.result_storage_path);
+      }
     }
   }
 
@@ -180,7 +190,7 @@ export default async function ProductPage({
     const metadata = photoMetadata.get(row.id);
     if (!metadata) return null;
 
-    const { selectedRow, completedRows } = metadata;
+    const { selectedRow, alternateRow, completedRows } = metadata;
 
     // Get the latest rubric (we know it exists because validPhotoIds includes this photo)
     const latest = [...(row.audits ?? [])].sort((a, b) =>
@@ -192,6 +202,7 @@ export default async function ProductPage({
     const jobRow = jobsByPhoto.get(row.id) ?? null;
     let lastJob: InitialJob | null = null;
     let selectedJob: InitialJob | null = null;
+    let alternateJob: InitialJob | null = null;
 
     const versions: InitialJob[] = [];
     for (const v of completedRows) {
@@ -244,6 +255,23 @@ export default async function ProductPage({
       }
     }
 
+    if (alternateRow && alternateRow.status === "completed" && alternateRow.result_storage_path) {
+      const resultUrl = signedUrls.get(alternateRow.result_storage_path) ?? null;
+      if (resultUrl) {
+        alternateJob = {
+          id: alternateRow.id,
+          status: alternateRow.status,
+          stage: alternateRow.stage,
+          outcome: alternateRow.outcome,
+          errorCode: alternateRow.error_code,
+          resultUrl,
+          candidateRubric: alternateRow.candidate_rubric,
+          fidelity: alternateRow.fidelity,
+          attemptNumber: alternateRow.attempt_number ?? 1,
+        };
+      }
+    }
+
     return {
       id: row.id,
       role: row.role,
@@ -254,6 +282,9 @@ export default async function ProductPage({
       selectedJob,
       selectedJobId: row.selected_generation_job_id,
       selectionSource: row.selection_source ?? "auto",
+      alternateJob,
+      hasAlternateGeneration: row.has_alternate_generation,
+      selectionIsReverted: row.selection_is_reverted,
       versions,
     } satisfies InitialPhoto as InitialPhoto;
   });

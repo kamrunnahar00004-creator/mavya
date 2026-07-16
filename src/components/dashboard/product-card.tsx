@@ -80,6 +80,15 @@ export function ProductCard({
         });
         if (!res.ok || cancelled) return;
         const body = (await res.json()) as { status?: string };
+        if (cancelled) return;
+        if (body.status === "completed") {
+          // Rating finished while the seller is still on the dashboard: take
+          // them straight into the result. Safe by construction: navigating
+          // anywhere unmounts this card and cancels this poll, so a delayed
+          // pull-back from another page is impossible.
+          router.push(`/dashboard/product/${id}`);
+          return;
+        }
         if (body.status && body.status !== "queued" && body.status !== "scoring") {
           router.refresh();
         }
@@ -93,7 +102,7 @@ export function ProductCard({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [ratingJobId, ratingStatus, router]);
+  }, [id, ratingJobId, ratingStatus, router]);
 
   // Expired signed URL: re-sign once through the authenticated endpoint.
   async function refreshThumb() {

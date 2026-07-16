@@ -32,6 +32,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { generateChecklist } from "@/lib/score-photo";
 import { getEntitlement } from "@/lib/entitlements";
 import { rateLimit } from "@/lib/rate-limit";
+import { withinGlobalBudget } from "@/lib/usage";
 
 const mockGetSessionUser = getSessionUser as ReturnType<typeof vi.fn>;
 const mockServerClient = createSupabaseServerClient as ReturnType<typeof vi.fn>;
@@ -39,6 +40,7 @@ const mockAdminClient = createSupabaseAdminClient as ReturnType<typeof vi.fn>;
 const mockGenerate = generateChecklist as ReturnType<typeof vi.fn>;
 const mockEntitlement = getEntitlement as ReturnType<typeof vi.fn>;
 const mockRateLimit = rateLimit as ReturnType<typeof vi.fn>;
+const mockWithinGlobalBudget = withinGlobalBudget as ReturnType<typeof vi.fn>;
 
 function item(rank: number): SupportingPhotoChecklistItem {
   return {
@@ -197,6 +199,25 @@ describe("checklist route: claim and persistence", () => {
     expect(body.status).toBe("pending");
     expect(body.supporting_photo_checklist).toEqual([]);
     expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockWithinGlobalBudget).not.toHaveBeenCalled();
+    expect(mockRateLimit).not.toHaveBeenCalled();
+  });
+
+  it("releases its claim when budget accounting rejects generation", async () => {
+    mockWithinGlobalBudget.mockResolvedValueOnce(false);
+    const { admin, calls } = makeAdmin({
+      claim_checklist_generation: ["token-1"],
+      release_checklist_claim: [null],
+    });
+    mockAdminClient.mockReturnValue(admin);
+    mockServerClient.mockResolvedValue(
+      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+    );
+    const res = await POST(request());
+    expect(res.status).toBe(200);
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockRateLimit).not.toHaveBeenCalled();
+    expect(calls.some((c) => c.fn === "release_checklist_claim")).toBe(true);
   });
 
   it("the claim winner generates once, saves against the exact audit id, and releases its own token", async () => {

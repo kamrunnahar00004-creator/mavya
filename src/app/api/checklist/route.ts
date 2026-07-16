@@ -82,21 +82,19 @@ export async function POST(req: NextRequest) {
       "The supporting-photo checklist is part of the Mavya Founding Beta subscription."
     );
   }
-  if (!(await withinGlobalBudget("checklist"))) {
-    return empty({ status: "unavailable" });
-  }
-  const daily = await rateLimit(`checklist-day:u:${user.id}`, 60, 24 * 60 * 60 * 1000);
-  if (!daily.ok) return empty({ status: "unavailable" });
-  const perMin = await rateLimit(`checklist:${clientIp(req)}`, 12, 60_000);
-  if (!perMin.ok) return empty({ status: "unavailable" });
-
-  // 6. Atomic claim (service-role SQL; independently re-verifies ownership).
+  // 6. Claim BEFORE budget/rate-limit accounting. Requests polling while a
+  //    different request generates must be free: only the claim winner can
+  //    spend provider budget or consume rate-limit allowance.
   const admin = createSupabaseAdminClient();
-  const { data: claimToken } = await admin.rpc("claim_checklist_generation", {
+  const { data: claimToken, error: claimError } = await admin.rpc("claim_checklist_generation", {
     p_user: user.id,
     p_audit: audit.id,
     p_photo: photo.id,
   });
+  if (claimError) {
+    logEvent("checklist.claim_failed", { auditId: audit.id, error: claimError.message });
+    return empty({ status: "unavailable" });
+  }
   if (!claimToken) {
     // Another live request is generating: tell the client to re-poll soon.
     return NextResponse.json(
@@ -115,8 +113,23 @@ export async function POST(req: NextRequest) {
     }
   };
 
-  // 7. Generate; persist atomically against the captured audit id; release
-  //    only this request's claim token. Failures release and report
+  if (!(await withinGlobalBudget("checklist"))) {
+    await release();
+    return empty({ status: "unavailable" });
+  }
+  const daily = await rateLimit(`checklist-day:u:${user.id}`, 60, 24 * 60 * 60 * 1000);
+  if (!daily.ok) {
+    await release();
+    return empty({ status: "unavailable" });
+  }
+  const perMin = await rateLimit(`checklist:${clientIp(req)}`, 12, 60_000);
+  if (!perMin.ok) {
+    await release();
+    return empty({ status: "unavailable" });
+  }
+
+  // 7. The claim winner generates and persists against the captured audit id,
+  //    then releases only this request's claim token. Failures release and report
   //    "unavailable" — nothing is ever written on failure.
   try {
     const checklist = await generateChecklist({
