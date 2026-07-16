@@ -293,7 +293,41 @@ export default async function ProductPage({
     (p): p is InitialPhoto => p !== null
   );
 
-  if (!initialPhotos.some((p) => p.role === "main")) redirect("/dashboard");
+  if (!initialPhotos.some((p) => p.role === "main")) {
+    // The main photo may exist without an audit while its durable rating job
+    // is still running: render the workspace in its analyzing state instead
+    // of bouncing to the dashboard. The workspace polls the job and refreshes
+    // this page when the rating lands.
+    const mainRow = rows.find((r) => r.role === "main");
+    if (mainRow) {
+      const { data: pendingJob } = await supabase
+        .from("rating_jobs")
+        .select("id, status")
+        .eq("photo_id", mainRow.id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (
+        pendingJob &&
+        (pendingJob.status === "queued" || pendingJob.status === "scoring")
+      ) {
+        const pendingSigned = await batchSignUrls(supabase, [mainRow.storage_path]);
+        return (
+          <ProductWorkspace
+            productId={product.id}
+            productName={product.name}
+            initialPhotos={[]}
+            pendingMain={{
+              photoId: mainRow.id,
+              jobId: pendingJob.id,
+              imageSrc: pendingSigned.get(mainRow.storage_path) ?? null,
+            }}
+          />
+        );
+      }
+    }
+    redirect("/dashboard");
+  }
 
   return (
     <ProductWorkspace

@@ -85,14 +85,13 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
       const queued = parseRatingQueueResponse(await res.json().catch(() => null));
       if (!queued.ok) throw new Error(queued.message);
 
-      // The durable server job owns the rating from here. Close the overlay
-      // and dialog immediately; the refreshed dashboard shows the persisted
-      // card in its Rating… state and that card polls independently. No
-      // browser loop: navigating away can never cancel the job or cause a
-      // delayed redirect back.
+      // The durable server job owns the rating from here. Go STRAIGHT to the
+      // product page: it renders the analyzing state while the job runs and
+      // reveals the audit the moment it lands. No dashboard detour, no
+      // card-mount race, and navigating away never cancels the server job.
       reset();
       setOpen(false);
-      router.refresh();
+      router.push(`/dashboard/product/${queued.productId}`);
     } catch (err) {
       setStep("idle");
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");

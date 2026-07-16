@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuditWorkspace } from "@/components/audit-workspace";
+import { AnalyzingState } from "@/components/analyzing-state";
 import type { SlotView } from "@/components/photo-slot-strip";
 import {
   rubricToAuditResult,
@@ -62,6 +63,9 @@ type Props = {
   productId: string;
   productName: string | null;
   initialPhotos: InitialPhoto[];
+  /** Main photo whose durable rating job is still running: the workspace
+   *  shows the analyzing state, polls the job, and refreshes on completion. */
+  pendingMain?: { photoId: string; jobId: string; imageSrc: string | null } | null;
 };
 
 type Photo = {
@@ -305,7 +309,7 @@ function newId(): string {
  * through persisted, idempotent jobs (photoId contract; the server loads the
  * stored audit + image, so nothing here is trusted for billing or safety).
  */
-export function ProductWorkspace({ productId, initialPhotos }: Props) {
+export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Props) {
   const mountedRef = useRef(true);
   const router = useRouter();
   const [photos, setPhotos] = useState<Photo[]>(() => initialPhotos.map(makePhoto));
@@ -637,13 +641,46 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Pending main rating: poll the durable job; when it settles, refresh so the
+  // server re-renders this page with the full audit (or bounces a failed
+  // rating back to the dashboard, where the card shows the error).
+  useEffect(() => {
+    if (!pendingMain) return;
+    let cancelled = false;
+    const timer = window.setInterval(async () => {
+      try {
+        const res = await fetch(
+          `/api/score/jobs?id=${encodeURIComponent(pendingMain.jobId)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok || cancelled) return;
+        const body = (await res.json()) as { status?: string };
+        if (cancelled) return;
+        if (body.status && body.status !== "queued" && body.status !== "scoring") {
+          window.clearInterval(timer);
+          router.refresh();
+        }
+      } catch {
+        // The durable worker continues; the next poll recovers.
+      }
+    }, 2500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [pendingMain, router]);
+
   // Product switch: Next.js reuses this component instance across
   // /dashboard/product/[id] navigations, so reseed all per-product state.
   // Keyed on productId (NOT initialPhotos: the server sends a fresh array
   // reference on every re-render, which must not wipe live client state).
+  // Exception: hydrating from the pending-rating state (photos were empty,
+  // the refreshed server props now carry the rated photo) also reseeds.
   const prevProductIdRef = useRef(productId);
   useEffect(() => {
-    if (prevProductIdRef.current === productId) return;
+    const hydratedFromPending =
+      photosRef.current.length === 0 && initialPhotos.length > 0;
+    if (prevProductIdRef.current === productId && !hydratedFromPending) return;
     prevProductIdRef.current = productId;
     Object.values(pollTimers.current).forEach(clearInterval);
     pollTimers.current = {};
@@ -969,6 +1006,11 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
     },
     [patch, productId]
   );
+
+  if (pendingMain && photos.length === 0) {
+    // Rating still running: same analyzing experience as the landing flow.
+    return <AnalyzingState imageSrc={pendingMain.imageSrc ?? undefined} imageAlt="" />;
+  }
 
   if (!active) {
     return (
