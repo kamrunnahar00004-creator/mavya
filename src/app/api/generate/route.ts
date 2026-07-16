@@ -183,6 +183,13 @@ export async function GET(req: NextRequest) {
   ) {
     job = await failStaleJob(job);
   }
+  // Self-healing refinement: the daily worker cron is only a backstop, and the
+  // in-invocation after() chain can be frozen by the platform. A poll that
+  // finds a still-queued refinement kicks its execution; the atomic
+  // queued->generating claim makes duplicate kicks harmless.
+  if (job.status === "queued" && job.operation === "refine") {
+    after(() => runQueuedRefinementChain(job.id));
+  }
   return NextResponse.json(await jobPayload(supabase, job), { status: 200 });
 }
 

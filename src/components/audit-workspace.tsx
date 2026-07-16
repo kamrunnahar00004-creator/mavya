@@ -135,6 +135,7 @@ export function AuditWorkspace({
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);
   const [backgroundStatusIdx, setBackgroundStatusIdx] = useState(0);
+  const [backgroundElapsed, setBackgroundElapsed] = useState(0);
   const [analyzingIdx, setAnalyzingIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<"original" | "preview">(
     initialPreview ? "preview" : "original"
@@ -233,7 +234,11 @@ export function AuditWorkspace({
 
   useEffect(() => {
     if (!backgroundRefining) return;
-    const reset = window.setTimeout(() => setBackgroundStatusIdx(0), 0);
+    const start = Date.now();
+    const reset = window.setTimeout(() => {
+      setBackgroundStatusIdx(0);
+      setBackgroundElapsed(0);
+    }, 0);
     const rotate = window.setInterval(
       () =>
         setBackgroundStatusIdx(
@@ -241,13 +246,23 @@ export function AuditWorkspace({
         ),
       2000
     );
+    const tick = window.setInterval(
+      () => setBackgroundElapsed(Math.floor((Date.now() - start) / 1000)),
+      1000
+    );
     return () => {
       window.clearTimeout(reset);
       window.clearInterval(rotate);
+      window.clearInterval(tick);
     };
   }, [backgroundRefining]);
 
   const backgroundStatus = BACKGROUND_REFINING_STATUSES[backgroundStatusIdx];
+  const backgroundRemaining = IMPROVE_ESTIMATE_SECONDS - backgroundElapsed;
+  const backgroundCountdown =
+    backgroundRemaining > 0
+      ? `About ${backgroundRemaining}s remaining`
+      : "Finishing up…";
 
   // Inline supporting-photo analyzing status rotation (right panel only).
   useEffect(() => {

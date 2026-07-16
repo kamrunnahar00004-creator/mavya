@@ -411,11 +411,16 @@ export function ProductWorkspace({ productId, initialPhotos }: Props) {
                 "We finished checking another version. Your current photo stayed the strongest, so we kept it.",
             });
           }
-        } else if (cur.keepNote === REFINING_NOTE) {
-          // Refinement ended without a usable result: clear the quiet note.
+        } else {
+          // Refinement ended without a usable result: ALWAYS clear the
+          // spinner state; only clear the note when it is the refining one.
           patch(photoId, {
             backgroundRefining: nextRefinementActive,
-            keepNote: nextRefinementActive ? REFINING_NOTE : undefined,
+            keepNote: nextRefinementActive
+              ? REFINING_NOTE
+              : cur.keepNote === REFINING_NOTE
+              ? undefined
+              : cur.keepNote,
           });
         }
         // Chain to the next bounded attempt when one was queued.
