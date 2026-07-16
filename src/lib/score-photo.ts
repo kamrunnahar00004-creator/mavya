@@ -99,7 +99,7 @@ export async function scorePhoto(args: {
 
   const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
   const CANDIDATE_CONTEXT =
-    "\n\nContext for THIS image: it is an AI-improved candidate produced by this product's own pipeline. Its fidelity to the seller's original photo is verified by a separate dedicated check. Score photographic quality exactly as you would any listing photo. Do NOT speculate about whether the image is AI-generated and do NOT raise provenance findings unless the concrete visible evidence defined above is present. Never advise re-photographing; phrase advice as what a stronger version of this image would change.";
+    "\n\nContext for THIS image (OVERRIDES any advice template above): it is an AI-improved candidate produced by this product's own pipeline. Its fidelity to the seller's original photo is verified by a separate dedicated check. Score photographic quality exactly as you would any listing photo. Do NOT speculate about whether the image is AI-generated and do NOT raise provenance findings unless the concrete visible evidence defined above is present. The seller CANNOT re-photograph this image, so the words \"re-shoot\", \"pull back\", \"photograph\", and \"re-take\" are FORBIDDEN in every field, including template phrasings from the rules above. Phrase every improvement as what a stronger VERSION would change, e.g. \"Generate a version with more breathing room above the clasp.\"";
   const basePrompt =
     (args.systemPrompt ?? RUBRIC_PROMPT) +
     (args.isGeneratedCandidate ? CANDIDATE_CONTEXT : "");

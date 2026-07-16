@@ -91,9 +91,10 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    // v7 = evidence-based trust findings; click_appeal never punishes
-    // suspected provenance; praise band aligned to calibrated 7.5+ display.
-    expect(RUBRIC_VERSION).toBe("main-v7");
+    // v8 = margin vs truncation wording split; clasp-out-of-frame is normal
+    // necklace framing, never a hard penalty; candidate advice never says
+    // re-shoot. (v7 = evidence-based trust findings.)
+    expect(RUBRIC_VERSION).toBe("main-v8");
     expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v5");
   });
 });
