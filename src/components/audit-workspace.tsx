@@ -38,12 +38,6 @@ const IMPROVE_STATUSES = [
 
 const IMPROVE_ESTIMATE_SECONDS = 56;
 
-const BACKGROUND_REFINING_STATUSES = [
-  "This photo is better than your previous photo, but we think we can do better.",
-  "We are improving it in the background. You do not need to do anything.",
-  "We are checking another version to deliver the best photo possible.",
-];
-
 const SUPPORTING_ANALYZING_STATUSES = [
   "Reading this listing photo…",
   "Checking detail and trust…",
@@ -142,7 +136,6 @@ export function AuditWorkspace({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);
-  const [backgroundStatusIdx, setBackgroundStatusIdx] = useState(0);
   const [backgroundElapsed, setBackgroundElapsed] = useState(0);
   const [analyzingIdx, setAnalyzingIdx] = useState(0);
   const [activeTab, setActiveTab] = useState<"original" | "preview">(
@@ -249,29 +242,17 @@ export function AuditWorkspace({
   useEffect(() => {
     if (!backgroundRefining) return;
     const start = Date.now();
-    const reset = window.setTimeout(() => {
-      setBackgroundStatusIdx(0);
-      setBackgroundElapsed(0);
-    }, 0);
-    const rotate = window.setInterval(
-      () =>
-        setBackgroundStatusIdx(
-          (i) => (i + 1) % BACKGROUND_REFINING_STATUSES.length
-        ),
-      2000
-    );
+    const reset = window.setTimeout(() => setBackgroundElapsed(0), 0);
     const tick = window.setInterval(
       () => setBackgroundElapsed(Math.floor((Date.now() - start) / 1000)),
       1000
     );
     return () => {
       window.clearTimeout(reset);
-      window.clearInterval(rotate);
       window.clearInterval(tick);
     };
   }, [backgroundRefining]);
 
-  const backgroundStatus = BACKGROUND_REFINING_STATUSES[backgroundStatusIdx];
   const backgroundRemaining = IMPROVE_ESTIMATE_SECONDS - backgroundElapsed;
   const backgroundCountdown =
     backgroundRemaining > 0
@@ -568,19 +549,9 @@ export function AuditWorkspace({
                     {freePreviewMessage}
                   </div>
                 )}
-                {refiningVisible && previewActive ? (
-                  <div
-                    className="flex max-w-[620px] items-start gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
-                    role="status"
-                    aria-live="polite"
-                  >
-                    <Loader2
-                      className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-mid)]"
-                      aria-hidden="true"
-                    />
-                    <span>{backgroundStatus}</span>
-                  </div>
-                ) : keepNote && previewBelowPublishReady ? (
+                {/* Background refinement stays SUBTLE: the white countdown
+                    button below is the only running indicator (no banner). */}
+                {!refiningVisible && keepNote && previewBelowPublishReady ? (
                   <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
                     {keepNote}
                   </div>

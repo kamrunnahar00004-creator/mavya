@@ -15,7 +15,7 @@ export const TAXONOMY_VERSION = 1;
 // results of the new scoring policy.
 // main-v4 / supporting-v3 were: canonical 25-category taxonomy + category
 // scoring notes + priority_pillar/priority_issue_family fields (2026-07-11).
-export const RUBRIC_VERSION = "main-v5";
+export const RUBRIC_VERSION = "main-v6";
 export const SUPPORTING_RUBRIC_VERSION = "supporting-v4";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
