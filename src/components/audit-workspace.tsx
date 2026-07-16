@@ -543,18 +543,30 @@ export function AuditWorkspace({
                     {scoreDeltaLabel}
                   </div>
                 )}
-                {freePreview && freePreviewMessage && (
+                {/* While a background attempt runs, "try a different source
+                    photo" advice is contradictory — the refining status below
+                    is the only message until the workflow settles. */}
+                {freePreview && freePreviewMessage && !backgroundRefining && (
                   <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
                     {freePreviewMessage}
                   </div>
                 )}
                 {backgroundRefining && previewBelowPublishReady ? (
                   <div
-                    className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
+                    className="flex max-w-[620px] items-start gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
                     role="status"
                     aria-live="polite"
                   >
-                    {backgroundStatus}
+                    <Loader2
+                      className="mt-0.5 h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-mid)]"
+                      aria-hidden="true"
+                    />
+                    <span className="flex flex-col gap-0.5">
+                      <span>{backgroundStatus}</span>
+                      <span className="text-[12px] font-semibold text-[var(--color-ink-muted)]">
+                        {backgroundCountdown}
+                      </span>
+                    </span>
                   </div>
                 ) : keepNote && previewBelowPublishReady ? (
                   <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
