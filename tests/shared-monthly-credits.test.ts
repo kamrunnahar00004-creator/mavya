@@ -96,7 +96,7 @@ describe("shared monthly credit policy", () => {
   });
 
   it("does not expose internal conversion costs on the pricing page", () => {
-    expect(subscribePage).toContain('value: "1,000 every month"');
+    expect(subscribePage).toContain("Up to 1,000 AI credits per month");
     expect(subscribePage).not.toMatch(/rating.{0,30}10 credits/i);
     expect(subscribePage).not.toMatch(/improv.{0,30}20 credits/i);
     expect(subscribePage).not.toMatch(/50 ratings|25 improvements/i);

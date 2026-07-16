@@ -537,11 +537,7 @@ export async function POST(req: NextRequest) {
     });
 
     if (!result.ok) {
-      const kind =
-        result.code === "image_failed" || result.code === "vision_failed"
-          ? "failed"
-          : "rejected";
-      return await failJob(result.code, result.message, kind, {
+      return await failJob(result.code, result.message, "failed", {
         unresolvedIssues: result.unresolvedIssues,
       });
     }

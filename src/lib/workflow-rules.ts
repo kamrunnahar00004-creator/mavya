@@ -72,7 +72,7 @@ export type SelectionSource = "auto" | "user";
  */
 export function resolveAutoSelection(args: {
   operation: "improve" | "edit" | "retry" | "refine";
-  candidateSafe: boolean;
+  candidateSafe: boolean; // Kept for caller convenience, not used for selection decision
   /** Raw score of the new candidate. */
   candidateRawScore: number | null;
   /** Raw score of the currently selected version; null when nothing is selected. */
@@ -80,10 +80,11 @@ export function resolveAutoSelection(args: {
   /** How the current selection was made; null when nothing is selected. */
   currentSelectionSource: SelectionSource | null;
 }): boolean {
-  if (!args.candidateSafe) return false;
+  // Score-based selection: warnings (candidateSafe=false) don't block.
+  // All generated images are shown. Seller chooses which to use.
   if (args.operation === "edit") return true;
   if (args.currentSelectionSource === "user") return false;
-  if (args.currentRawScore === null) return true;
   if (args.candidateRawScore === null) return false;
+  if (args.currentRawScore === null) return true;
   return args.candidateRawScore > args.currentRawScore;
 }

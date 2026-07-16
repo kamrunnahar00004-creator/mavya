@@ -62,17 +62,19 @@ describe("shouldQueueRefinement (bounded background attempts)", () => {
   });
 });
 
-describe("resolveAutoSelection (never downgrade, never override the seller)", () => {
-  it("an unsafe candidate can never be selected, even with a higher score", () => {
+describe("resolveAutoSelection (score-based, never override the seller)", () => {
+  it("a higher-scoring candidate is selected even with fidelity warnings (candidateSafe=false)", () => {
+    // All generated images are shown. Warnings don't block selection.
+    // Compare by score, not by safety flags.
     expect(
       resolveAutoSelection({
         operation: "refine",
-        candidateSafe: false,
+        candidateSafe: false, // Has warnings: drift, incomplete, AI-looking, etc.
         candidateRawScore: 9.0,
         currentRawScore: 5.0,
         currentSelectionSource: "auto",
       })
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("a weaker candidate cannot replace a stronger selection", () => {
@@ -154,6 +156,78 @@ describe("resolveAutoSelection (never downgrade, never override the seller)", ()
         currentSelectionSource: null,
       })
     ).toBe(true);
+  });
+
+  it("first result selects when nothing is selected yet, even if candidateSafe=false (warnings)", () => {
+    expect(
+      resolveAutoSelection({
+        operation: "improve",
+        candidateSafe: false, // Has warnings but no current selection
+        candidateRawScore: 3.1,
+        currentRawScore: null,
+        currentSelectionSource: null,
+      })
+    ).toBe(true);
+  });
+
+  it("an AI-looking candidate with higher score replaces auto selection", () => {
+    expect(
+      resolveAutoSelection({
+        operation: "refine",
+        candidateSafe: false, // ai_looking=true
+        candidateRawScore: 8.5,
+        currentRawScore: 7.2,
+        currentSelectionSource: "auto",
+      })
+    ).toBe(true);
+  });
+
+  it("an incomplete-product candidate with higher score replaces auto selection", () => {
+    expect(
+      resolveAutoSelection({
+        operation: "refine",
+        candidateSafe: false, // full_product_visible=false
+        candidateRawScore: 7.8,
+        currentRawScore: 6.9,
+        currentSelectionSource: "auto",
+      })
+    ).toBe(true);
+  });
+
+  it("a candidate with changed-details warning and higher score replaces auto selection", () => {
+    expect(
+      resolveAutoSelection({
+        operation: "refine",
+        candidateSafe: false, // text_or_pattern_drift=true or invented_or_missing_details=true
+        candidateRawScore: 8.2,
+        currentRawScore: 7.1,
+        currentSelectionSource: "auto",
+      })
+    ).toBe(true);
+  });
+
+  it("a weaker AI-looking candidate does NOT replace auto selection", () => {
+    expect(
+      resolveAutoSelection({
+        operation: "refine",
+        candidateSafe: false, // ai_looking=true
+        candidateRawScore: 6.8,
+        currentRawScore: 7.2,
+        currentSelectionSource: "auto",
+      })
+    ).toBe(false);
+  });
+
+  it("background refinement cannot overwrite seller choice", () => {
+    expect(
+      resolveAutoSelection({
+        operation: "refine",
+        candidateSafe: true,
+        candidateRawScore: 9.9, // Much higher score
+        currentRawScore: 3.0,
+        currentSelectionSource: "user", // Seller chose this
+      })
+    ).toBe(false);
   });
 });
 

@@ -6,7 +6,6 @@ import Link from "next/link";
 import {
   AlertCircle,
   Check,
-  Coins,
   Loader2,
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";

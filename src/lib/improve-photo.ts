@@ -1,24 +1,23 @@
 /**
- * Publish-ready outcome gate for Mavya.
+ * Seller-controlled outcome workflow for Mavya.
  *
  * Single targeted attempt per request:
  *
  *   targeted generation (base + category + crop_suggestion + light_adjustment
  *     + priority fixes)
  *   -> canonical re-score AND fidelity comparison in parallel
- *   -> if (delivered): return
+ *   -> if (delivered): return publish_ready
  *   -> else candidate-specific deterministic finish using the CANDIDATE audit's
  *      own light_adjustment (then re-verified)
  *      -> re-score AND fidelity in parallel
- *      -> if (delivered): return
- *   -> else structured failure with unresolved issues for a user-triggered retry
+ *      -> if (delivered): return publish_ready
+ *   -> else return useful_free_preview with honest score and fidelity warnings
  *
- * The scoring rubric is never changed and never inflated. A generated photo is
- * delivered only when it honestly scores >= 8.0, the original diagnosed issue is
- * resolved, and every fidelity/authenticity trust check passes. A retry runs one
- * new targeted generation using the unresolved issues from the failed candidate.
- *
- * Show only delivered results. Intermediate failed candidates are never exposed.
+ * The scoring rubric is never changed and never inflated. Every successful
+ * generation is delivered to the seller with honest scores and warnings
+ * (drift, AI-looking, incomplete product, etc.). The seller decides which
+ * version to use. Provider failures (image generation failed, vision failed)
+ * are still returned as errors.
  */
 
 import { scorePhoto } from "@/lib/score-photo";
@@ -526,8 +525,8 @@ export type AttemptRecord = {
 
 /**
  * Delivered result. `publish_ready` is the honest 8+ paid-outcome class.
- * `useful_free_preview` is a safe improvement shown free when it does not satisfy
- * every publish-ready check. The image is safe to render and its score is honest.
+ * `useful_free_preview` is any generated result that does not satisfy every
+ * publish-ready check. It is shown with its honest score and fidelity warnings.
  */
 export type ImproveSuccess = {
   ok: true;
@@ -541,73 +540,29 @@ export type ImproveSuccess = {
 
 export type ImproveFailure = {
   ok: false;
-  /** `unsafe_candidate` = a hard trust failure; image is never returned. */
+  /** Provider or input failures only. Generated images are never rejected. */
   code:
-    | "unsafe_candidate"
-    | "no_publishable_candidate"
-    | "incomplete_source"
     | "vision_failed"
     | "image_failed"
     | "bad_ai_response";
   message: string;
-  /** Unresolved issues from the failed candidate, used to target a retry. */
+  /** Unresolved issues from the failed attempt, used to target a retry. */
   unresolvedIssues: string[];
   attempts: AttemptRecord[];
 };
 
 export type ImproveResult = ImproveSuccess | ImproveFailure;
 
-const FAILURE_QUALITY =
-  "This version was not strong enough to recommend, so we did not deliver it. Generate another version or try a different source photo.";
-const FAILURE_SUPPORTING_QUALITY =
-  "This version did not become a strong supporting photo, so we did not deliver it. Generate another version or try a different source photo.";
-const FAILURE_INCOMPLETE =
-  "We could not create a strong result from this photo. Upload one photo showing the complete product.";
-const FAILURE_SUPPORTING_INCOMPLETE =
-  "We could not create a strong supporting photo from this source. Upload one photo showing the complete product.";
-const FAILURE_AI_LOOKING =
-  "This version looked too artificial, so we did not deliver it. Generate another version or try a different source photo.";
-const FAILURE_DETAIL_DRIFT =
-  "This version changed important product details, so we did not deliver it. Generate another version or try a different source photo.";
-const FAILURE_INCOMPLETE_RESULT =
-  "This version did not show the complete product, so we did not deliver it. Generate another version or try a different source photo.";
 
 /**
- * A safe candidate is worth showing free when it has no hard trust failure, is a
- * genuine improvement over the original, and the product stays complete and
- * recognizable, even if it misses a publish-ready check. Scores are never altered.
+ * All generated images are shown to the seller with honest scores and fidelity
+ * warnings. The seller decides which version to use. Scores are never altered.
  */
-const USEFUL_PREVIEW_MIN_GAIN = 0.3;
-// fidelity floor lowered 5 -> 4 (founder call 2026-06-28): moderate detail/text
-// drift now DELIVERS as a labeled "review before using" preview instead of
-// dead-ending after a 1-2 minute wait. Very low-fidelity / wrong-product outputs
-// still block, and the structural hard-blocks (collage/duplicate, incomplete
-// product) still apply via blocksFreePreview.
-// authenticity floor 3 (founder call 2026-06-25): an AI-looking but faithful render
-// delivers as a labeled preview; a totally degenerate / synthetic-garbage render
-// (authenticity 0-2) is still rejected.
-const USEFUL_PREVIEW_MIN_FIDELITY = 4;
-const USEFUL_PREVIEW_MIN_AUTHENTICITY = 3;
 
-function hasHardTrustFailure(fidelity: FidelityReport): boolean {
-  return (
-    fidelity.ai_looking ||
-    fidelity.text_or_pattern_drift ||
-    fidelity.invented_or_missing_details ||
-    fidelity.collage_or_duplicate_product ||
-    !fidelity.full_product_visible
-  );
-}
 
 /**
- * Blocks for the FREE-PREVIEW path. An artificial-but-faithful render can still
- * be shown with an explicit warning, but known text, pattern, or physical-detail
- * drift is never normalized as a usable preview. Product identity remains strict.
- * An artificial-but-faithful render is
- * the seller's photo, just styled synthetically — deliver it as a clearly labeled
- * "looks AI-generated, review before publishing" preview and let the seller decide,
- * rather than dead-ending them after a long wait. Collage, duplication, incomplete
- * product, and any known product-content drift remain hard blocks.
+ * Classifies serious fidelity warnings for refinement and UI messaging.
+ * Score-based preview selection does not use this result as a delivery gate.
  */
 export function blocksFreePreview(
   fidelity: FidelityReport,
@@ -632,46 +587,7 @@ export function blocksFreePreview(
   );
 }
 
-function unsafeMessage(fidelity: FidelityReport): string {
-  if (fidelity.ai_looking) return FAILURE_AI_LOOKING;
-  if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
-    return FAILURE_DETAIL_DRIFT;
-  }
-  if (!fidelity.full_product_visible || fidelity.collage_or_duplicate_product) {
-    return FAILURE_INCOMPLETE_RESULT;
-  }
-  return FAILURE_QUALITY;
-}
 
-function qualityFailureMessage(mode: ImproveMode): string {
-  return mode === "extra" ? FAILURE_SUPPORTING_QUALITY : FAILURE_QUALITY;
-}
-
-function incompleteFailureMessage(mode: ImproveMode): string {
-  return mode === "extra" ? FAILURE_SUPPORTING_INCOMPLETE : FAILURE_INCOMPLETE;
-}
-
-function isUsefulFreePreview(args: {
-  original: RubricJson;
-  candidateAudit: RubricJson;
-  fidelity: FidelityReport;
-  mode: ImproveMode;
-}): boolean {
-  if (blocksFreePreview(args.fidelity, args.mode)) return false;
-  // RAW scores: calibration is presentation only and must not create or hide
-  // a 0.3 gain (e.g. original raw 7.5 and candidate raw 7.9 both present 8.0).
-  if (
-    rawOverall(args.candidateAudit) <
-    rawOverall(args.original) + USEFUL_PREVIEW_MIN_GAIN
-  ) {
-    return false;
-  }
-  if (args.fidelity.fidelity_score < USEFUL_PREVIEW_MIN_FIDELITY) return false;
-  if (args.fidelity.authenticity_score < USEFUL_PREVIEW_MIN_AUTHENTICITY) {
-    return false;
-  }
-  return true;
-}
 
 /**
  * Server-defined remediation phrases accepted by a user-triggered retry. The
@@ -712,6 +628,44 @@ const RETRY_CONSTRAINT_ALLOWLIST = new Set<string>(
 
 export function sanitizeRetryConstraints(items: string[]): string[] {
   return items.filter((item) => RETRY_CONSTRAINT_ALLOWLIST.has(item)).slice(0, 8);
+}
+
+/** Default fidelity when scoring provider fails but image was generated. */
+function unavailableFidelity(): FidelityReport {
+  return {
+    publishable: false,
+    fidelity_score: 0,
+    authenticity_score: 0,
+    full_product_visible: false,
+    ai_looking: false,
+    invented_or_missing_details: false,
+    text_or_pattern_drift: false,
+    collage_or_duplicate_product: false,
+    remaining_issues: ["Score unavailable: provider verification failed"],
+    recommended_next_action: "regenerate",
+    reason: "AI verification service failed. Score and fidelity unavailable.",
+  };
+}
+
+/** Default audit when scoring provider fails but image was generated. */
+function unavailableAudit(original: RubricJson): RubricJson {
+  return {
+    ...original,
+    overall_score: 0,
+    raw_overall_score: 0,
+    calibration_rule: "unavailable",
+    priority_action: "Score unavailable",
+    priority_explanation: "Unable to verify this generated image. Try again or regenerate.",
+    next_steps: [
+      {
+        observation: "AI verification service temporarily unavailable",
+        action: "Try again or generate another version",
+      },
+    ],
+    share_headline: "Score unavailable",
+    generation_risk: "standard",
+    generation_risk_reason: "Provider verification failed",
+  };
 }
 
 /**
@@ -861,16 +815,10 @@ export async function improvePhoto(args: {
 	      mode,
 	    }));
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "AI verification failed. Try again.";
     console.error("[improve-photo] score/fidelity failed:", err);
-    return {
-      ok: false,
-      code: "vision_failed",
-      message,
-      unresolvedIssues: [],
-      attempts,
-    };
+    // Image generated successfully but scoring failed. Deliver with unavailable score.
+    fidelity = unavailableFidelity();
+    candidateAudit = unavailableAudit(args.originalAudit);
   }
 
   attempts.push({
@@ -982,54 +930,17 @@ export async function improvePhoto(args: {
     }
   }
 
-  // 4. Not publish-ready. Classify the outcome. Order matters: a genuinely
-  //    incomplete original is its own message; hard trust failures never return
-  //    an image; a safe, genuine sub-8 improvement is shown free; otherwise the
-  //    candidate simply did not improve enough.
-  if (fidelity.recommended_next_action === "request_clearer_source") {
-    return {
-      ok: false,
-      code: "incomplete_source",
-      message: incompleteFailureMessage(mode),
-      unresolvedIssues: unresolvedIssuesForRetry(fidelity, candidateAudit, mode),
-      attempts,
-    };
-  }
-
-  if (
-    isUsefulFreePreview({
-      original: args.originalAudit,
-      candidateAudit,
-      fidelity,
-      mode,
-    })
-  ) {
-    return {
-      ok: true,
-      outcome: "useful_free_preview",
-      imageBase64: deliverableBase64,
-      mimeType: "image/png",
-      candidateAudit,
-      fidelity,
-      attempts,
-    };
-  }
-
-  if (hasHardTrustFailure(fidelity)) {
-    return {
-      ok: false,
-      code: "unsafe_candidate",
-      message: unsafeMessage(fidelity),
-      unresolvedIssues: unresolvedIssuesForRetry(fidelity, candidateAudit, mode),
-      attempts,
-    };
-  }
-
+  // 4. Not publish-ready. Deliver as a useful preview with honest score and
+  //    fidelity warnings. The seller sees all generated images and decides.
+  //    Warnings (drift, AI-looking, incomplete product, etc.) are in fidelity
+  //    and candidateAudit, visible in the UI; the seller can retry or accept.
   return {
-    ok: false,
-    code: "no_publishable_candidate",
-    message: qualityFailureMessage(mode),
-    unresolvedIssues: unresolvedIssuesForRetry(fidelity, candidateAudit, mode),
+    ok: true,
+    outcome: "useful_free_preview",
+    imageBase64: deliverableBase64,
+    mimeType: "image/png",
+    candidateAudit,
+    fidelity,
     attempts,
   };
 }

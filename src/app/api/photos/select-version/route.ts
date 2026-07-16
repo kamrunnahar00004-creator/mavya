@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { candidateIsSafe } from "@/lib/workflow-rules";
 import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
-import type { FidelityReport } from "@/lib/fidelity";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,9 +13,8 @@ export const dynamic = "force-dynamic";
  * 'user', which blocks all automatic (background-refinement) replacement.
  * Body: { photoId, jobId } — jobId null selects the ORIGINAL photo.
  *
- * Only completed SAFE candidates are selectable: a candidate with known
- * text/pattern drift, invented details, duplicate product, or an incomplete
- * product is never offered as a usable version.
+ * The seller can select any completed version, including those with warnings
+ * (drift, AI-looking, incomplete). The system never prevents manual selection.
  */
 export async function POST(req: NextRequest) {
   const user = await getSessionUser();
@@ -58,13 +55,6 @@ export async function POST(req: NextRequest) {
     }
     if (job.status !== "completed") {
       return apiError("bad_request", "Only completed versions can be selected.");
-    }
-    const mode = photo.role === "main" ? ("main" as const) : ("extra" as const);
-    if (!candidateIsSafe(job.fidelity as FidelityReport | null, mode)) {
-      return apiError(
-        "unsafe_candidate",
-        "This version changed product details, so it cannot be used."
-      );
     }
   }
 

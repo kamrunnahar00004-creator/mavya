@@ -16,10 +16,7 @@ describe("usage policy", () => {
     expect(isRefundable("internal_error")).toBe(true);
   });
 
-  it("does NOT refund honest quality rejections (provider cost was incurred)", () => {
-    expect(isRefundable("no_publishable_candidate")).toBe(false);
-    expect(isRefundable("unsafe_candidate")).toBe(false);
-    expect(isRefundable("incomplete_source")).toBe(false);
+  it("does NOT refund validation errors or input issues", () => {
     expect(isRefundable("unsupported_digital_generation")).toBe(false);
     expect(isRefundable("wrong_product")).toBe(false);
   });

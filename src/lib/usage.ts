@@ -11,9 +11,8 @@ import { logEvent, type ApiErrorCode } from "@/lib/errors";
  *  - Signup allowance: 8 credits (DB default on profiles.credits) = 3 scores +
  *    1 generation at current costs.
  *  - score costs 1 credit, generate costs 5, checklist is free (bundled).
- *  - Refunds: infrastructure failures only. Honest quality rejections
- *    (no_publishable_candidate / unsafe_candidate / incomplete_source) are NOT
- *    refunded because the provider cost was genuinely incurred.
+ *  - Refunds: infrastructure failures only (vision_failed, image_failed, etc).
+ *    All generated images are delivered; no quality-based rejections.
  */
 export const ACTION_COSTS = {
   score: 1,
