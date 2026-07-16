@@ -136,7 +136,7 @@ export function AuditWorkspace({
     initialPreview ? "preview" : "original"
   );
   const [previewUnlocked, setPreviewUnlocked] = useState(initialPreview);
-  const [hasImprovement, setHasImprovement] = useState(!!state.improvedSrc);
+  const [hasImprovement, setHasImprovement] = useState(false);
 
   useEffect(() => {
     if (!animate) return;
@@ -176,10 +176,14 @@ export function AuditWorkspace({
   const previewBelowPublishReady = previewActive && activeAudit.overallScore < 8;
 
   useEffect(() => {
-    if (!canShowImprovement || !improvedSrc) return;
+    if (!canShowImprovement || !improvedSrc) {
+      setHasImprovement(false);
+      return;
+    }
+    // improvedSrc exists — show toggle immediately, then verify image loads
+    setHasImprovement(true);
     let cancelled = false;
     const probe = new window.Image();
-    probe.onload = () => !cancelled && setHasImprovement(true);
     probe.onerror = () => {
       if (!cancelled) {
         setHasImprovement(false);
