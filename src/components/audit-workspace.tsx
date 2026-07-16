@@ -191,6 +191,12 @@ export function AuditWorkspace({
       ? `${state.overallScore.toFixed(1)} -> ${activeAudit.overallScore.toFixed(1)}`
       : "";
   const previewBelowPublishReady = previewActive && activeAudit.overallScore < 8;
+  // Tab-independent: is a background attempt visibly running? At 8.0+ nothing
+  // may render as "running" on either tab.
+  const improvedBelowBar = state.improvedAudit
+    ? state.improvedAudit.overallScore < 8
+    : true;
+  const refiningVisible = backgroundRefining && improvedBelowBar;
 
   // Probe the preview URL in the background; a broken URL demotes the toggle
   // back to the original. setState happens only in the async error callback.
@@ -562,7 +568,7 @@ export function AuditWorkspace({
                     {freePreviewMessage}
                   </div>
                 )}
-                {backgroundRefining && previewBelowPublishReady ? (
+                {refiningVisible && previewActive ? (
                   <div
                     className="flex max-w-[620px] items-start gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
                     role="status"
@@ -579,7 +585,7 @@ export function AuditWorkspace({
                     {keepNote}
                   </div>
                 ) : null}
-                {improveLoading || (backgroundRefining && previewBelowPublishReady) ? (
+                {improveLoading || refiningVisible ? (
                   // A running generation (seller edit/retry, or a background
                   // refinement below the 8.0 bar): the white Edit-style button
                   // becomes a disabled loading state with the same countdown
@@ -675,7 +681,19 @@ export function AuditWorkspace({
                           : "One-click fix"}
                       </PrimaryButton>
                       }
-                      {onEdit && !improveLoading && (
+                      {refiningVisible && !improveLoading && (
+                        // Background attempt running: the ORIGINAL tab shows
+                        // the same white generating state as the preview tab.
+                        <button
+                          type="button"
+                          disabled
+                          className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                        >
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          {backgroundCountdown}
+                        </button>
+                      )}
+                      {onEdit && !improveLoading && !refiningVisible && (
                         <button
                           type="button"
                           onClick={() => setEditModalOpen(true)}
@@ -685,7 +703,7 @@ export function AuditWorkspace({
                           Edit photo
                         </button>
                       )}
-                      {onRevert && !improveLoading && (
+                      {onRevert && !improveLoading && !refiningVisible && (
                         <button
                           type="button"
                           onClick={onRevert}
