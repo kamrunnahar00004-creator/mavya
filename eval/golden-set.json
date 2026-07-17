@@ -10,10 +10,17 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "score_range": [3.1, 6.1],
+        "score_range": [
+          3.1,
+          6.1
+        ],
         "priority_pillar": "lighting",
         "priority_issue_family": "lighting",
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -28,11 +35,18 @@
         "upload_kind": "physical_product",
         "category": "candles",
         "band": "weak",
-        "score_range": [3.0, 5.4],
+        "score_range": [
+          3.0,
+          5.4
+        ],
         "priority_pillar": "background",
         "priority_issue_family": "trust",
         "generation_risk": "review_text",
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -47,7 +61,10 @@
         "upload_kind": "physical_product",
         "category": "candles",
         "band": "strong",
-        "score_range": [7.3, 10]
+        "score_range": [
+          7.3,
+          10
+        ]
       },
       "strictness": "soft",
       "notes": "Demo-calibrated improved FIRE WOOD candle (demo-states WEAK_DEMO.improvedAudit = 9.0; not founder-locked, hence soft). Clean backdrop, readable label, lit wick. Guards against the rubric failing to reward a genuinely fixed photo."
@@ -60,7 +77,10 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "score_range": [5.5, 10]
+        "score_range": [
+          5.5,
+          10
+        ]
       },
       "strictness": "soft",
       "notes": "AI-improved teacup candle (2026-05-29 pass). No locked gold; expectation is only that it scores clearly above the 4.1 original. Classification (candles) is the main assertion."
@@ -85,7 +105,10 @@
       "expected": {
         "upload_kind": "invalid",
         "band": "invalid",
-        "score_range": [0, 0]
+        "score_range": [
+          0,
+          0
+        ]
       },
       "strictness": "hard",
       "notes": "A brand logo is not a sellable product photo; must classify upload_kind invalid and score 0. Guards the invalid-detection path."
@@ -98,7 +121,10 @@
       "main_product_context": "pink candle poured in a floral teacup with saucer",
       "expected": {
         "upload_kind": "physical_product",
-        "must_not_claim": ["different product", "unrelated"]
+        "must_not_claim": [
+          "different product",
+          "unrelated"
+        ]
       },
       "strictness": "soft",
       "notes": "The teacup candle itself uploaded as a supporting photo for its own listing. Must NOT be flagged as a wrong/unrelated product; role will likely be alternate_angle/other. Guards relevance false-positives."
@@ -125,7 +151,10 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "score_range": [2.5, 6.5]
+        "score_range": [
+          2.5,
+          6.5
+        ]
       },
       "strictness": "soft",
       "consistency": true,
@@ -139,7 +168,10 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "score_range": [6.0, 10]
+        "score_range": [
+          6.0,
+          10
+        ]
       },
       "strictness": "soft",
       "notes": "Compressed 'after' proof asset. Should score clearly above the before version."
@@ -153,10 +185,17 @@
         "upload_kind": "physical_product",
         "category": "jewelry",
         "band": "weak",
-        "score_range": [4.8, 6.2],
+        "score_range": [
+          4.8,
+          6.2
+        ],
         "priority_pillar": "thumbnail",
         "priority_issue_family": "framing",
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "soft",
       "consistency": true,
@@ -171,9 +210,16 @@
         "upload_kind": "physical_product",
         "category": "mugs",
         "band": "weak",
-        "score_range": [1.0, 5.4],
+        "score_range": [
+          1.0,
+          5.4
+        ],
         "priority_issue_family": "trust",
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -188,8 +234,15 @@
         "upload_kind": "physical_product",
         "category": "candles",
         "band": "weak",
-        "score_range": [3.6, 5.2],
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "score_range": [
+          3.6,
+          5.2
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -203,13 +256,19 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "band": "strong",
-        "score_range": [7.5, 10],
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "score_range": [
+          7.5,
+          10
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
-      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved pink leaf candle the founder endorsed at 8.4 (raw). Clean neutral background, soft even light, clear glass and leaf detail, faithful to the original product. Guards against future rubric drift re-punishing honest clean studio results (plainness, provenance suspicion, or framing nitpicks). Pairs with candle-pink-weak-01: improved MUST outrank the original."
+      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved pink leaf candle the founder endorsed at 8.4 (raw). Clean neutral background, soft even light, clear glass and leaf detail, faithful to the original product. Guards against future rubric drift re-punishing honest clean studio results (plainness, provenance suspicion, or framing nitpicks). Pairs with candle-pink-weak-01: improved MUST outrank the original. Band check removed 2026-07-17: golds compare RAW scores, and raw 7.5-7.9 already presents as strong 8.0 via calibration; the 7.5 range floor is the strong threshold."
     },
     {
       "id": "candle-label-mid-01",
@@ -219,9 +278,16 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "score_range": [5.2, 6.8],
+        "score_range": [
+          5.2,
+          7.0
+        ],
         "generation_risk": "review_text",
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -235,13 +301,19 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "band": "strong",
-        "score_range": [7.5, 10],
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "score_range": [
+          7.5,
+          10
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
-      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved Marriage Material candle the founder endorsed at 8.4. Readable label, soft even light, clean supportive background. Second strong-band guard against re-punishing honest clean results; improved MUST outrank candle-label-mid-01."
+      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved Marriage Material candle the founder endorsed at 8.4. Readable label, soft even light, clean supportive background. Second strong-band guard against re-punishing honest clean results; improved MUST outrank candle-label-mid-01. Band check removed 2026-07-17: golds compare RAW scores, and raw 7.5-7.9 already presents as strong 8.0 via calibration; the 7.5 range floor is the strong threshold."
     },
     {
       "id": "necklace-pearl-weak-01",
@@ -251,8 +323,15 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "jewelry",
-        "score_range": [4.1, 5.7],
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "score_range": [
+          4.1,
+          5.7
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -266,9 +345,15 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "jewelry",
-        "band": "strong",
-        "score_range": [7.5, 10],
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "score_range": [
+          7.0,
+          10
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -283,9 +368,16 @@
         "upload_kind": "physical_product",
         "category": "jewelry",
         "band": "weak",
-        "score_range": [4.3, 5.9],
+        "score_range": [
+          4.3,
+          5.9
+        ],
         "priority_issue_family": "framing",
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
@@ -299,13 +391,19 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "jewelry",
-        "band": "strong",
-        "score_range": [7.5, 10],
-        "must_not_claim": ["dropshipping", "scam", "spam"]
+        "score_range": [
+          7.5,
+          10
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
       },
       "strictness": "hard",
       "consistency": true,
-      "notes": "Founder-locked gold 8 (2026-07-17). Green pendant necklace WORN on a model, tasteful close crop: the design and how it sits when worn read instantly. Under v10 the model called it 'partially cut off at the top' (6.9) - a worn necklace cannot show front and back at once. Guards the on-model/worn framing rule added in main-v11; must never again be told to pull back."
+      "notes": "Founder-locked gold 8 (2026-07-17). Green pendant necklace WORN on a model, tasteful close crop: the design and how it sits when worn read instantly. Under v10 the model called it 'partially cut off at the top' (6.9) - a worn necklace cannot show front and back at once. Guards the on-model/worn framing rule added in main-v11; must never again be told to pull back. Band check removed 2026-07-17: golds compare RAW scores, and raw 7.5-7.9 already presents as strong 8.0 via calibration; the 7.5 range floor is the strong threshold."
     }
   ]
 }

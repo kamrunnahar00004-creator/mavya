@@ -91,10 +91,10 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    // v11 = on-model/worn shots: invisible backs and chains behind the neck
-    // are inherent, never a framing finding. (v10 = detectability trust test
-    // + 5.4 cap; v9 = buyer-understanding framing; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v11");
+    // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
+    // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
+    // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
+    expect(RUBRIC_VERSION).toBe("main-v12");
     expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v6");
   });
 });
