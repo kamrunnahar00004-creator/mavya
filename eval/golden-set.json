@@ -210,6 +210,38 @@
       "strictness": "hard",
       "consistency": true,
       "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved pink leaf candle the founder endorsed at 8.4 (raw). Clean neutral background, soft even light, clear glass and leaf detail, faithful to the original product. Guards against future rubric drift re-punishing honest clean studio results (plainness, provenance suspicion, or framing nitpicks). Pairs with candle-pink-weak-01: improved MUST outrank the original."
+    },
+    {
+      "id": "candle-label-mid-01",
+      "image": "public/assets/candle-label-mid-01.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "score_range": [5.2, 6.8],
+        "generation_risk": "review_text",
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 6.0 (2026-07-17). Marriage Material labeled jar candle, decent but unpolished original. Label text implies review_text generation risk. Anchor for the before side of the endorsed 6.0 -> 8.4 pair."
+    },
+    {
+      "id": "candle-label-improved-01",
+      "image": "public/assets/candle-label-improved-01.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "band": "strong",
+        "score_range": [7.5, 10],
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved Marriage Material candle the founder endorsed at 8.4. Readable label, soft even light, clean supportive background. Second strong-band guard against re-punishing honest clean results; improved MUST outrank candle-label-mid-01."
     }
   ]
 }
