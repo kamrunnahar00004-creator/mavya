@@ -1,5 +1,5 @@
 {
-  "at": "2026-07-17T09:21:51.180Z",
+  "at": "2026-07-17T09:10:24.160Z",
   "model": "gpt-4o",
   "rubricVersions": {
     "main": "main-v10",
@@ -33,7 +33,7 @@
           "name": "score_range",
           "level": "hard",
           "pass": true,
-          "detail": "expected [3.1, 6.1], got 5.3"
+          "detail": "expected [3.1, 6.1], got 5.5"
         },
         {
           "name": "priority_pillar",
@@ -54,13 +54,13 @@
           "detail": "clean"
         }
       ],
-      "score": 5.3,
+      "score": 5.5,
       "band": "weak",
       "category": "candles",
       "uploadKind": "physical_product",
       "priorityPillar": "lighting",
       "priorityFamily": "lighting",
-      "latencyMs": 4247
+      "latencyMs": 5640
     },
     {
       "id": "candle-03-main",
@@ -89,13 +89,13 @@
           "name": "band",
           "level": "hard",
           "pass": true,
-          "detail": "expected weak, got weak (5.0)"
+          "detail": "expected weak, got weak (4.8)"
         },
         {
           "name": "score_range",
           "level": "hard",
           "pass": true,
-          "detail": "expected [3, 5.4], got 5.0"
+          "detail": "expected [3, 5.4], got 4.8"
         },
         {
           "name": "priority_pillar",
@@ -122,13 +122,13 @@
           "detail": "expected review_text, got standard"
         }
       ],
-      "score": 5,
+      "score": 4.8,
       "band": "weak",
       "category": "candles",
       "uploadKind": "physical_product",
       "priorityPillar": "background",
       "priorityFamily": "background",
-      "latencyMs": 2894
+      "latencyMs": 4820
     },
     {
       "id": "candle-03-improved-main",
@@ -157,22 +157,22 @@
           "name": "band",
           "level": "soft",
           "pass": true,
-          "detail": "expected strong, got strong (8.5)"
+          "detail": "expected strong, got strong (8.4)"
         },
         {
           "name": "score_range",
           "level": "soft",
           "pass": true,
-          "detail": "expected [7.3, 10], got 8.5"
+          "detail": "expected [7.3, 10], got 8.4"
         }
       ],
-      "score": 8.5,
+      "score": 8.4,
       "band": "strong",
       "category": "candles",
       "uploadKind": "physical_product",
       "priorityPillar": "click_appeal",
       "priorityFamily": "other",
-      "latencyMs": 3610
+      "latencyMs": 29297
     },
     {
       "id": "candle-02-improved-main",
@@ -201,16 +201,16 @@
           "name": "score_range",
           "level": "soft",
           "pass": true,
-          "detail": "expected [5.5, 10], got 7.4"
+          "detail": "expected [5.5, 10], got 7.0"
         }
       ],
-      "score": 7.4,
+      "score": 7,
       "band": "mid",
       "category": "candles",
       "uploadKind": "physical_product",
       "priorityPillar": "click_appeal",
-      "priorityFamily": "clarity",
-      "latencyMs": 28717
+      "priorityFamily": "framing",
+      "latencyMs": 3746
     },
     {
       "id": "candle-02-ai-render-main",
@@ -242,7 +242,7 @@
       "uploadKind": "physical_product",
       "priorityPillar": "lighting",
       "priorityFamily": "lighting",
-      "latencyMs": 3471
+      "latencyMs": 29565
     },
     {
       "id": "logo-invalid",
@@ -280,7 +280,7 @@
       "uploadKind": "invalid",
       "priorityPillar": "thumbnail",
       "priorityFamily": "other",
-      "latencyMs": 28273
+      "latencyMs": 2336
     },
     {
       "id": "candle-02-supporting-self",
@@ -312,7 +312,7 @@
       "uploadKind": "physical_product",
       "priorityPillar": "click_appeal",
       "priorityFamily": "framing",
-      "latencyMs": 3305
+      "latencyMs": 29959
     },
     {
       "id": "candle-03-supporting-wrong-product",
@@ -335,7 +335,7 @@
           "name": "band",
           "level": "soft",
           "pass": true,
-          "detail": "expected weak, got weak (2.3)"
+          "detail": "expected weak, got weak (3.1)"
         },
         {
           "name": "supporting_role",
@@ -344,13 +344,13 @@
           "detail": "expected unrelated_or_wrong_product, got unrelated_or_wrong_product"
         }
       ],
-      "score": 2.3,
+      "score": 3.1,
       "band": "weak",
       "category": "candles",
       "uploadKind": "physical_product",
       "priorityPillar": "thumbnail",
       "priorityFamily": "identity",
-      "latencyMs": 3556
+      "latencyMs": 3971
     },
     {
       "id": "candle-proof-before-main",
@@ -388,7 +388,7 @@
       "uploadKind": "physical_product",
       "priorityPillar": "background",
       "priorityFamily": "background",
-      "latencyMs": 30807
+      "latencyMs": 3742
     },
     {
       "id": "candle-proof-after-main",
@@ -417,16 +417,16 @@
           "name": "score_range",
           "level": "soft",
           "pass": true,
-          "detail": "expected [6, 10], got 7.9"
+          "detail": "expected [6, 10], got 7.3"
         }
       ],
-      "score": 7.9,
+      "score": 7.3,
       "band": "mid",
       "category": "candles",
       "uploadKind": "physical_product",
       "priorityPillar": "click_appeal",
       "priorityFamily": "other",
-      "latencyMs": 3588
+      "latencyMs": 29166
     },
     {
       "id": "necklace-macro-leniency-01",
@@ -488,7 +488,7 @@
       "uploadKind": "physical_product",
       "priorityPillar": "lighting",
       "priorityFamily": "lighting",
-      "latencyMs": 29484
+      "latencyMs": 29259
     },
     {
       "id": "mug-pod-mashup-01",
@@ -544,7 +544,7 @@
       "uploadKind": "physical_product",
       "priorityPillar": "click_appeal",
       "priorityFamily": "trust",
-      "latencyMs": 4081
+      "latencyMs": 30599
     }
   ]
 }

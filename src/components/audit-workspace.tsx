@@ -352,6 +352,7 @@ export function AuditWorkspace({
               <button
                 type="button"
                 onClick={() => setEditModalOpen(true)}
+                title="Edit however you like."
                 className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-full bg-[rgba(25,23,20,0.78)] px-4 py-2 text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(25,23,20,0.20)] backdrop-blur-sm transition-all hover:bg-[rgba(25,23,20,0.9)]"
               >
                 <Wrench className="h-4 w-4" aria-hidden="true" />
@@ -730,6 +731,7 @@ export function AuditWorkspace({
                       type="button"
                       onClick={() => setEditModalOpen(true)}
                       aria-label="Edit photo"
+                      title="Edit however you like."
                       className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                     >
                       <Wrench className="h-4 w-4" aria-hidden="true" />
@@ -767,6 +769,7 @@ export function AuditWorkspace({
                         }}
                         variant="primary"
                         disabled={improveLoading}
+                        title="We generate the best version of your existing photo. Your original is always preserved."
                       >
                         {improveLoading ? (
                           <Loader2
@@ -811,6 +814,7 @@ export function AuditWorkspace({
                         <button
                           type="button"
                           onClick={() => setEditModalOpen(true)}
+                          title="Edit however you like."
                           className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                         >
                           <Wrench className="h-4 w-4" aria-hidden="true" />
@@ -972,17 +976,20 @@ function PrimaryButton({
   variant,
   children,
   disabled = false,
+  title,
 }: {
   onClick: () => void | Promise<void>;
   variant: "primary" | "neutral";
   children: React.ReactNode;
   disabled?: boolean;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={cn(
         "inline-flex items-center gap-2 rounded-full px-6 py-3 text-[15px] font-semibold text-white transition-all active:translate-y-[1px]",
         variant === "primary"

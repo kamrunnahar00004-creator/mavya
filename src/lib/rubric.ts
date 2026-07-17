@@ -261,11 +261,14 @@ Priority rule:
 - If the product type cannot be identified confidently from the image alone, return detected_category: "other" and do not use 8+ keep/add framing.
 
 Authenticity concerns require VISIBLE EVIDENCE (trust lane, never a pillar execution):
-- You may claim an image is AI-generated, a mockup, a rough cutout, or pasted ONLY when you can name specific visible evidence in THIS image: warped or melted lettering, garbled nonsensical template text, malformed hands/faces/anatomy, impossible product scale, duplicated product, a hard cutout edge or halo/fringe, a floating product with NO contact shadow, or impossible reflections. A clean studio look, a plain seamless background, soft even lighting, or a simple uncluttered composition is NOT evidence — professional product photos legitimately look like that. If you cannot point at concrete pixels, you MUST NOT use the words "AI-looking", "mockup", "pasted", "cutout", "floating", or "fake" anywhere in the output.
+- The governing test is OBVIOUS DETECTABILITY: would a typical Etsy shopper scrolling past sense within a second that this image is AI-generated or fake? An AI-assisted image that is INDISTINGUISHABLE from a real photograph harms nobody — score it exactly like a photograph, trust_risk "none". An OBVIOUSLY synthetic image destroys buyer trust instantly and must be trust_risk "high".
+- Evidence you can name for an obviously-synthetic image: warped or melted lettering, garbled nonsensical template text, malformed hands/faces/anatomy, waxy or plastic-smooth skin, impossible product scale, duplicated product, hyper-detailed print impossible for a real product, uncanny cinematic gloss over the whole scene, a hard cutout edge or halo/fringe, a floating product with NO contact shadow, or impossible reflections. SEVERAL of these together make the fake obvious even when each alone might pass.
+- A clean studio look, a plain seamless background, soft even lighting, or a simple uncluttered composition is NOT evidence — professional product photos legitimately look like that. If you cannot point at concrete pixels, you MUST NOT use the words "AI-looking", "mockup", "pasted", "cutout", "floating", or "fake" anywhere in the output.
 - With visible evidence, authenticity is the FIRST finding: priority_issue_family "trust", and priority_action names it plainly, e.g. "Replace the pasted-looking cutout photo." or "Photograph the real physical product." The priority_explanation must cite the specific evidence you saw (e.g. "the lettering is warped and the product floats with no shadow").
-- Busy print-on-demand clip-art mashups (a collage of many unrelated elements, generic template graphics, nonsensical celebratory text) are a trust finding on the PRODUCT DESIGN: name it in the trust lane. Do not mistake busy AI clip-art clutter for rich product detail.
+- Busy print-on-demand clip-art mashups are trust_risk "high", and the DESIGN ITSELF is the visible evidence — a professional-looking photo does NOT excuse it. Recognize the pattern: a dense collage of many unrelated themed elements, stacked template text (a celebratory banner + a personalized name + a role/title line, e.g. "CELEBRATING 250 YEARS / DAVID / TRUCK DRIVER"), embossed 3D-looking lettering that a real printed product cannot have, generic AI clip-art surrounds. Buyers receive a flat print that looks nothing like the render — that mismatch is the trust failure. Do not mistake busy AI clip-art clutter for rich product detail, and do not let excellent lighting or styling talk you out of the finding.
+- Personalization itself is NEVER a flaw: never advise removing a name, using a "more general design", or de-personalizing — personalized goods are the product. The finding for a mashup design is honesty of the RENDER, not the existence of a name.
 - Pillars always score what a buyer SEES, even for a suspected fake: a dramatic, detailed, well-lit image can have high click_appeal AND a trust priority at the same time — the trust warning lives in trust_risk/trust_evidence and the priority, not in pillar suppression. Do NOT force click_appeal down because of suspected provenance. Fidelity of AI-improved previews is checked by a separate dedicated system; your job here is photographic quality plus honestly-evidenced trust findings.
-- Set trust_risk honestly: "none" without concrete evidence (trust_evidence ""), "moderate" for one minor/ambiguous artifact, "high" for clear evidence (AI-invented product design, garbled text, warped anatomy, impossible scale, hard cutout). trust_risk "high" means the photo can never be a strong/keep verdict: the overall score must not exceed 7.4 (the product also enforces this cap deterministically), and priority framing must be the trust finding, never praise.
+- Set trust_risk honestly: "none" without concrete evidence (trust_evidence ""), "moderate" for one minor/ambiguous artifact, "high" for clear evidence (AI-invented product design, print-on-demand template mashup, garbled text, warped anatomy, impossible scale, hard cutout). trust_risk "high" means the listing cannot be trusted as shown: the overall score must not exceed 5.4 (the product also enforces this cap deterministically), and priority framing must be the trust finding, never praise.
 - Never reward cleanliness over buyer trust, and never punish cleanliness as if it were evidence of fakery.
 
 Framing is judged by BUYER UNDERSTANDING, not by literal 100% inclusion:
@@ -463,12 +466,15 @@ export function computeOverall(
     pillars.click_appeal * PILLAR_WEIGHTS.click_appeal;
   const weighted = Math.round(raw * 10) / 10;
   let capped = pillars.click_appeal < 5 ? Math.min(weighted, 6.9) : weighted;
-  // Deterministic trust verdict gate: EVIDENCED high provenance/trust risk can
-  // never present as a strong/publish-ready photo, regardless of how clickable
-  // the image is. Runs BEFORE calibration, so 7.4 is never promoted to 8.0.
-  if (trustRisk === "high") capped = Math.min(capped, 7.4);
+  // Deterministic trust verdict gate: EVIDENCED high provenance/trust risk
+  // lands in the weak band regardless of how clickable the image is (founder
+  // decision 2026-07-17: a listing a buyer cannot trust is at best a 5).
+  if (trustRisk === "high") capped = Math.min(capped, TRUST_RISK_CAP);
   return capped;
 }
+
+/** Raw overall ceiling for evidenced HIGH trust risk (weak band). */
+export const TRUST_RISK_CAP = 5.4;
 
 /**
  * Supporting-photo overall using SUPPORTING_PILLAR_WEIGHTS (35/30/20/15). No
@@ -486,7 +492,7 @@ export function computeSupportingOverall(
     pillars.click_appeal * SUPPORTING_PILLAR_WEIGHTS.click_appeal;
   const weighted = Math.round(raw * 10) / 10;
   // Same deterministic trust verdict gate as main photos.
-  return trustRisk === "high" ? Math.min(weighted, 7.4) : weighted;
+  return trustRisk === "high" ? Math.min(weighted, TRUST_RISK_CAP) : weighted;
 }
 
 export function isRubricJson(x: unknown): x is RubricJson {

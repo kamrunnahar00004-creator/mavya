@@ -91,11 +91,11 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    // v9 = framing judged by buyer understanding, not literal 100% inclusion
-    // (general rule replaces the necklace-only exception). (v8 = margin vs
-    // truncation wording; v7 = evidence-based trust findings.)
-    expect(RUBRIC_VERSION).toBe("main-v9");
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v5");
+    // v10 = print-on-demand mashup designs are named trust evidence; high
+    // trust caps at 5.4 (weak band); personalization is never a flaw.
+    // (v9 = buyer-understanding framing; v8 = wording; v7 = trust lane.)
+    expect(RUBRIC_VERSION).toBe("main-v10");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v6");
   });
 });
 

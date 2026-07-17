@@ -9,16 +9,18 @@ import { calibrateScore } from "@/lib/calibration";
 
 const strongPillars = { thumbnail: 9, lighting: 9, background: 8, click_appeal: 9 };
 
-describe("deterministic trust verdict gate (main-v7)", () => {
-  it("evidenced HIGH trust risk caps the raw overall at 7.4 (never strong)", () => {
-    // 9/9/8/9 weighs to 8.8 — the trucker-mug case: magnetic image, fake product.
+describe("deterministic trust verdict gate", () => {
+  it("evidenced HIGH trust risk caps the raw overall at 5.4 (weak band)", () => {
+    // 9/9/8/9 weighs to 8.8 — the trucker-mug case: magnetic image, fake
+    // product. Founder decision 2026-07-17: an untrustworthy listing is at
+    // best a 5, no matter how clickable the render is.
     expect(computeOverall(strongPillars)).toBe(8.8);
-    expect(computeOverall(strongPillars, "high")).toBe(7.4);
-    expect(computeSupportingOverall(strongPillars, "high")).toBe(7.4);
+    expect(computeOverall(strongPillars, "high")).toBe(5.4);
+    expect(computeSupportingOverall(strongPillars, "high")).toBe(5.4);
   });
 
-  it("a trust-capped 7.4 is never promoted to 8.0 by calibration", () => {
-    expect(calibrateScore(computeOverall(strongPillars, "high"))).toBe(7.4);
+  it("a trust-capped score is never promoted by calibration", () => {
+    expect(calibrateScore(computeOverall(strongPillars, "high"))).toBe(5.4);
   });
 
   it("none/moderate/absent trust risk never caps", () => {

@@ -161,6 +161,23 @@
       "strictness": "soft",
       "consistency": true,
       "notes": "Founder-locked gold 5.5 (2026-07-17). Blue beaded necklace macro on creased canvas: design mostly cropped (thumbnail/framing priority), visible fabric fold behind the pendant, flat dull light, mid click appeal. Model gave 6.6 under main-v8 - the leniency this fixture guards (bg 7 / light 7 / click 7 all ~1 generous). SOFT until a future rubric version addresses the leniency pattern; upgrade to hard when it passes."
+    },
+    {
+      "id": "mug-pod-mashup-01",
+      "image": "public/assets/mug-pod-mashup-01.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "mugs",
+        "band": "weak",
+        "score_range": [1.0, 5.4],
+        "priority_issue_family": "trust",
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked (2026-07-17): AI print-on-demand mashup mug held by a model - professional lighting, but the printed design is a dense template collage (CELEBRATING 250 YEARS / DAVID / TRUCK DRIVER banner stack, embossed 3D lettering, clip-art surround). Buyers receive a flat print that looks nothing like the render. trust_risk must be high; the 5.4 cap lands it in the weak band. Guards the v9 false negative where this image scored 7.0 with click-appeal advice and no trust finding."
     }
   ]
 }
