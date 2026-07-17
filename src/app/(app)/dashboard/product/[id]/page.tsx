@@ -83,6 +83,27 @@ export default async function ProductPage({
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);
 
+  // Latest rating job per photo: a photo without an audit yet must still
+  // render (analyzing while its durable rating runs, or a visible failed
+  // state the seller can delete) — uploaded photos NEVER silently vanish.
+  const ratingByPhoto = new Map<
+    string,
+    { id: string; status: string; error_message: string | null }
+  >();
+  if (photoIds.length > 0) {
+    const { data: ratingRows } = await supabase
+      .from("rating_jobs")
+      .select("id, photo_id, status, error_message, created_at")
+      .in("photo_id", photoIds)
+      .order("created_at", { ascending: false })
+      .limit(photoIds.length * 3);
+    for (const r of (ratingRows as
+      | { id: string; photo_id: string; status: string; error_message: string | null }[]
+      | null) ?? []) {
+      if (!ratingByPhoto.has(r.photo_id)) ratingByPhoto.set(r.photo_id, r);
+    }
+  }
+
   // Recent generation jobs per photo (RLS scopes to the owner). BOUNDED: the
   // UI needs the latest job, the selected/alternate versions, and the last
   // five completed results — twelve newest rows per photo covers that with
@@ -177,13 +198,12 @@ export default async function ProductPage({
     photoMetadata.set(row.id, { selectedRow, alternateRow, completedRows });
   }
 
-  // Collect all unique storage paths and sign them in batch.
-  // Only collect paths for photos with valid rubrics.
+  // Collect all unique storage paths and sign them in batch. EVERY photo's
+  // original is signed — rubric-less photos still render (analyzing/failed).
   const pathsToSign: (string | null)[] = [];
   for (const row of rows) {
-    if (!validPhotoIds.has(row.id)) continue;
-
     pathsToSign.push(row.storage_path); // Original photo
+    if (!validPhotoIds.has(row.id)) continue;
 
     const metadata = photoMetadata.get(row.id);
     if (metadata) {
@@ -213,8 +233,31 @@ export default async function ProductPage({
 
   // Build InitialPhotos using the signed URLs
   const signed = rows.map((row) => {
-    // Skip photos without valid metadata (no valid rubric, no paths collected)
-    if (!validPhotoIds.has(row.id)) return null;
+    // A photo without a valid rubric still ships: analyzing while its rating
+    // job runs, or a visible failed state the seller can delete.
+    if (!validPhotoIds.has(row.id)) {
+      const imageSrc = signedUrls.get(row.storage_path);
+      if (!imageSrc) return null;
+      const rating = ratingByPhoto.get(row.id) ?? null;
+      return {
+        id: row.id,
+        role: row.role,
+        imageSrc,
+        storagePath: row.storage_path,
+        rubric: null,
+        ratingJob: rating
+          ? { id: rating.id, status: rating.status, errorMessage: rating.error_message }
+          : null,
+        lastJob: null,
+        selectedJob: null,
+        selectedJobId: null,
+        selectionSource: "auto",
+        alternateJob: null,
+        hasAlternateGeneration: false,
+        selectionIsReverted: false,
+        versions: [],
+      } satisfies InitialPhoto as InitialPhoto;
+    }
 
     const metadata = photoMetadata.get(row.id);
     if (!metadata) return null;
@@ -323,7 +366,7 @@ export default async function ProductPage({
     (p): p is InitialPhoto => p !== null
   );
 
-  if (!initialPhotos.some((p) => p.role === "main")) {
+  if (!initialPhotos.some((p) => p.role === "main" && p.rubric)) {
     // The main photo may exist without an audit while its durable rating job
     // is still running: render the workspace in its analyzing state instead
     // of bouncing to the dashboard. The workspace polls the job and refreshes

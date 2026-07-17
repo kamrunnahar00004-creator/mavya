@@ -24,6 +24,7 @@ import { coveredShotIds } from "@/lib/checklist-coverage";
 import { mergeChecklist, parseSavedChecklist } from "@/lib/checklist-store";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { prepareUploadImage } from "@/lib/client-image";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { trackClientEvent } from "@/lib/track-client";
 
 export type InitialJob = {
@@ -54,7 +55,10 @@ export type InitialPhoto = {
   role: "main" | "supporting";
   imageSrc: string;
   storagePath: string;
-  rubric: RubricJson;
+  /** null when the photo has no audit yet (rating running or failed). */
+  rubric: RubricJson | null;
+  /** Latest rating job for a rubric-less photo (resume polling / show error). */
+  ratingJob?: { id: string; status: string; errorMessage: string | null } | null;
   lastJob: InitialJob | null;
   selectedJob: InitialJob | null;
   /** photos.selected_generation_job_id (null = the original is in use). */
@@ -84,7 +88,11 @@ type Photo = {
   imageSrc: string;
   storagePath: string;
   audit: DemoState;
-  status: "analyzing" | "graded";
+  status: "analyzing" | "graded" | "failed";
+  /** Visible reason when status is "failed" (rating failed/invalid upload). */
+  failedMsg?: string;
+  /** Durable rating job to resume polling after refresh (analyzing photos). */
+  ratingJobId?: string;
   isDigital: boolean;
   supportingRole?: string;
   productSummary?: string;
@@ -176,6 +184,22 @@ function applyCompletedJob(photo: Photo, job: InitialJob): Photo {
 
 function makePhoto(p: InitialPhoto): Photo {
   const isMain = p.role === "main";
+  // No audit yet: the photo STAYS visible — analyzing while its durable
+  // rating job runs, or a failed state the seller can delete. Never vanish.
+  if (!p.rubric) {
+    const ratingActive =
+      p.ratingJob?.status === "queued" || p.ratingJob?.status === "scoring";
+    return {
+      ...analyzingPhoto(p.id, p.imageSrc),
+      kind: p.role,
+      storagePath: p.storagePath,
+      status: ratingActive ? "analyzing" : "failed",
+      failedMsg: ratingActive
+        ? undefined
+        : p.ratingJob?.errorMessage || "This photo could not be rated.",
+      ratingJobId: ratingActive ? p.ratingJob?.id : undefined,
+    };
+  }
   const audit = isMain
     ? rubricToDemoState({ rubric: p.rubric, imageSrc: p.imageSrc })
     : rubricToSupportingState({ rubric: p.rubric, imageSrc: p.imageSrc });
@@ -333,7 +357,7 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     () =>
       parseSavedChecklist(
         initialPhotos.find((p) => p.role === "main")?.rubric
-          .supporting_photo_checklist
+          ?.supporting_photo_checklist
       ) ?? []
   );
   const [checklistLoading, setChecklistLoading] = useState(false);
@@ -365,6 +389,59 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
   const patch = useCallback((id: string, next: Partial<Photo>) => {
     setPhotos((prev) => prev.map((p) => (p.id === id ? { ...p, ...next } : p)));
   }, []);
+
+  // Refresh recovery for photos whose durable RATING job is still running:
+  // poll it, then grade in place or surface a visible failed state. The photo
+  // is never dropped — deleting is the seller's decision.
+  const pollRating = useCallback(
+    (photoId: string, jobId: string) => {
+      const key = `rating:${photoId}`;
+      const existing = pollTimers.current[key];
+      if (existing) clearInterval(existing);
+      pollTimers.current[key] = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/score/jobs?id=${encodeURIComponent(jobId)}`, {
+            cache: "no-store",
+          });
+          if (!res.ok) return;
+          const body = (await res.json()) as {
+            status?: string;
+            message?: string | null;
+            rubric?: RubricJson | null;
+          };
+          if (body.status === "queued" || body.status === "scoring") return;
+          clearInterval(pollTimers.current[key]);
+          delete pollTimers.current[key];
+          if (!mountedRef.current) return;
+          const cur = photosRef.current.find((p) => p.id === photoId);
+          if (!cur) return;
+          if (body.status === "completed" && body.rubric) {
+            const audit =
+              cur.kind === "main"
+                ? rubricToDemoState({ rubric: body.rubric, imageSrc: cur.imageSrc })
+                : rubricToSupportingState({ rubric: body.rubric, imageSrc: cur.imageSrc });
+            patch(photoId, {
+              status: "graded",
+              audit,
+              supportingRole: body.rubric.supporting_photo_role,
+              isDigital: body.rubric.upload_kind === "digital_product",
+              failedMsg: undefined,
+              ratingJobId: undefined,
+            });
+          } else {
+            patch(photoId, {
+              status: "failed",
+              failedMsg: body.message || "This photo could not be rated.",
+              ratingJobId: undefined,
+            });
+          }
+        } catch {
+          // transient poll failure: keep trying
+        }
+      }, 2500);
+    },
+    [patch]
+  );
 
   // ------------------------------------------------------------------
   // Checklist (background hydrate) + covered-shot diffing.
@@ -642,11 +719,19 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     pollJobRef.current = pollJob;
   }, [pollJob]);
 
-  // Refresh recovery: resume polling for photos whose last job is still active.
+  // Refresh recovery: resume polling for photos whose last job is still active,
+  // and for photos whose durable rating is still running.
   useEffect(() => {
     for (const p of initialPhotos) {
       if (p.lastJob && ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
         pollJob(p.id, `id=${p.lastJob.id}`);
+      }
+      if (
+        !p.rubric &&
+        p.ratingJob &&
+        (p.ratingJob.status === "queued" || p.ratingJob.status === "scoring")
+      ) {
+        pollRating(p.id, p.ratingJob.id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -704,7 +789,7 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     setChecklist(
       parseSavedChecklist(
         initialPhotos.find((p) => p.role === "main")?.rubric
-          .supporting_photo_checklist
+          ?.supporting_photo_checklist
       ) ?? []
     );
     setChecklistLoading(false);
@@ -714,8 +799,15 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       if (p.lastJob && ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
         pollJob(p.id, `id=${p.lastJob.id}`);
       }
+      if (
+        !p.rubric &&
+        p.ratingJob &&
+        (p.ratingJob.status === "queued" || p.ratingJob.status === "scoring")
+      ) {
+        pollRating(p.id, p.ratingJob.id);
+      }
     }
-  }, [productId, initialPhotos, pollJob]);
+  }, [productId, initialPhotos, pollJob, pollRating]);
 
   // ------------------------------------------------------------------
   // One-click fix / Edit / Retry — persisted, idempotent generation jobs.
@@ -911,6 +1003,29 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     [activeId, patch, versionBusy]
   );
 
+  // Deleting a supporting photo is ALWAYS the seller's decision — wrong or
+  // failed uploads stay visible until the seller removes them here.
+  const handleRemovePhoto = useCallback(async () => {
+    const photo = photosRef.current.find((p) => p.id === activeId);
+    if (!photo || photo.kind !== "supporting") return;
+    if (!window.confirm("Remove this supporting photo? This cannot be undone.")) {
+      return;
+    }
+    try {
+      const supabase = createSupabaseBrowserClient();
+      if (photo.storagePath) {
+        await supabase.storage.from("product-photos").remove([photo.storagePath]);
+      }
+      const { error } = await supabase.from("photos").delete().eq("id", photo.id);
+      if (error) throw error;
+      setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
+      setNotice(null);
+    } catch {
+      setNotice("The photo could not be removed. Try again.");
+    }
+  }, [activeId]);
+
   const handleSelectSlot = useCallback((id: string) => {
     setActiveId(id);
     setNotice(null);
@@ -1025,6 +1140,49 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     );
   }
 
+  if (active.status === "failed") {
+    // Rating failed or the upload was not gradeable: the photo stays until
+    // the seller decides. Never silently dropped.
+    return (
+      <main className="mx-auto flex max-w-[720px] flex-col items-center gap-5 px-6 py-10">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={active.imageSrc}
+          alt=""
+          className="max-h-[320px] rounded-[var(--radius-xl)] object-contain shadow-[var(--shadow-soft)]"
+        />
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-[var(--radius-lg)] border border-[var(--color-weak)] bg-[var(--color-weak-soft)] px-4 py-3 text-[14px] text-[var(--color-ink)]"
+        >
+          <span>{active.failedMsg ?? "This photo could not be rated."}</span>
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          {active.kind === "supporting" && (
+            <button
+              type="button"
+              onClick={() => void handleRemovePhoto()}
+              className="inline-flex items-center justify-center rounded-full bg-[var(--color-weak)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:brightness-95"
+            >
+              Remove this photo
+            </button>
+          )}
+          {photos.some((p) => p.kind === "main" && p.id !== active.id) && (
+            <button
+              type="button"
+              onClick={() =>
+                setActiveId(photos.find((p) => p.kind === "main")?.id ?? "")
+              }
+              className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+            >
+              Back to main photo
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
   const digitalMain = active.kind === "main" && active.isDigital;
 
@@ -1070,7 +1228,12 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     id: p.id,
     label: p.kind === "main" ? "Main photo" : "Supporting",
     thumbnailUrl: p.imageSrc,
-    status: p.improveStatus === "generating" ? "improving" : p.status,
+    status:
+      p.status === "failed"
+        ? "error"
+        : p.improveStatus === "generating"
+        ? "improving"
+        : p.status,
     score: p.status === "graded" ? p.audit.overallScore : undefined,
     active: p.id === activeId,
   }));
@@ -1110,6 +1273,7 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         }
         checklistError={checklistError}
         onChecklistRetry={handleChecklistRetry}
+        onRemovePhoto={active.kind === "supporting" ? handleRemovePhoto : undefined}
         onCta={() => router.push("/dashboard")}
         onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
         onEdit={digitalMain || wrongProduct ? undefined : handleEdit}

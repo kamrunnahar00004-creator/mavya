@@ -95,6 +95,8 @@ type Props = {
   /** First generation failed and nothing is saved: keep the panel with a retry. */
   checklistError?: boolean;
   onChecklistRetry?: () => void;
+  /** Supporting photos only: deleting is always the seller's decision. */
+  onRemovePhoto?: () => void;
   /** "main" = hero/thumbnail panel (Etsy preview + improve). "extra" = supporting photo grade. */
   panelMode?: "main" | "extra";
   /** Photo slots for the workspace strip. Omitted on demo routes -> strip hidden. */
@@ -131,6 +133,7 @@ export function AuditWorkspace({
   checklistLoading = false,
   checklistError = false,
   onChecklistRetry,
+  onRemovePhoto,
   panelMode = "main",
   slots,
   onSelectSlot,
@@ -788,6 +791,17 @@ export function AuditWorkspace({
           </div>
           )}
             </>
+          )}
+          {isExtra && onRemovePhoto && (
+            <div className="mt-2 border-t border-[var(--color-border-soft)] pt-3">
+              <button
+                type="button"
+                onClick={onRemovePhoto}
+                className="text-[13px] font-semibold text-[var(--color-weak)] underline-offset-2 hover:underline"
+              >
+                Remove this supporting photo
+              </button>
+            </div>
           )}
         </section>
       </div>
