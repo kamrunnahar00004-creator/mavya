@@ -91,10 +91,10 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    // v10 = print-on-demand mashup designs are named trust evidence; high
-    // trust caps at 5.4 (weak band); personalization is never a flaw.
-    // (v9 = buyer-understanding framing; v8 = wording; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v10");
+    // v11 = on-model/worn shots: invisible backs and chains behind the neck
+    // are inherent, never a framing finding. (v10 = detectability trust test
+    // + 5.4 cap; v9 = buyer-understanding framing; v7 = trust lane.)
+    expect(RUBRIC_VERSION).toBe("main-v11");
     expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v6");
   });
 });

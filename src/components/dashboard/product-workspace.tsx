@@ -137,12 +137,12 @@ function freePreviewMessage(fidelity: FidelityReport | null): string {
   if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
     return "This version may have changed product details. Review it carefully before using it, or generate another version.";
   }
+  if (fidelity.ai_looking) {
+    return "This version may look AI-generated. Check it against your real product before using it.";
+  }
   let tail =
     "trying a cleaner, sharper source photo, or generating another version for a different result.";
-  if (fidelity.ai_looking) {
-    tail =
-      "reviewing it closely first — this version looks AI-generated, so check it against your real product before using it.";
-  } else if (!fidelity.full_product_visible) {
+  if (!fidelity.full_product_visible) {
     tail = "uploading a photo that shows the complete product.";
   }
   return `${FREE_PREVIEW_PREFIX}${tail}`;

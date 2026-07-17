@@ -273,6 +273,39 @@
       "strictness": "hard",
       "consistency": true,
       "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved pearl necklace endorsed at 8.0 (raw 7.5-7.9 window). Full loop with clasp visible, dark clean backdrop, even light. First JEWELRY strong-band guard; improved MUST outrank necklace-pearl-weak-01. Watch item: the model titled the keep-photo box with critique wording at a displayed 8.0 - praise-tone rule slightly disobeyed at the calibration boundary."
+    },
+    {
+      "id": "necklace-macro-crop-weak-01",
+      "image": "public/assets/necklace-macro-crop-weak-01.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "jewelry",
+        "band": "weak",
+        "score_range": [4.3, 5.9],
+        "priority_issue_family": "framing",
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 5.1 (2026-07-17, endorsed). Green pendant necklace cropped SO tight on wood grain that a buyer cannot tell it is a necklace - the real-ambiguity case where framing punishment is CORRECT under the buyer-understanding rule. Counterweight to the worn-shot leniency fixture."
+    },
+    {
+      "id": "necklace-worn-strong-01",
+      "image": "public/assets/necklace-worn-strong-01.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "jewelry",
+        "band": "strong",
+        "score_range": [7.5, 10],
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 8 (2026-07-17). Green pendant necklace WORN on a model, tasteful close crop: the design and how it sits when worn read instantly. Under v10 the model called it 'partially cut off at the top' (6.9) - a worn necklace cannot show front and back at once. Guards the on-model/worn framing rule added in main-v11; must never again be told to pull back."
     }
   ]
 }
