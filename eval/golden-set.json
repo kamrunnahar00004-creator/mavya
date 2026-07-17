@@ -242,6 +242,37 @@
       "strictness": "hard",
       "consistency": true,
       "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved Marriage Material candle the founder endorsed at 8.4. Readable label, soft even light, clean supportive background. Second strong-band guard against re-punishing honest clean results; improved MUST outrank candle-label-mid-01."
+    },
+    {
+      "id": "necklace-pearl-weak-01",
+      "image": "public/assets/necklace-pearl-weak-01.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "jewelry",
+        "score_range": [4.1, 5.7],
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 4.9 (2026-07-17). Pearl and dark bead necklace original, unpolished amateur shot. Before side of the endorsed 4.9 -> 8.0 pair."
+    },
+    {
+      "id": "necklace-pearl-improved-01",
+      "image": "public/assets/necklace-pearl-improved-01.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "jewelry",
+        "band": "strong",
+        "score_range": [7.5, 10],
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved pearl necklace endorsed at 8.0 (raw 7.5-7.9 window). Full loop with clasp visible, dark clean backdrop, even light. First JEWELRY strong-band guard; improved MUST outrank necklace-pearl-weak-01. Watch item: the model titled the keep-photo box with critique wording at a displayed 8.0 - praise-tone rule slightly disobeyed at the calibration boundary."
     }
   ]
 }
