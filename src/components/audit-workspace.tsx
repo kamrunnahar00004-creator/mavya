@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -203,6 +203,23 @@ export function AuditWorkspace({
     ? state.improvedAudit.overallScore < 8
     : true;
   const refiningVisible = backgroundRefining && improvedBelowBar;
+
+  // A NEWLY ARRIVED preview must PRESENT itself: after a refresh mid-flow the
+  // workspace mounts locked, and the polled attempt-1 result used to appear
+  // silently behind a hidden toggle. Any improvedSrc transition now unlocks
+  // and switches to the preview tab (deferred callback keeps lint's
+  // no-sync-setState-in-effect rule satisfied).
+  const prevImprovedSrcRef = useRef(improvedSrc);
+  useEffect(() => {
+    const prev = prevImprovedSrcRef.current;
+    prevImprovedSrcRef.current = improvedSrc;
+    if (!improvedSrc || improvedSrc === prev) return;
+    const id = window.setTimeout(() => {
+      setPreviewUnlocked(true);
+      setActiveTab("preview");
+    }, 0);
+    return () => window.clearTimeout(id);
+  }, [improvedSrc]);
 
   // Probe the preview URL in the background; a broken URL demotes the toggle
   // back to the original. setState happens only in the async error callback.

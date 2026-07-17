@@ -52,9 +52,10 @@ export function ActiveProcessingState({
                   className="object-contain"
                   sizes="(max-width: 1280px) 540px, 580px"
                   priority
-                  unoptimized={
-                    imageSrc.startsWith("blob:") || imageSrc.startsWith("data:")
-                  }
+                  // Signed Supabase URLs (and blob/data previews) must bypass
+                  // the Next image optimizer: remotePatterns allows no hosts,
+                  // so optimizing a remote src renders a broken image.
+                  unoptimized={!imageSrc.startsWith("/")}
                 />
               ) : (
                 <div
