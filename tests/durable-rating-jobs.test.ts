@@ -54,7 +54,12 @@ describe("durable rating jobs", () => {
     expect(ratingJobs).toContain("attempt_count");
     expect(worker).toContain("recoverStaleRatingJobs");
     expect(worker).toContain("runQueuedRatingOnce");
-    expect(worker).toContain("ratingJobId ? null : await runQueuedRefinementOnce()");
+    // One expensive AI operation per tick: rating first, then a queued
+    // attempt-1 generation, then background refinement.
+    expect(worker).toContain("ratingJobId ? null : await runQueuedGenerationOnce()");
+    expect(worker).toContain(
+      "ratingJobId || genJobId ? null : await runQueuedRefinementOnce()"
+    );
   });
 
   it("makes cache and audit persistence idempotent across worker retries", () => {

@@ -188,7 +188,6 @@ export function ProductCard({
     <div className="group relative flex flex-col rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[0_1px_2px_rgba(25,23,20,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-soft-strong)]">
       <Link
         href={href}
-        prefetch
         aria-label={`Open ${name}`}
         className="relative block aspect-square w-full overflow-hidden rounded-t-[var(--radius-xl)] bg-[var(--color-page-deep)]"
       >

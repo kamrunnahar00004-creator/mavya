@@ -11,8 +11,8 @@ import {
   candidateIsSafe,
   shouldQueueRefinement,
 } from "@/lib/workflow-rules";
-import { generationDisabled, withinGlobalBudget } from "@/lib/usage";
-import { refundAllowance } from "@/lib/allowances";
+import { generationDisabled, isRefundable, withinGlobalBudget } from "@/lib/usage";
+import { consumeAllowance, refundAllowance } from "@/lib/allowances";
 import { logEvent } from "@/lib/errors";
 import { getImageModel } from "@/lib/openai";
 import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
@@ -491,6 +491,292 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
     return job.id;
   } catch (err) {
     logEvent("refine.unhandled", {
+      jobId: job.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    await fail("internal_error", "failed");
+    return job.id;
+  }
+}
+
+/**
+ * Claim and execute ONE queued attempt-1 generation job (improve/edit/retry).
+ * DURABLE model: POST /api/generate only queues the row and returns; this
+ * executor owns all provider work, so a closed tab, an aborted request, or a
+ * dead invocation never loses the seller's attempt. Triggers: after() in the
+ * POST route, the status-poll GET (self-heal), and the worker route. The
+ * atomic queued->generating claim makes concurrent triggers safe.
+ * Chains the workflow's background refinements before returning.
+ */
+export async function runQueuedGenerationOnce(jobId?: string): Promise<string | null> {
+  if (generationDisabled()) return null;
+  const admin = createSupabaseAdminClient();
+
+  let query = admin
+    .from("generation_jobs")
+    .select("id")
+    .eq("status", "queued")
+    .in("operation", ["improve", "edit", "retry"])
+    .order("created_at", { ascending: true })
+    .limit(1);
+  if (jobId) query = query.eq("id", jobId);
+  const { data: candidates } = await query;
+  const target = candidates?.[0];
+  if (!target) return null;
+
+  const { data: claimed } = await admin
+    .from("generation_jobs")
+    .update({
+      status: "generating",
+      stage: "preparing_source",
+      started_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", target.id)
+    .eq("status", "queued")
+    .select("*")
+    .maybeSingle();
+  if (!claimed) return null;
+  const job = claimed as WorkflowJobRow;
+
+  const patch = async (fields: Record<string, unknown>) => {
+    await admin
+      .from("generation_jobs")
+      .update({ ...fields, updated_at: new Date().toISOString() })
+      .eq("id", job.id);
+  };
+  const fail = async (
+    code: string,
+    kind: "failed" | "rejected" | "cancelled",
+    unresolvedIssues?: string[]
+  ) => {
+    const refund = kind !== "cancelled" && isRefundable(code);
+    if (refund && job.allowance_key) await refundAllowance(job.allowance_key);
+    await patch({
+      status: kind,
+      stage: null,
+      error_code: code,
+      refunded: refund,
+      unresolved_issues: unresolvedIssues ?? [],
+      completed_at: new Date().toISOString(),
+    });
+    logEvent("generate.finished", { jobId: job.id, status: kind, code });
+    // A rejected/failed (non-refunded) attempt 1 still gets its bounded
+    // background attempts — weak sources are helped, never abandoned.
+    if (kind !== "cancelled" && !refund) {
+      const queuedId = await maybeQueueRefinement({
+        admin,
+        completedJob: job,
+        acceptedRawScore: null,
+      });
+      if (queuedId) await runQueuedRefinementChain(queuedId);
+    }
+  };
+
+  const startedAt = Date.now();
+  try {
+    const entitlement = await getEntitlement(job.user_id);
+    if (!entitlement.active || !entitlement.periodKey) {
+      await fail(
+        entitlement.reason === "past_due" ? "subscription_past_due" : "subscription_required",
+        "cancelled"
+      );
+      return job.id;
+    }
+    if (!(await withinGlobalBudget("generate"))) {
+      await fail("generation_disabled", "failed");
+      return job.id;
+    }
+
+    // Atomic workflow charge (idempotent by allowance key: a re-run of the
+    // same job can never double-charge).
+    const charge = await consumeAllowance({
+      userId: job.user_id,
+      kind: "workflow",
+      periodKey: entitlement.periodKey,
+      idempotencyKey: job.allowance_key ?? `${job.user_id}:workflow:${job.idempotency_key}`,
+      refId: job.id,
+    });
+    if (!charge.ok) {
+      await fail(
+        charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
+        "cancelled"
+      );
+      return job.id;
+    }
+    await patch({ charged: 1 });
+
+    // Owned photo (worker has no session; ownership enforced explicitly).
+    const { data: photo } = await admin
+      .from("photos")
+      .select("id, role, storage_path, mime, product_id, products(user_id)")
+      .eq("id", job.photo_id)
+      .maybeSingle();
+    const ownerId = (photo?.products as { user_id?: string } | null)?.user_id;
+    if (!photo || ownerId !== job.user_id) {
+      await fail("source_unavailable", "failed");
+      return job.id;
+    }
+
+    // Baseline audit captured at queue time.
+    const { data: auditRow } = await admin
+      .from("audits")
+      .select("id, rubric, score_cache_id")
+      .eq("id", job.source_audit_id)
+      .eq("photo_id", photo.id)
+      .maybeSingle();
+    const originalAudit = auditRow?.rubric as RubricJson | null;
+    if (!originalAudit || !auditRow?.score_cache_id) {
+      await fail("stale_audit", "failed");
+      return job.id;
+    }
+    const mode: ImproveMode = photo.role === "main" ? "main" : "extra";
+
+    const { data: originalBlob } = await admin.storage
+      .from("product-photos")
+      .download(photo.storage_path);
+    if (!originalBlob) {
+      await fail("source_unavailable", "failed");
+      return job.id;
+    }
+    const originalBuffer = Buffer.from(await originalBlob.arrayBuffer());
+    const originalMimeType =
+      photo.mime === "image/png" ? ("image/png" as const) : ("image/jpeg" as const);
+
+    // Optional base: parent_job_id on an attempt-1 row points at the previous
+    // completed result the seller asked to build from (edit-from-preview,
+    // retry-from-preview).
+    let baseBuffer: Buffer | undefined;
+    let promptAudit: RubricJson | undefined;
+    if (job.parent_job_id) {
+      const { data: prev } = await admin
+        .from("generation_jobs")
+        .select("id, status, photo_id, result_storage_path, candidate_rubric")
+        .eq("id", job.parent_job_id)
+        .eq("user_id", job.user_id)
+        .maybeSingle();
+      if (
+        prev &&
+        prev.status === "completed" &&
+        prev.photo_id === photo.id &&
+        prev.result_storage_path
+      ) {
+        const { data: baseBlob } = await admin.storage
+          .from("product-photos")
+          .download(prev.result_storage_path);
+        if (baseBlob) {
+          baseBuffer = Buffer.from(await baseBlob.arrayBuffer());
+          promptAudit = (prev.candidate_rubric as RubricJson) ?? undefined;
+        }
+      }
+    }
+
+    // Retry constraints were stored on the row at queue time.
+    const extraConstraints = sanitizeRetryConstraints(
+      Array.isArray(job.unresolved_issues) ? job.unresolved_issues : []
+    );
+
+    // Supporting photos carry the listing context from the main photo's audit.
+    let mainProductContext: string | undefined;
+    if (mode === "extra" && photo.product_id) {
+      const { data: mainPhoto } = await admin
+        .from("photos")
+        .select("id, audits(rubric, created_at)")
+        .eq("product_id", photo.product_id)
+        .eq("role", "main")
+        .limit(1)
+        .maybeSingle();
+      const audits = (mainPhoto?.audits ?? []) as {
+        rubric: RubricJson;
+        created_at: string;
+      }[];
+      const latest = [...audits].sort((a, b) =>
+        b.created_at.localeCompare(a.created_at)
+      )[0];
+      mainProductContext = latest?.rubric?.product_summary?.trim() || undefined;
+    }
+
+    await patch({ status: "generating", stage: "generating" });
+    const result = await improvePhoto({
+      originalBuffer,
+      originalMimeType,
+      originalAudit,
+      baseBuffer,
+      baseMimeType: baseBuffer ? "image/png" : undefined,
+      promptAudit,
+      extraConstraints,
+      mainProductContext,
+      mode,
+      editInstruction: job.edit_instruction ?? undefined,
+      onStage: async (stage) => {
+        await patch({ status: stage, stage });
+      },
+    });
+
+    if (!result.ok) {
+      await fail(result.code, "failed", result.unresolvedIssues);
+      return job.id;
+    }
+
+    const resultPath = `${job.user_id}/${photo.product_id}/generated/${job.id}.png`;
+    const { error: upErr } = await admin.storage
+      .from("product-photos")
+      .upload(resultPath, Buffer.from(result.imageBase64, "base64"), {
+        contentType: "image/png",
+        upsert: true,
+      });
+    if (upErr) {
+      await fail("persistence_failed", "failed");
+      return job.id;
+    }
+
+    const raw = rawOverall(result.candidateAudit);
+    const safe = candidateIsSafe(result.fidelity, mode);
+    await patch({
+      status: "completed",
+      stage: null,
+      result_storage_path: resultPath,
+      candidate_rubric: result.candidateAudit,
+      fidelity: result.fidelity,
+      outcome: result.outcome,
+      raw_score: raw,
+      calibrated_score: calibrateScore(raw),
+      calibration_rule: CALIBRATION_RULE,
+      latency_ms: Date.now() - startedAt,
+      completed_at: new Date().toISOString(),
+    });
+
+    const selected = await applySelectionForCompletedJob({
+      admin,
+      userId: job.user_id,
+      photoId: photo.id,
+      productId: photo.product_id,
+      jobId: job.id,
+      operation: job.operation,
+      candidateRubric: result.candidateAudit,
+      candidateSafe: safe,
+    });
+
+    const refinementJobId = await maybeQueueRefinement({
+      admin,
+      completedJob: job,
+      acceptedRawScore: safe ? raw : null,
+    });
+
+    logEvent("generate.finished", {
+      jobId: job.id,
+      status: "completed",
+      outcome: result.outcome,
+      rawScore: raw,
+      selected,
+      refinementQueued: Boolean(refinementJobId),
+      latencyMs: Date.now() - startedAt,
+    });
+
+    if (refinementJobId) await runQueuedRefinementChain(refinementJobId);
+    return job.id;
+  } catch (err) {
+    logEvent("generate.unhandled", {
       jobId: job.id,
       error: err instanceof Error ? err.message : String(err),
     });

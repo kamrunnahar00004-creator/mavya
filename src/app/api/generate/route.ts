@@ -3,7 +3,6 @@ import { after } from "next/server";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import {
-  improvePhoto,
   sanitizeRetryConstraints,
   sanitizeEditInstruction,
   MAX_EDIT_INSTRUCTION_LEN,
@@ -11,14 +10,11 @@ import {
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
-import { generationDisabled, isRefundable, withinGlobalBudget } from "@/lib/usage";
+import { generationDisabled, withinGlobalBudget } from "@/lib/usage";
 import { getEntitlement } from "@/lib/entitlements";
-import { consumeAllowance, refundAllowance } from "@/lib/allowances";
-import { rawOverall, calibrateScore, CALIBRATION_RULE } from "@/lib/calibration";
-import { candidateIsSafe } from "@/lib/workflow-rules";
+import { refundAllowance } from "@/lib/allowances";
 import {
-  applySelectionForCompletedJob,
-  maybeQueueRefinement,
+  runQueuedGenerationOnce,
   runQueuedRefinementChain,
 } from "@/lib/refinement";
 import { getImageModel } from "@/lib/openai";
@@ -117,7 +113,15 @@ async function jobPayload(
     stage: job.stage,
     outcome: job.outcome,
     errorCode: (job.error_code as ApiErrorCode | null) ?? null,
-    message: null,
+    // The executor runs detached from any request, so billing failures are
+    // surfaced through the polled payload instead of a synchronous response.
+    message:
+      job.error_code === "insufficient_credits"
+        ? "Your product improvement credit ran out"
+        : job.error_code === "subscription_required" ||
+          job.error_code === "subscription_past_due"
+        ? "An active plan is needed to improve photos. Check Settings to update billing."
+        : null,
     resultUrl:
       job.status === "completed"
         ? await signResult(supabase, job.result_storage_path)
@@ -183,12 +187,16 @@ export async function GET(req: NextRequest) {
   ) {
     job = await failStaleJob(job);
   }
-  // Self-healing refinement: the daily worker cron is only a backstop, and the
-  // in-invocation after() chain can be frozen by the platform. A poll that
-  // finds a still-queued refinement kicks its execution; the atomic
-  // queued->generating claim makes duplicate kicks harmless.
-  if (job.status === "queued" && job.operation === "refine") {
-    after(() => runQueuedRefinementChain(job.id));
+  // Self-healing execution: the daily worker cron is only a backstop, and the
+  // in-invocation after() kick can be frozen by the platform. A poll that
+  // finds ANY still-queued job (attempt 1 or a refinement) kicks its
+  // execution; the atomic queued->generating claim makes duplicates harmless.
+  if (job.status === "queued") {
+    after(() =>
+      job.operation === "refine"
+        ? runQueuedRefinementChain(job.id)
+        : runQueuedGenerationOnce(job.id).then(() => undefined)
+    );
   }
   return NextResponse.json(await jobPayload(supabase, job), { status: 200 });
 }
@@ -356,8 +364,29 @@ export async function POST(req: NextRequest) {
     return apiError("generation_disabled", "Daily capacity reached. Try again tomorrow.");
   }
 
-  // Create the job row first so refresh can always find it. One user request =
-  // one WORKFLOW (this job is attempt 1 and its own workflow root).
+  // Validate the optional base (previous completed result) BEFORE queueing so
+  // the durable executor can trust parent_job_id.
+  let baseJobId: string | null = null;
+  if (previousJobId) {
+    const { data: prev } = await supabase
+      .from("generation_jobs")
+      .select("id, status, photo_id, result_storage_path")
+      .eq("id", previousJobId)
+      .maybeSingle();
+    if (
+      prev &&
+      prev.status === "completed" &&
+      prev.photo_id === photo.id &&
+      prev.result_storage_path
+    ) {
+      baseJobId = prev.id;
+    }
+  }
+
+  // DURABLE model: queue the job and return immediately. The executor
+  // (after() below, the status-poll GET, or the worker route) owns the
+  // provider work, so closing the tab or navigating away never kills the
+  // attempt. One user request = one WORKFLOW (attempt 1 = workflow root).
   const chargeKey = `${user.id}:workflow:${idempotencyKey}`;
   const { data: created, error: createErr } = await admin
     .from("generation_jobs")
@@ -371,6 +400,8 @@ export async function POST(req: NextRequest) {
       stage: "queued",
       operation,
       edit_instruction: editInstruction ?? null,
+      parent_job_id: baseJobId,
+      unresolved_issues: unresolvedIssues ?? [],
       provider_model: getImageModel(),
       prompt_version: GENERATION_PROMPT_VERSION,
       allowance_key: chargeKey,
@@ -403,255 +434,11 @@ export async function POST(req: NextRequest) {
   job.workflow_id = job.id;
   job.attempt_number = 1;
 
-  const failJob = async (
-    code: ApiErrorCode,
-    message: string,
-    kind: "failed" | "rejected",
-    extra?: { unresolvedIssues?: string[] }
-  ) => {
-    const refund = isRefundable(code);
-    if (refund) await refundAllowance(chargeKey);
-    await patchJob({
-      status: kind,
-      stage: null,
-      error_code: code,
-      refunded: refund,
-      unresolved_issues: extra?.unresolvedIssues ?? [],
-      completed_at: new Date().toISOString(),
-    });
-    logEvent("generate.finished", { jobId: job.id, status: kind, code });
-    // A safe-but-unsafe/rejected attempt 1 still gets its bounded background
-    // attempts (weak sources are helped, never rejected for being weak).
-    if (!refund) {
-      const queuedId = await maybeQueueRefinement({
-        admin,
-        completedJob: {
-          id: job.id,
-          user_id: user.id,
-          product_id: photo.product_id,
-          photo_id: photo.id,
-          source_audit_id: auditRow.id,
-          operation,
-          edit_instruction: editInstruction ?? null,
-          workflow_id: job.id,
-          attempt_number: 1,
-          allowance_key: chargeKey,
-        },
-        acceptedRawScore: null,
-      });
-      if (queuedId) after(() => runQueuedRefinementChain(queuedId));
-    }
-    return apiError(code, message, {
-      jobId: job.id,
-      unresolvedIssues: extra?.unresolvedIssues ?? [],
-    });
-  };
+  // Best-effort in-invocation execution. The status-poll GET and the worker
+  // route are the durable backstops: the queued row is the source of truth,
+  // so the attempt survives a closed tab, navigation, or a dead invocation.
+  after(() => runQueuedGenerationOnce(job.id));
 
-  // Atomic workflow credit charge (20 credits per improvement; duplicates never double-charge).
-  const charge = await consumeAllowance({
-    userId: user.id,
-    kind: "workflow",
-    periodKey: entitlement.periodKey,
-    idempotencyKey: chargeKey,
-    refId: job.id,
-  });
-  if (!charge.ok) {
-    await patchJob({
-      status: "cancelled",
-      error_code:
-        charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
-      completed_at: new Date().toISOString(),
-    });
-    if (charge.code === "insufficient_credits") {
-      return apiError(
-        "insufficient_credits",
-        "Your product improvement credit ran out",
-        { remaining: charge.remaining ?? 0, renewsAt: entitlement.currentPeriodEnd }
-      );
-    }
-    return apiError("internal_error", "Could not process the request. Try again.");
-  }
-  await patchJob({ charged: 1 });
-
-  const startedAt = Date.now();
-  try {
-    // Source image comes from storage server-side (no browser URLs involved).
-    await patchJob({ status: "generating", stage: "preparing_source", started_at: new Date().toISOString() });
-    const { data: originalBlob, error: dlErr } = await supabase.storage
-      .from("product-photos")
-      .download(photo.storage_path);
-    if (dlErr || !originalBlob) {
-      return await failJob("source_unavailable", "The original photo could not be loaded.", "failed");
-    }
-    const originalBuffer = Buffer.from(await originalBlob.arrayBuffer());
-    const originalMimeType =
-      photo.mime === "image/png" ? ("image/png" as const) : ("image/jpeg" as const);
-
-    // Optional base: the previous completed job's persisted result.
-    let baseBuffer: Buffer | undefined;
-    let promptAudit: RubricJson | undefined;
-    if (previousJobId) {
-      const { data: prev } = await supabase
-        .from("generation_jobs")
-        .select("id, status, photo_id, result_storage_path, candidate_rubric")
-        .eq("id", previousJobId)
-        .maybeSingle();
-      if (
-        prev &&
-        prev.status === "completed" &&
-        prev.photo_id === photo.id &&
-        prev.result_storage_path
-      ) {
-        const { data: baseBlob } = await supabase.storage
-          .from("product-photos")
-          .download(prev.result_storage_path);
-        if (baseBlob) {
-          baseBuffer = Buffer.from(await baseBlob.arrayBuffer());
-          promptAudit = (prev.candidate_rubric as RubricJson) ?? undefined;
-        }
-      }
-    }
-
-    // Supporting photos get the listing context from the MAIN photo's audit.
-    let mainProductContext: string | undefined;
-    if (mode === "extra" && photo.product_id) {
-      const { data: mainPhoto } = await supabase
-        .from("photos")
-        .select("id, audits(rubric, created_at)")
-        .eq("product_id", photo.product_id)
-        .eq("role", "main")
-        .limit(1)
-        .maybeSingle();
-      const audits = (mainPhoto?.audits ?? []) as { rubric: RubricJson; created_at: string }[];
-      const latest = [...audits].sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
-      mainProductContext = latest?.rubric?.product_summary?.trim() || undefined;
-    }
-
-    await patchJob({ status: "generating", stage: "generating" });
-    const result = await improvePhoto({
-      originalBuffer,
-      originalMimeType,
-      originalAudit,
-      baseBuffer,
-      baseMimeType: baseBuffer ? "image/png" : undefined,
-      promptAudit,
-      extraConstraints: unresolvedIssues,
-      mainProductContext,
-      mode,
-      editInstruction,
-      onStage: async (stage) => {
-        await patchJob({ status: stage, stage });
-      },
-    });
-
-    if (!result.ok) {
-      return await failJob(result.code, result.message, "failed", {
-        unresolvedIssues: result.unresolvedIssues,
-      });
-    }
-
-    // Persist the accepted output; the preview survives refresh.
-    const resultPath = `${user.id}/${photo.product_id}/generated/${job.id}.png`;
-    const { error: upErr } = await admin.storage
-      .from("product-photos")
-      .upload(resultPath, Buffer.from(result.imageBase64, "base64"), {
-        contentType: "image/png",
-        upsert: true,
-      });
-    if (upErr) {
-      return await failJob("persistence_failed", "The result could not be saved. Try again.", "failed");
-    }
-
-    const rawScore = rawOverall(result.candidateAudit);
-    const safe = candidateIsSafe(result.fidelity, mode);
-    await patchJob({
-      status: "completed",
-      stage: null,
-      result_storage_path: resultPath,
-      candidate_rubric: result.candidateAudit,
-      fidelity: result.fidelity,
-      outcome: result.outcome,
-      raw_score: rawScore,
-      calibrated_score: calibrateScore(rawScore),
-      calibration_rule: CALIBRATION_RULE,
-      latency_ms: Date.now() - startedAt,
-      completed_at: new Date().toISOString(),
-    });
-
-    // Persist the version the seller should actually see. All completed
-    // candidates are retained as comparable versions, but selection follows
-    // the shared policy: never replace a strictly better safe version, and
-    // never automatically overwrite the seller's explicit manual pick.
-    const selected = await applySelectionForCompletedJob({
-      admin,
-      userId: user.id,
-      photoId: photo.id,
-      productId: photo.product_id,
-      jobId: job.id,
-      operation,
-      candidateRubric: result.candidateAudit,
-      candidateSafe: safe,
-    });
-
-    // Bounded background refinement: an accepted raw score below 7.5 quietly
-    // queues attempt 2 (attempt 3 may follow). Raw >= 7.5 presents as 8.0 and
-    // stops automatic generation.
-    const refinementJobId = await maybeQueueRefinement({
-      admin,
-      completedJob: {
-        id: job.id,
-        user_id: user.id,
-        product_id: photo.product_id,
-        photo_id: photo.id,
-        source_audit_id: auditRow.id,
-        operation,
-        edit_instruction: editInstruction ?? null,
-        workflow_id: job.id,
-        attempt_number: 1,
-        allowance_key: chargeKey,
-      },
-      acceptedRawScore: safe ? rawScore : null,
-    });
-    // Best-effort in-invocation execution; the worker route is the durable
-    // backstop if this invocation is frozen or killed after the response.
-    if (refinementJobId) after(() => runQueuedRefinementChain(refinementJobId));
-
-    logEvent("generate.finished", {
-      jobId: job.id,
-      status: "completed",
-      outcome: result.outcome,
-      rawScore,
-      selected,
-      refinementQueued: Boolean(refinementJobId),
-      latencyMs: Date.now() - startedAt,
-    });
-
-    const payload = await jobPayload(
-      supabase,
-      {
-        ...job,
-        status: "completed",
-        stage: null,
-        result_storage_path: resultPath,
-        candidate_rubric: result.candidateAudit,
-        fidelity: result.fidelity,
-        outcome: result.outcome,
-        error_code: null,
-      },
-      {
-        creditsRemaining: charge.remaining,
-        keptPrevious: !selected,
-        refinement: refinementJobId
-          ? { jobId: refinementJobId, status: "queued", attemptNumber: 2 }
-          : null,
-      }
-    );
-    return NextResponse.json(payload, { status: 200 });
-  } catch (err) {
-    logEvent("generate.unhandled", {
-      jobId: job.id,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return await failJob("internal_error", "Generation failed unexpectedly. Try again.", "failed");
-  }
+  logEvent("generate.queued", { jobId: job.id, operation });
+  return NextResponse.json(await jobPayload(supabase, job), { status: 202 });
 }

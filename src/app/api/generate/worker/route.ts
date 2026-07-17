@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { recoverStaleJobs, runQueuedRefinementOnce } from "@/lib/refinement";
+import {
+  recoverStaleJobs,
+  runQueuedGenerationOnce,
+  runQueuedRefinementOnce,
+} from "@/lib/refinement";
 import {
   recoverStaleRatingJobs,
   runQueuedRatingOnce,
@@ -43,9 +47,11 @@ async function handle(req: NextRequest) {
   const processed: string[] = [];
   const ratingJobId = await runQueuedRatingOnce();
   if (ratingJobId) processed.push(ratingJobId);
-  // Keep one expensive AI operation per tick. The next scheduler invocation
-  // handles refinement when a durable rating consumed this invocation.
-  const jobId = ratingJobId ? null : await runQueuedRefinementOnce();
+  // Keep one expensive AI operation per tick. Priority: rating, then a
+  // queued attempt-1 generation (user-visible), then background refinement.
+  const genJobId = ratingJobId ? null : await runQueuedGenerationOnce();
+  if (genJobId) processed.push(genJobId);
+  const jobId = ratingJobId || genJobId ? null : await runQueuedRefinementOnce();
   if (jobId) processed.push(jobId);
 
   logEvent("worker.tick", {

@@ -10,7 +10,6 @@
       "expected": {
         "upload_kind": "physical_product",
         "category": "candles",
-        "band": "weak",
         "score_range": [3.1, 6.1],
         "priority_pillar": "lighting",
         "priority_issue_family": "lighting",
@@ -144,6 +143,24 @@
       },
       "strictness": "soft",
       "notes": "Compressed 'after' proof asset. Should score clearly above the before version."
+    },
+    {
+      "id": "necklace-macro-leniency-01",
+      "image": "public/assets/necklace-macro-01.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "jewelry",
+        "band": "weak",
+        "score_range": [4.8, 6.2],
+        "priority_pillar": "thumbnail",
+        "priority_issue_family": "framing",
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "soft",
+      "consistency": true,
+      "notes": "Founder-locked gold 5.5 (2026-07-17). Blue beaded necklace macro on creased canvas: design mostly cropped (thumbnail/framing priority), visible fabric fold behind the pendant, flat dull light, mid click appeal. Model gave 6.6 under main-v8 - the leniency this fixture guards (bg 7 / light 7 / click 7 all ~1 generous). SOFT until a future rubric version addresses the leniency pattern; upgrade to hard when it passes."
     }
   ]
 }

@@ -87,10 +87,9 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
 
       // The durable server job owns the rating from here. Go STRAIGHT to the
       // product page: it renders the analyzing state while the job runs and
-      // reveals the audit the moment it lands. No dashboard detour, no
-      // card-mount race, and navigating away never cancels the server job.
-      reset();
-      setOpen(false);
+      // reveals the audit the moment it lands. The full-screen analyzing
+      // overlay stays up THROUGH the navigation (this component unmounts on
+      // route change), so the dashboard never flashes underneath.
       router.push(`/dashboard/product/${queued.productId}`);
     } catch (err) {
       setStep("idle");
