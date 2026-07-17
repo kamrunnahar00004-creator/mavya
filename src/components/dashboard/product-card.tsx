@@ -185,7 +185,16 @@ export function ProductCard({
   }
 
   return (
-    <div className="group relative flex flex-col rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[0_1px_2px_rgba(25,23,20,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-soft-strong)]">
+    <div
+      className={cn(
+        "group relative flex flex-col rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white shadow-[0_1px_2px_rgba(25,23,20,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-border-strong)] hover:shadow-[var(--shadow-soft-strong)]",
+        // Open menu: lift THIS card's stacking context above sibling cards
+        // (each card is transformed, so z-index otherwise cannot escape), and
+        // pin the hover lift so the menu does not shift/flicker as the
+        // pointer crosses outside the card bounds.
+        menuOpen && "z-30 -translate-y-0.5"
+      )}
+    >
       <Link
         href={href}
         aria-label={`Open ${name}`}
