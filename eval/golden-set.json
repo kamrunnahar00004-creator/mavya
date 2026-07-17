@@ -178,6 +178,38 @@
       "strictness": "hard",
       "consistency": true,
       "notes": "Founder-locked (2026-07-17): AI print-on-demand mashup mug held by a model - professional lighting, but the printed design is a dense template collage (CELEBRATING 250 YEARS / DAVID / TRUCK DRIVER banner stack, embossed 3D lettering, clip-art surround). Buyers receive a flat print that looks nothing like the render. trust_risk must be high; the 5.4 cap lands it in the weak band. Guards the v9 false negative where this image scored 7.0 with click-appeal advice and no trust finding."
+    },
+    {
+      "id": "candle-pink-weak-01",
+      "image": "public/assets/candle-pink-weak-01.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "band": "weak",
+        "score_range": [3.6, 5.2],
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked gold 4.4 (2026-07-17, main-v10 run the founder endorsed). Pink leaf candle on gingham cloth with a brown wall and harsh shadows: honest weak-band original. Anchor for the before side of the endorsed 4.4 -> 8.4 pair."
+    },
+    {
+      "id": "candle-pink-improved-01",
+      "image": "public/assets/candle-pink-improved-01.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "category": "candles",
+        "band": "strong",
+        "score_range": [7.5, 10],
+        "must_not_claim": ["dropshipping", "scam", "spam"]
+      },
+      "strictness": "hard",
+      "consistency": true,
+      "notes": "Founder-locked strong anchor (2026-07-17): the AI-improved pink leaf candle the founder endorsed at 8.4 (raw). Clean neutral background, soft even light, clear glass and leaf detail, faithful to the original product. Guards against future rubric drift re-punishing honest clean studio results (plainness, provenance suspicion, or framing nitpicks). Pairs with candle-pink-weak-01: improved MUST outrank the original."
     }
   ]
 }
