@@ -676,23 +676,36 @@ export function AuditWorkspace({
                   // treatment as One-click fix. At 8.0+ nothing renders as
                   // "running" — a stray older attempt finishing in the
                   // background can only quietly keep-better.
-                  <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      disabled
-                      className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
-                    >
-                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                      {improveLoading ? improveCountdown : backgroundCountdown}
-                    </button>
-                    {improveLoading && (
+                  <div className="flex flex-col items-start gap-2">
+                    {!improveLoading && refiningVisible && (
                       <span
                         className="text-[12.5px] text-[var(--color-ink-soft)]"
+                        role="status"
                         aria-live="polite"
                       >
-                        {improveStatus}
+                        {generatedPreviewExists
+                          ? "This version is better than your original, but we think we can do even better."
+                          : "Still improving your photo in the background."}
                       </span>
                     )}
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        disabled
+                        className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                      >
+                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                        {improveLoading ? improveCountdown : backgroundCountdown}
+                      </button>
+                      {improveLoading && (
+                        <span
+                          className="text-[12.5px] text-[var(--color-ink-soft)]"
+                          aria-live="polite"
+                        >
+                          {improveStatus}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 ) : onEdit ? (
                   <div className="flex flex-wrap items-center gap-3">
@@ -757,14 +770,25 @@ export function AuditWorkspace({
                       {refiningVisible && !improveLoading && (
                         // Background attempt running: the ORIGINAL tab shows
                         // the same white generating state as the preview tab.
-                        <button
-                          type="button"
-                          disabled
-                          className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
-                        >
-                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                          {backgroundCountdown}
-                        </button>
+                        <div className="flex flex-col items-start gap-2">
+                          <span
+                            className="text-[12.5px] text-[var(--color-ink-soft)]"
+                            role="status"
+                            aria-live="polite"
+                          >
+                            {generatedPreviewExists
+                              ? "This version is better than your original, but we think we can do even better."
+                              : "Still improving your photo in the background."}
+                          </span>
+                          <button
+                            type="button"
+                            disabled
+                            className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                          >
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                            {backgroundCountdown}
+                          </button>
+                        </div>
                       )}
                       {onEdit && !improveLoading && !refiningVisible && (
                         <button

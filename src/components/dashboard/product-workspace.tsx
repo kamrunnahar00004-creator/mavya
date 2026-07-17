@@ -260,8 +260,15 @@ function makePhoto(p: InitialPhoto): Photo {
       photo = applyCompletedJob(photo, p.lastJob);
     } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
       if ((p.lastJob.attemptNumber ?? 1) > 1) {
-        // Background refinement runs quietly: no spinner, keep the current
-        // version usable, and show the honest refining note instead.
+        // Background refinement runs quietly: keep the current version
+        // usable. The completed attempt-1 result must PRESENT even when the
+        // selection has not landed yet — pull it from the versions list so a
+        // refresh mid-refinement never hides an already-generated photo.
+        if (!p.selectedJob && !userPickedOriginal) {
+          const completedVersions = p.versions ?? [];
+          const newest = completedVersions[completedVersions.length - 1];
+          if (newest) photo = applyCompletedJob(photo, newest);
+        }
         photo = { ...photo, backgroundRefining: true, keepNote: REFINING_NOTE };
       } else {
         photo = {
