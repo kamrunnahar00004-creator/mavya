@@ -28,20 +28,21 @@ const safeFidelity: FidelityReport = {
 };
 
 describe("paid-beta shared-credit constants (founder decisions)", () => {
-  it("locks 1,000 monthly credits, action costs, and 3 attempts", () => {
+  it("locks 1,000 monthly credits, action costs, and 2 attempts", () => {
     expect(CREDITS_PER_PERIOD).toBe(1000);
     expect(RATING_COST).toBe(10);
     expect(WORKFLOW_COST).toBe(20);
-    expect(MAX_ATTEMPTS_PER_WORKFLOW).toBe(3);
+    // Founder decision 2026-07-17: one visible attempt + at most ONE quiet
+    // background attempt (a third rarely beat the second).
+    expect(MAX_ATTEMPTS_PER_WORKFLOW).toBe(2);
     expect(REFINEMENT_STOP_RAW_SCORE).toBe(7.5);
   });
 });
 
-describe("shouldQueueRefinement (bounded background attempts)", () => {
-  it("raw below 7.5 queues background refinement", () => {
+describe("shouldQueueRefinement (single bounded background attempt)", () => {
+  it("attempt 1 below raw 7.5 queues the single background refinement", () => {
     expect(shouldQueueRefinement({ attemptNumber: 1, acceptedRawScore: 7.4 })).toBe(true);
     expect(shouldQueueRefinement({ attemptNumber: 1, acceptedRawScore: 3.1 })).toBe(true);
-    expect(shouldQueueRefinement({ attemptNumber: 2, acceptedRawScore: 7.4 })).toBe(true);
   });
 
   it("raw 7.5+ stops refinement (presents as 8.0; no fraction-chasing)", () => {
@@ -50,15 +51,14 @@ describe("shouldQueueRefinement (bounded background attempts)", () => {
     expect(shouldQueueRefinement({ attemptNumber: 1, acceptedRawScore: 8.4 })).toBe(false);
   });
 
-  it("an unsafe/rejected attempt (no accepted score) still refines", () => {
+  it("an unsafe/rejected attempt 1 still gets its background attempt", () => {
     expect(shouldQueueRefinement({ attemptNumber: 1, acceptedRawScore: null })).toBe(true);
-    expect(shouldQueueRefinement({ attemptNumber: 2, acceptedRawScore: null })).toBe(true);
   });
 
-  it("NEVER exceeds three total attempts", () => {
+  it("NEVER exceeds two total attempts", () => {
+    expect(shouldQueueRefinement({ attemptNumber: 2, acceptedRawScore: null })).toBe(false);
+    expect(shouldQueueRefinement({ attemptNumber: 2, acceptedRawScore: 1.0 })).toBe(false);
     expect(shouldQueueRefinement({ attemptNumber: 3, acceptedRawScore: null })).toBe(false);
-    expect(shouldQueueRefinement({ attemptNumber: 3, acceptedRawScore: 1.0 })).toBe(false);
-    expect(shouldQueueRefinement({ attemptNumber: 4, acceptedRawScore: null })).toBe(false);
   });
 });
 

@@ -5,16 +5,17 @@ import { blocksFreePreview, type ImproveMode } from "@/lib/improve-photo";
  * Bounded improvement-workflow rules (paid beta).
  *
  * One WORKFLOW = one user-requested improvement process. It may contain up to
- * THREE total generation attempts: attempt 1 (user-visible, in-request) and
- * attempts 2-3 (automatic targeted background refinements). Attempts 2-3 are
- * internal quality work: they never consume a second workflow allowance and
- * never run when the accepted raw score already reached 7.5.
+ * TWO total generation attempts: attempt 1 (user-visible) and at most ONE
+ * automatic targeted background refinement (founder decision 2026-07-17:
+ * a third attempt rarely beat the second and doubled provider spend).
+ * The background attempt never consumes a second workflow allowance and
+ * never runs when the accepted raw score already reached 7.5.
  *
  * These functions are pure so the exact stop/replace policy is unit-testable.
  * The server routes and the background worker must be the only callers; the
  * browser never decides selection or refinement.
  */
-export const MAX_ATTEMPTS_PER_WORKFLOW = 3;
+export const MAX_ATTEMPTS_PER_WORKFLOW = 2;
 
 /** Raw-score bar that stops automatic refinement (presents as 8.0 calibrated). */
 export const REFINEMENT_STOP_RAW_SCORE = 7.5;

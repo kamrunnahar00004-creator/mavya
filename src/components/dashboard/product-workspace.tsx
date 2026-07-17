@@ -267,7 +267,11 @@ function makePhoto(p: InitialPhoto): Photo {
         photo = {
           ...photo,
           improveStatus: "generating",
-          improveStartedAt: Date.now(),
+          // Anchor the countdown to the job's REAL start so navigating away
+          // and returning shows honest elapsed time, not a fresh 56s.
+          improveStartedAt: p.lastJob.createdAt
+            ? new Date(p.lastJob.createdAt).getTime()
+            : Date.now(),
           improveStage: JOB_STAGE_LABELS[p.lastJob.status],
           lastJobId: photo.lastJobId,
         };

@@ -72,8 +72,9 @@ Paid-only Founding Beta. $19/month. No free AI usage.
 Source of truth: `docs/PAID_BETA.md`. Key rules:
 
 1. 20 photo assessments and 12 improvement workflows per billing month; one
-   workflow contains up to 3 bounded generation attempts (attempts 2-3 are
-   automatic background refinement, never charged again).
+   workflow contains up to 2 bounded generation attempts (attempt 2 is a
+   single automatic background refinement, never charged again; founder
+   decision 2026-07-17, was 3).
 2. Every uploaded product photo may be assessed. Never reject an image merely
    for being weak or difficult; only non-products are invalid.
 3. The seller decides which image to use. Never say "publish-ready" in

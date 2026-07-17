@@ -309,6 +309,7 @@ export default async function ProductPage({
         candidateRubric: jobRow.candidate_rubric,
         fidelity: jobRow.fidelity,
         attemptNumber: jobRow.attempt_number ?? 1,
+        createdAt: jobRow.created_at,
       };
     }
 
