@@ -213,6 +213,7 @@ export async function GET(req: NextRequest) {
  *                previousJobId?, retry?, unresolvedIssues? }
  */
 export async function POST(req: NextRequest) {
+  const requestStartedAt = Date.now();
   if (generationDisabled()) {
     return apiError("generation_disabled", "AI generation is temporarily disabled.");
   }
@@ -440,5 +441,9 @@ export async function POST(req: NextRequest) {
   after(() => runQueuedGenerationOnce(job.id));
 
   logEvent("generate.queued", { jobId: job.id, operation });
+  // Action-start latency span (no ids/paths; time from request entry to queue).
+  console.log(
+    JSON.stringify({ event: "perf", span: "generate.start", ms: Date.now() - requestStartedAt })
+  );
   return NextResponse.json(await jobPayload(supabase, job), { status: 202 });
 }

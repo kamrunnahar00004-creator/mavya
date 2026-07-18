@@ -42,7 +42,14 @@ describe("durable rating jobs", () => {
   });
 
   it("shows a persisted Rating state and refreshes when the job finishes", () => {
-    expect(dashboard).toContain('.from("rating_jobs")');
+    // Phase A: the dashboard hydrates rating state through the compact
+    // dashboard_overview() RPC (SECURITY INVOKER, RLS-scoped) instead of a
+    // direct rating_jobs query; RPC failure falls back to legacy hydration.
+    const overviewLib = read("src/lib/dashboard-overview.ts");
+    expect(dashboard).toContain("loadDashboardOverview");
+    expect(dashboard).toContain("rating_status");
+    expect(overviewLib).toContain('rpc("dashboard_overview")');
+    expect(overviewLib).toContain("legacyDashboardOverview");
     expect(productCard).toContain("Rating…");
     expect(productCard).toContain("window.setInterval");
     expect(productCard).toContain("router.refresh()");

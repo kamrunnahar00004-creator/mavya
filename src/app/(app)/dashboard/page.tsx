@@ -5,36 +5,11 @@ import { AddProductCard } from "@/components/dashboard/add-product";
 import { ProductCard } from "@/components/dashboard/product-card";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
-import { batchSignUrls } from "@/lib/batch-sign-urls";
+import { signThumbUrls } from "@/lib/batch-sign-urls";
+import { loadDashboardOverview } from "@/lib/dashboard-overview";
+import { timed } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
-
-type AuditRow = {
-  overall_score: number | null;
-  created_at: string;
-  rubric: { priority_action?: string } | null;
-};
-type PhotoRow = {
-  id: string;
-  storage_path: string;
-  role: string;
-  created_at: string;
-  audits: AuditRow[] | null;
-};
-type RatingJobRow = {
-  id: string;
-  photo_id: string;
-  status: "queued" | "scoring" | "completed" | "failed" | "cancelled";
-  error_message: string | null;
-  created_at: string;
-};
-type ProductRow = {
-  id: string;
-  name: string | null;
-  position: number;
-  created_at: string;
-  photos: PhotoRow[] | null;
-};
 
 /**
  * Dashboard: the seller's products as a grid of cards. Each card shows the main
@@ -42,89 +17,50 @@ type ProductRow = {
  * opens /dashboard/product/[id]. The Add card runs the existing rating pipeline.
  */
 export default async function DashboardPage() {
-  const user = await getSessionUser();
+  const user = await timed("dashboard.auth", () => getSessionUser());
   if (!user) redirect("/?auth=login");
 
   // Paid-only beta gate (server-side, not a client redirect): no plan or an
   // expired/cancelled plan goes to the credits page. past_due stays here so
   // saved photos remain visible; the backend already blocks new AI usage.
   // Entitlement and client setup are independent: run them concurrently.
-  const [entitlement, supabase] = await Promise.all([
-    getEntitlement(user.id),
-    createSupabaseServerClient(),
-  ]);
+  const [entitlement, supabase] = await timed("dashboard.entitlement", () =>
+    Promise.all([getEntitlement(user.id), createSupabaseServerClient()])
+  );
   const pastDue = entitlement.reason === "past_due";
   if (!entitlement.active && !pastDue) redirect("/subscribe");
 
-  const { data } = await supabase
-    .from("products")
-    .select(
-      "id, name, position, created_at, photos(id, storage_path, role, created_at, audits(overall_score, created_at, rubric))"
-    )
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: true });
-
-  const products = (data as ProductRow[] | null) ?? [];
-  const photoIds = products.flatMap((product) =>
-    (product.photos ?? []).map((photo) => photo.id)
+  // ONE compact round trip: dashboard_overview() (SECURITY INVOKER, RLS
+  // enforced) returns exactly one deterministic row per product — main photo,
+  // latest audit score + priority action, latest rating job. Full audit
+  // history and rubric JSON never leave the database. If the RPC itself
+  // fails, loadDashboardOverview falls back to the legacy hydration; if the
+  // fallback also fails it throws, so a database failure fails visibly and
+  // never renders a fake empty dashboard.
+  const rows = await timed("dashboard.hydrate", () =>
+    loadDashboardOverview(supabase)
   );
-  const mainPhotoPaths = products
-    .map((p) => (p.photos ?? []).find((ph) => ph.role === "main")?.storage_path)
-    .filter((p): p is string => Boolean(p));
 
-  // Rating jobs and thumbnail signing are independent of each other: run them
-  // concurrently. The rating query is BOUNDED: cards only need the latest job
-  // per photo, so four rows per photo is plenty even with retries in between.
-  const [ratingResult, signedUrls] = await Promise.all([
-    photoIds.length > 0
-      ? supabase
-          .from("rating_jobs")
-          .select("id, photo_id, status, error_message, created_at")
-          .in("photo_id", photoIds)
-          .order("created_at", { ascending: false })
-          .limit(photoIds.length * 4)
-      : Promise.resolve({ data: null }),
-    batchSignUrls(supabase, mainPhotoPaths),
-  ]);
-  const ratingsByPhoto = new Map<string, RatingJobRow>();
-  for (const rating of (ratingResult.data as RatingJobRow[] | null) ?? []) {
-    if (!ratingsByPhoto.has(rating.photo_id)) {
-      ratingsByPhoto.set(rating.photo_id, rating);
-    }
-  }
+  // Private fixed 512px thumbnails for cards (full resolution stays on the
+  // product page).
+  const signedUrls = await timed("dashboard.sign", () =>
+    signThumbUrls(
+      supabase,
+      rows.map((r) => r.storage_path)
+    )
+  );
 
-  // Build cards using the signed URLs
-  const cards = products.map((p, index) => {
-    const main = (p.photos ?? []).find((ph) => ph.role === "main");
-    let thumbnailUrl: string | null = null;
-    let storagePath: string | null = null;
-    let score: number | null = null;
-    let topFix: string | null = null;
-    const rating = main ? ratingsByPhoto.get(main.id) ?? null : null;
-    if (main) {
-      thumbnailUrl = signedUrls.get(main.storage_path) ?? null;
-      storagePath = main.storage_path;
-      const latest = [...(main.audits ?? [])].sort((a, b) =>
-        b.created_at.localeCompare(a.created_at)
-      )[0];
-      score = typeof latest?.overall_score === "number" ? latest.overall_score : null;
-      // Show the top recommended fix only when the photo still needs work.
-      if (typeof score === "number" && score < 8) {
-        topFix = latest?.rubric?.priority_action?.trim() || null;
-      }
-    }
-    return {
-      id: p.id,
-      name: p.name?.trim() || `Product ${index + 1}`,
-      thumbnailUrl,
-      storagePath,
-      score,
-      topFix,
-      ratingJobId: rating?.id ?? null,
-      ratingStatus: rating?.status ?? null,
-      ratingError: rating?.error_message ?? null,
-    };
-  });
+  const cards = rows.map((r, index) => ({
+    id: r.product_id,
+    name: r.product_name?.trim() || `Product ${index + 1}`,
+    thumbnailUrl: r.storage_path ? signedUrls.get(r.storage_path) ?? null : null,
+    storagePath: r.storage_path,
+    score: typeof r.score === "number" ? r.score : null,
+    topFix: r.priority_action,
+    ratingJobId: r.rating_job_id,
+    ratingStatus: r.rating_status,
+    ratingError: r.rating_error,
+  }));
 
   const pastDueBanner = pastDue ? (
     <div className="mx-auto mt-6 flex max-w-[1200px] items-start gap-2.5 rounded-[var(--radius-xl)] border border-[var(--color-weak)]/40 bg-[var(--color-weak-soft)] p-4">

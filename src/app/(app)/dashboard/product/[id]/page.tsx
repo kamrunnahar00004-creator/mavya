@@ -10,6 +10,7 @@ import type { GenerationJobStatus } from "@/lib/generation-types";
 import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { batchSignUrls } from "@/lib/batch-sign-urls";
+import { timed } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
 
@@ -52,33 +53,32 @@ export default async function ProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await getSessionUser();
+  const user = await timed("product.auth", () => getSessionUser());
   if (!user) redirect("/?auth=login");
 
   // Paid-only gate: no/expired plan -> credits page. past_due may still VIEW
   // saved results (new AI usage is blocked server-side).
-  const [entitlement, supabase] = await Promise.all([
-    getEntitlement(user.id),
-    createSupabaseServerClient(),
-  ]);
+  const [entitlement, supabase] = await timed("product.entitlement", () =>
+    Promise.all([getEntitlement(user.id), createSupabaseServerClient()])
+  );
   if (!entitlement.active && entitlement.reason !== "past_due") {
     redirect("/subscribe");
   }
 
-  const { data: product } = await supabase
-    .from("products")
-    .select("id, name")
-    .eq("id", id)
-    .single();
+  const { data: product } = await timed("product.lookup", () =>
+    supabase.from("products").select("id, name").eq("id", id).single()
+  );
   if (!product) redirect("/dashboard");
 
-  const { data: photoData } = await supabase
-    .from("photos")
-    .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(rubric, created_at)")
-    .eq("product_id", product.id)
-    .order("role", { ascending: true })
-    .order("position", { ascending: true })
-    .order("created_at", { ascending: true });
+  const { data: photoData } = await timed("product.photos", () =>
+    supabase
+      .from("photos")
+      .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(rubric, created_at)")
+      .eq("product_id", product.id)
+      .order("role", { ascending: true })
+      .order("position", { ascending: true })
+      .order("created_at", { ascending: true })
+  );
 
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);
@@ -91,12 +91,14 @@ export default async function ProductPage({
     { id: string; status: string; error_message: string | null }
   >();
   if (photoIds.length > 0) {
-    const { data: ratingRows } = await supabase
-      .from("rating_jobs")
-      .select("id, photo_id, status, error_message, created_at")
-      .in("photo_id", photoIds)
-      .order("created_at", { ascending: false })
-      .limit(photoIds.length * 3);
+    const { data: ratingRows } = await timed("product.ratings", () =>
+      supabase
+        .from("rating_jobs")
+        .select("id, photo_id, status, error_message, created_at")
+        .in("photo_id", photoIds)
+        .order("created_at", { ascending: false })
+        .limit(photoIds.length * 3)
+    );
     for (const r of (ratingRows as
       | { id: string; photo_id: string; status: string; error_message: string | null }[]
       | null) ?? []) {
@@ -122,34 +124,36 @@ export default async function ProductPage({
     jobsByPhotoId.set(j.photo_id, list);
   };
   if (photoIds.length > 0) {
-    const perPhoto = await Promise.all(
-      photoIds.map((photoId) =>
-        supabase
+    await timed("product.generations", async () => {
+      const perPhoto = await Promise.all(
+        photoIds.map((photoId) =>
+          supabase
+            .from("generation_jobs")
+            .select(JOB_SELECT)
+            .eq("photo_id", photoId)
+            .order("created_at", { ascending: false })
+            .limit(12)
+        )
+      );
+      for (const result of perPhoto) {
+        for (const j of (result.data as JobRow[] | null) ?? []) {
+          registerJob(j);
+          if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
+        }
+      }
+      // A selected/alternate version older than the recent window must still
+      // hydrate: fetch any referenced ids the bounded query missed.
+      const missingIds = rows
+        .flatMap((r) => [r.selected_generation_job_id, r.alternate_generation_job_id])
+        .filter((id): id is string => Boolean(id) && !jobsById.has(id as string));
+      if (missingIds.length > 0) {
+        const { data: extra } = await supabase
           .from("generation_jobs")
           .select(JOB_SELECT)
-          .eq("photo_id", photoId)
-          .order("created_at", { ascending: false })
-          .limit(12)
-      )
-    );
-    for (const result of perPhoto) {
-      for (const j of (result.data as JobRow[] | null) ?? []) {
-        registerJob(j);
-        if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
+          .in("id", missingIds);
+        for (const j of (extra as JobRow[] | null) ?? []) registerJob(j);
       }
-    }
-    // A selected/alternate version older than the recent window must still
-    // hydrate: fetch any referenced ids the bounded query missed.
-    const missingIds = rows
-      .flatMap((r) => [r.selected_generation_job_id, r.alternate_generation_job_id])
-      .filter((id): id is string => Boolean(id) && !jobsById.has(id as string));
-    if (missingIds.length > 0) {
-      const { data: extra } = await supabase
-        .from("generation_jobs")
-        .select(JOB_SELECT)
-        .in("id", missingIds);
-      for (const j of (extra as JobRow[] | null) ?? []) registerJob(j);
-    }
+    });
   }
 
   // Pre-calculate selected and completed rows for each photo to avoid duplication.
@@ -229,7 +233,9 @@ export default async function ProductPage({
   }
 
   // Sign all unique paths in one batch
-  const signedUrls = await batchSignUrls(supabase, pathsToSign);
+  const signedUrls = await timed("product.sign", () =>
+    batchSignUrls(supabase, pathsToSign)
+  );
 
   // Build InitialPhotos using the signed URLs
   const signed = rows.map((row) => {

@@ -112,7 +112,8 @@ export function ProductCard({
       const res = await fetch("/api/storage/sign", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ path: storagePath }),
+        // Fixed server-owned thumbnail mode; no transform params from here.
+        body: JSON.stringify({ path: storagePath, variant: "thumb" }),
       });
       const data = (await res.json().catch(() => null)) as { url?: string } | null;
       if (data?.url) setImgSrc(data.url);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { apiError } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
+import { DASHBOARD_THUMB_TRANSFORM } from "@/lib/batch-sign-urls";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -19,9 +20,9 @@ export async function POST(req: NextRequest) {
   const limit = await rateLimit(`sign:u:${user.id}`, 60, 60_000);
   if (!limit.ok) return apiError("rate_limited", "Too many requests.");
 
-  let body: { path?: unknown };
+  let body: { path?: unknown; variant?: unknown };
   try {
-    body = (await req.json()) as { path?: unknown };
+    body = (await req.json()) as { path?: unknown; variant?: unknown };
   } catch {
     return apiError("bad_request", "Invalid request body.");
   }
@@ -29,11 +30,18 @@ export async function POST(req: NextRequest) {
   if (!path || path.includes("..") || !path.startsWith(`${user.id}/`)) {
     return apiError("forbidden", "You cannot sign this path.");
   }
+  // The ONLY accepted variant is the fixed server-owned dashboard thumbnail.
+  // Arbitrary widths/heights/quality/transform objects are never accepted.
+  const thumb = body.variant === "thumb";
 
   const supabase = await createSupabaseServerClient();
   const { data, error } = await supabase.storage
     .from("product-photos")
-    .createSignedUrl(path, 24 * 60 * 60);
+    .createSignedUrl(
+      path,
+      24 * 60 * 60,
+      thumb ? { transform: DASHBOARD_THUMB_TRANSFORM } : undefined
+    );
   if (error || !data?.signedUrl) {
     return apiError("signing_failed", "Could not refresh the image URL.");
   }

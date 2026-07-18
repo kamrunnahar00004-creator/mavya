@@ -47,6 +47,7 @@ function payload(job: ExistingJob) {
 
 /** Persist the upload and queue scoring before returning to the browser. */
 export async function POST(req: NextRequest) {
+  const requestStartedAt = Date.now();
   if (aiDisabled()) return apiError("ai_disabled", "AI scoring is temporarily disabled.");
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in to rate photos.");
@@ -193,6 +194,10 @@ export async function POST(req: NextRequest) {
         });
       }
     });
+    // Action-start latency span (no ids/paths).
+    console.log(
+      JSON.stringify({ event: "perf", span: "rating.start", ms: Date.now() - requestStartedAt })
+    );
     return NextResponse.json(payload(job as ExistingJob), { status: 202 });
   } catch (err) {
     if (storagePath) {

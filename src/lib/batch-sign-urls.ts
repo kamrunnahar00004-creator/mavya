@@ -1,6 +1,46 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
+ * Fixed, server-owned dashboard thumbnail transform. Never accept transform
+ * parameters from the browser — this constant is the ONLY thumbnail mode.
+ * Width-only resize preserves the aspect ratio and existing crop behavior.
+ */
+export const DASHBOARD_THUMB_TRANSFORM = { width: 512 } as const;
+
+/**
+ * Sign private 512px thumbnail URLs for dashboard cards. The bulk
+ * createSignedUrls API does not support transforms, so thumbnails sign
+ * individually in parallel (dashboards hold at most a few dozen cards).
+ * Product pages keep full-resolution batchSignUrls.
+ */
+export async function signThumbUrls(
+  supabase: SupabaseClient,
+  paths: (string | null | undefined)[]
+): Promise<Map<string, string | null>> {
+  const result = new Map<string, string | null>();
+  const uniquePaths = Array.from(
+    new Set(paths.filter((p): p is string => Boolean(p)))
+  );
+  if (uniquePaths.length === 0) return result;
+
+  const SIGNED_URL_TTL = 24 * 60 * 60;
+  const bucket = supabase.storage.from("product-photos");
+  await Promise.all(
+    uniquePaths.map(async (path) => {
+      try {
+        const { data, error } = await bucket.createSignedUrl(path, SIGNED_URL_TTL, {
+          transform: DASHBOARD_THUMB_TRANSFORM,
+        });
+        result.set(path, error || !data?.signedUrl ? null : data.signedUrl);
+      } catch {
+        result.set(path, null);
+      }
+    })
+  );
+  return result;
+}
+
+/**
  * Batch-deduplicated signed URL generation for product photos.
  *
  * Accepts an array of storage paths, deduplicates them, and attempts to sign

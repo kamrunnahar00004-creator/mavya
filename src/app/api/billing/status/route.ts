@@ -15,6 +15,7 @@ export const dynamic = "force-dynamic";
  * confirmation polling, credit meter). Read-only; never writes state.
  */
 export async function GET() {
+  const requestStartedAt = Date.now();
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in first.");
 
@@ -23,6 +24,14 @@ export async function GET() {
     ? await getAllowanceUsage(user.id, entitlement.periodKey)
     : { creditsUsed: 0 };
   const creditsUsed = Math.min(CREDITS_PER_PERIOD, Math.max(0, usage.creditsUsed));
+  // Complete endpoint work (entitlement + allowance usage), not a partial slice.
+  console.log(
+    JSON.stringify({
+      event: "perf",
+      span: "billing.status",
+      ms: Date.now() - requestStartedAt,
+    })
+  );
 
   return NextResponse.json(
     {
