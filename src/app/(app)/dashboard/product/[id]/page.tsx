@@ -7,7 +7,7 @@ import {
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
-import { createSupabaseServerClient, getSessionIdentity } from "@/lib/supabase/server";
+import { createSupabaseServerClient, getProtectedPageIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { batchSignUrls } from "@/lib/batch-sign-urls";
 import { timed } from "@/lib/perf";
@@ -53,7 +53,7 @@ export default async function ProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await timed("product.auth", () => getSessionIdentity());
+  const user = await timed("product.auth", () => getProtectedPageIdentity());
   if (!user) redirect("/?auth=login");
 
   const supabase = await createSupabaseServerClient();

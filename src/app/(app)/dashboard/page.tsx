@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AlertCircle, ImageUp } from "lucide-react";
 import { AddProductCard } from "@/components/dashboard/add-product";
 import { ProductCard } from "@/components/dashboard/product-card";
-import { createSupabaseServerClient, getSessionIdentity } from "@/lib/supabase/server";
+import { createSupabaseServerClient, getProtectedPageIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { signThumbUrls } from "@/lib/batch-sign-urls";
 import { loadDashboardOverview } from "@/lib/dashboard-overview";
@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
  * opens /dashboard/product/[id]. The Add card runs the existing rating pipeline.
  */
 export default async function DashboardPage() {
-  const user = await timed("dashboard.auth", () => getSessionIdentity());
+  const user = await timed("dashboard.auth", () => getProtectedPageIdentity());
   if (!user) redirect("/?auth=login");
 
   // Paid-only beta gate (server-side, not a client redirect): no plan or an

@@ -24,11 +24,14 @@ describe("verified navigation identity", () => {
     const middleware = read("src/lib/supabase/middleware.ts");
 
     expect(server).toContain("export const getSessionIdentity");
+    expect(server).toContain("export const getProtectedPageIdentity");
     expect(server).toContain("supabase.auth.getClaims()");
     expect(server).toContain("export const getSessionUser");
     expect(server).toContain("supabase.auth.getUser()");
     expect(middleware).toContain("supabase.auth.getClaims()");
     expect(middleware).toContain('span: "middleware.auth"');
+    expect(middleware).toContain("requestHeaders.delete(VERIFIED_USER_ID_HEADER)");
+    expect(middleware).toContain("requestHeaders.set(VERIFIED_USER_ID_HEADER, userId)");
     expect(server).not.toContain("supabase.auth.getSession()");
     expect(middleware).not.toContain("supabase.auth.getSession()");
   });
@@ -37,7 +40,7 @@ describe("verified navigation identity", () => {
 describe("authenticated page concurrency", () => {
   it("runs dashboard entitlement and RLS hydration concurrently", () => {
     const dashboard = read("src/app/(app)/dashboard/page.tsx");
-    expect(dashboard).toContain("getSessionIdentity()");
+    expect(dashboard).toContain("getProtectedPageIdentity()");
     expect(dashboard).toContain("const [entitlement, rows] = await Promise.all([");
     expect(dashboard).toContain('timed("dashboard.entitlement"');
     expect(dashboard).toContain('timed("dashboard.hydrate"');
@@ -48,7 +51,7 @@ describe("authenticated page concurrency", () => {
 
   it("runs product gate and RLS ownership reads concurrently", () => {
     const product = read("src/app/(app)/dashboard/product/[id]/page.tsx");
-    expect(product).toContain("getSessionIdentity()");
+    expect(product).toContain("getProtectedPageIdentity()");
     expect(product).toContain(
       "const [entitlement, productResult, photoResult] = await Promise.all(["
     );
@@ -58,5 +61,10 @@ describe("authenticated page concurrency", () => {
     expect(product.indexOf("if (!entitlement.active")).toBeLessThan(
       product.indexOf("const rows")
     );
+  });
+
+  it("enables Vercel Fluid compute to reduce cold starts", () => {
+    const config = JSON.parse(read("vercel.json")) as { fluid?: boolean };
+    expect(config.fluid).toBe(true);
   });
 });

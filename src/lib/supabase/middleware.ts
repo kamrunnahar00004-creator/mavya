@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { VERIFIED_USER_ID_HEADER } from "@/lib/supabase/auth-headers";
 
 /**
  * Refreshes the Supabase auth session on every request (so server components see
@@ -9,7 +10,11 @@ import { createServerClient } from "@supabase/ssr";
  * still runs before the backend exists.
  */
 export async function updateSession(request: NextRequest) {
-  let response = NextResponse.next({ request });
+  const requestHeaders = new Headers(request.headers);
+  // Never trust a value supplied by the browser. Only this middleware may add
+  // the verified identity header consumed by protected server pages.
+  requestHeaders.delete(VERIFIED_USER_ID_HEADER);
+  let response = NextResponse.next({ request: { headers: requestHeaders } });
 
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -25,7 +30,7 @@ export async function updateSession(request: NextRequest) {
         cookiesToSet.forEach(({ name, value }) =>
           request.cookies.set(name, value)
         );
-        response = NextResponse.next({ request });
+        response = NextResponse.next({ request: { headers: requestHeaders } });
         cookiesToSet.forEach(({ name, value, options }) =>
           response.cookies.set(name, value, options)
         );
@@ -55,6 +60,17 @@ export async function updateSession(request: NextRequest) {
     redirectUrl.pathname = "/";
     redirectUrl.search = "?auth=login";
     return NextResponse.redirect(redirectUrl);
+  }
+
+  if (typeof userId === "string" && userId) {
+    requestHeaders.set(VERIFIED_USER_ID_HEADER, userId);
+    const verifiedResponse = NextResponse.next({
+      request: { headers: requestHeaders },
+    });
+    response.cookies.getAll().forEach((cookie) =>
+      verifiedResponse.cookies.set(cookie)
+    );
+    response = verifiedResponse;
   }
 
   return response;

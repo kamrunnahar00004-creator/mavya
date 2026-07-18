@@ -1,6 +1,7 @@
 import { cache } from "react";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import { VERIFIED_USER_ID_HEADER } from "@/lib/supabase/auth-headers";
 
 /**
  * Server-side Supabase client bound to the request cookies. Use in server
@@ -66,6 +67,18 @@ export const getSessionIdentity = cache(async () => {
   const { data, error } = await supabase.auth.getClaims();
   if (error || !data?.claims) return null;
   return sessionUserFromClaims(data.claims);
+});
+
+/**
+ * Read the identity already verified by dashboard middleware. The middleware
+ * deletes any browser-supplied copy before setting this request-only header.
+ * Falling back to getClaims keeps direct/non-Vercel rendering secure.
+ */
+export const getProtectedPageIdentity = cache(async () => {
+  const headerStore = await headers();
+  const verifiedUserId = headerStore.get(VERIFIED_USER_ID_HEADER);
+  if (verifiedUserId) return { id: verifiedUserId, email: undefined };
+  return getSessionIdentity();
 });
 
 /**

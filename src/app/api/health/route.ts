@@ -4,10 +4,10 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Keep-warm / uptime endpoint. No auth, no database work, near-zero cost.
- * Point an external pinger (e.g. UptimeRobot, 5-minute interval) at
- * GET /api/health to keep the serverless function warm on the Hobby plan,
- * removing the slow first click after idle periods.
+ * Lightweight uptime endpoint. It proves the deployment can answer requests,
+ * but it does not authenticate or touch the database. Vercel may execute a
+ * dynamic page in a different function instance, so pinging this route must
+ * not be treated as a guarantee that dashboard cold starts are eliminated.
  */
 export function GET() {
   return NextResponse.json({ ok: true, ts: Date.now() }, { status: 200 });
