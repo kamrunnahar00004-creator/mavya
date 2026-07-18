@@ -3,7 +3,7 @@ import Link from "next/link";
 import { AlertCircle, ImageUp } from "lucide-react";
 import { AddProductCard } from "@/components/dashboard/add-product";
 import { ProductCard } from "@/components/dashboard/product-card";
-import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
+import { createSupabaseServerClient, getSessionIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { signThumbUrls } from "@/lib/batch-sign-urls";
 import { loadDashboardOverview } from "@/lib/dashboard-overview";
@@ -17,16 +17,21 @@ export const dynamic = "force-dynamic";
  * opens /dashboard/product/[id]. The Add card runs the existing rating pipeline.
  */
 export default async function DashboardPage() {
-  const user = await timed("dashboard.auth", () => getSessionUser());
+  const user = await timed("dashboard.auth", () => getSessionIdentity());
   if (!user) redirect("/?auth=login");
 
   // Paid-only beta gate (server-side, not a client redirect): no plan or an
   // expired/cancelled plan goes to the credits page. past_due stays here so
   // saved photos remain visible; the backend already blocks new AI usage.
-  // Entitlement and client setup are independent: run them concurrently.
-  const [entitlement, supabase] = await timed("dashboard.entitlement", () =>
-    Promise.all([getEntitlement(user.id), createSupabaseServerClient()])
-  );
+  const supabase = await createSupabaseServerClient();
+
+  // Entitlement and RLS-scoped dashboard reads are independent once identity
+  // is verified. Run them together, but render nothing until the paid gate
+  // passes. This removes one serial Supabase round trip without weakening it.
+  const [entitlement, rows] = await Promise.all([
+    timed("dashboard.entitlement", () => getEntitlement(user.id)),
+    timed("dashboard.hydrate", () => loadDashboardOverview(supabase)),
+  ]);
   const pastDue = entitlement.reason === "past_due";
   if (!entitlement.active && !pastDue) redirect("/subscribe");
 
@@ -37,10 +42,6 @@ export default async function DashboardPage() {
   // fails, loadDashboardOverview falls back to the legacy hydration; if the
   // fallback also fails it throws, so a database failure fails visibly and
   // never renders a fake empty dashboard.
-  const rows = await timed("dashboard.hydrate", () =>
-    loadDashboardOverview(supabase)
-  );
-
   // Private fixed 512px thumbnails for cards (full resolution stays on the
   // product page).
   const signedUrls = await timed("dashboard.sign", () =>

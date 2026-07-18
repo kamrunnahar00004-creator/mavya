@@ -7,7 +7,7 @@ import {
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
-import { createSupabaseServerClient, getSessionUser } from "@/lib/supabase/server";
+import { createSupabaseServerClient, getSessionIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { batchSignUrls } from "@/lib/batch-sign-urls";
 import { timed } from "@/lib/perf";
@@ -53,32 +53,35 @@ export default async function ProductPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const user = await timed("product.auth", () => getSessionUser());
+  const user = await timed("product.auth", () => getSessionIdentity());
   if (!user) redirect("/?auth=login");
 
-  // Paid-only gate: no/expired plan -> credits page. past_due may still VIEW
-  // saved results (new AI usage is blocked server-side).
-  const [entitlement, supabase] = await timed("product.entitlement", () =>
-    Promise.all([getEntitlement(user.id), createSupabaseServerClient()])
-  );
+  const supabase = await createSupabaseServerClient();
+
+  // These reads are independent and RLS-scoped. They may execute together,
+  // but no result is rendered until entitlement and ownership both pass.
+  const [entitlement, productResult, photoResult] = await Promise.all([
+    timed("product.entitlement", () => getEntitlement(user.id)),
+    timed("product.lookup", () =>
+      supabase.from("products").select("id, name").eq("id", id).single()
+    ),
+    timed("product.photos", () =>
+      supabase
+        .from("photos")
+        .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(rubric, created_at)")
+        .eq("product_id", id)
+        .order("role", { ascending: true })
+        .order("position", { ascending: true })
+        .order("created_at", { ascending: true })
+    ),
+  ]);
   if (!entitlement.active && entitlement.reason !== "past_due") {
     redirect("/subscribe");
   }
 
-  const { data: product } = await timed("product.lookup", () =>
-    supabase.from("products").select("id, name").eq("id", id).single()
-  );
+  const product = productResult.data;
   if (!product) redirect("/dashboard");
-
-  const { data: photoData } = await timed("product.photos", () =>
-    supabase
-      .from("photos")
-      .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(rubric, created_at)")
-      .eq("product_id", product.id)
-      .order("role", { ascending: true })
-      .order("position", { ascending: true })
-      .order("created_at", { ascending: true })
-  );
+  const photoData = photoResult.data;
 
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);

@@ -38,12 +38,40 @@ export async function createSupabaseServerClient() {
   });
 }
 
+export type SessionUser = {
+  id: string;
+  email: string | undefined;
+};
+
+/** Convert cryptographically verified JWT claims into the identity we use. */
+export function sessionUserFromClaims(claims: {
+  sub?: unknown;
+  email?: unknown;
+}): SessionUser | null {
+  if (typeof claims.sub !== "string" || !claims.sub) return null;
+  return {
+    id: claims.sub,
+    email: typeof claims.email === "string" ? claims.email : undefined,
+  };
+}
+
 /**
- * Convenience: return the current signed-in user (or null) from the request.
- * Wrapped in React cache(): getUser() always makes a network round trip to
- * Supabase, so layouts/pages/components sharing one request share ONE call.
- * (The middleware's session-refresh getUser is a separate request lifecycle
- * and intentionally stays: it is what rotates the auth cookie.)
+ * Return the verified signed-in identity used while rendering protected pages.
+ * getClaims() validates the JWT and, with asymmetric signing keys, avoids the
+ * Auth-server round trip required by getUser(). React cache() deduplicates the
+ * verification when several server components share one request.
+ */
+export const getSessionIdentity = cache(async () => {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase.auth.getClaims();
+  if (error || !data?.claims) return null;
+  return sessionUserFromClaims(data.claims);
+});
+
+/**
+ * Return the freshest Auth-server user record for API authorization and other
+ * mutation paths. This intentionally retains getUser() semantics; Phase B only
+ * changes protected page navigation, where verified JWT claims are sufficient.
  */
 export const getSessionUser = cache(async () => {
   const supabase = await createSupabaseServerClient();

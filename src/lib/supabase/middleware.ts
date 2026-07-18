@@ -33,15 +33,24 @@ export async function updateSession(request: NextRequest) {
     },
   });
 
-  // IMPORTANT: getUser() refreshes the token and must run to keep the session alive.
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Verify the JWT and refresh it when it is close to expiry. With asymmetric
+  // signing keys this uses cached JWKS verification instead of an Auth-server
+  // getUser() round trip, while remaining safe for authorization decisions.
+  const authStartedAt = Date.now();
+  const { data: claimsData } = await supabase.auth.getClaims();
+  console.log(
+    JSON.stringify({
+      event: "perf",
+      span: "middleware.auth",
+      ms: Date.now() - authStartedAt,
+    })
+  );
+  const userId = claimsData?.claims?.sub;
 
   // Guard the dashboard: unauthenticated users are bounced to the landing page
   // with the login modal open.
   const isProtected = request.nextUrl.pathname.startsWith("/dashboard");
-  if (isProtected && !user) {
+  if (isProtected && !userId) {
     const redirectUrl = request.nextUrl.clone();
     redirectUrl.pathname = "/";
     redirectUrl.search = "?auth=login";
