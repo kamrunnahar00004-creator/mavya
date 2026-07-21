@@ -98,6 +98,24 @@ export async function applySelectionForCompletedJob(args: {
 }
 
 /**
+ * After a failed attempt, decide whether to queue the bounded successor.
+ *
+ * Queue UNLESS the charge was successfully refunded. This is the durable guard
+ * against stranding a paid workflow: if a failure was refundable but the refund
+ * call FAILED (didRefund=false), the user is still charged, so they must get the
+ * bounded successor attempt rather than nothing. A cancelled job (no charge, no
+ * work owed) never queues.
+ */
+export function shouldQueueSuccessorAfterFailure(args: {
+  cancelled: boolean;
+  wantRefund: boolean;
+  didRefund: boolean;
+}): boolean {
+  if (args.cancelled) return false;
+  return !(args.wantRefund && args.didRefund);
+}
+
+/**
  * Queue the next bounded background attempt when policy says so.
  * Returns the queued job id, or null when no attempt was queued.
  * Charged 0: attempt 2 is internal quality work inside the already-charged
@@ -252,13 +270,18 @@ export async function recoverStaleGenerationJob(
     | "allowance_key"
   >;
   // Only the charged attempt (attempt 1) consumed a workflow allowance. Set
-  // refunded=true ONLY when a refund actually happened; attempt 2 stays false.
+  // refunded=true ONLY when refundAllowance actually succeeded; a failed refund
+  // stays refunded=false (never record a lost credit as returned). The worker's
+  // generation_failures_without_successor backstop then supplies the bounded
+  // successor a still-charged user is owed. Attempt 2 never refunds.
   if ((job.attempt_number ?? 1) === 1 && job.allowance_key) {
-    await refundAllowance(job.allowance_key);
-    await admin
-      .from("generation_jobs")
-      .update({ refunded: true, updated_at: new Date().toISOString() })
-      .eq("id", job.id);
+    const didRefund = await refundAllowance(job.allowance_key);
+    if (didRefund) {
+      await admin
+        .from("generation_jobs")
+        .update({ refunded: true, updated_at: new Date().toISOString() })
+        .eq("id", job.id);
+    }
   }
   // A timeout is still a failed bounded attempt: queue the next one immediately
   // (bounded by MAX_ATTEMPTS_PER_WORKFLOW) rather than waiting for a scheduler.
@@ -291,15 +314,21 @@ async function selfCleanOrEnqueue(
     .from("product-photos")
     .remove([path]);
   if (!rmErr) return;
-  const { error: enqErr } = await admin.from("storage_cleanup_queue").insert({
-    user_id: userId,
-    kind: "object",
-    storage_path: path,
-  });
-  logEvent(
-    enqErr ? "generate.self_clean_enqueue_failed" : "generate.self_clean_enqueued",
-    {}
-  );
+  // Direct removal failed: durably enqueue. Bounded retry so a transient DB blip
+  // does not leave the file orphaned (the double-failure Codex flagged). Only
+  // after every attempt fails do we log the residual leak for reconciliation.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const { error: enqErr } = await admin.from("storage_cleanup_queue").insert({
+      user_id: userId,
+      kind: "object",
+      storage_path: path,
+    });
+    if (!enqErr) {
+      logEvent("generate.self_clean_enqueued", {});
+      return;
+    }
+  }
+  logEvent("generate.self_clean_enqueue_failed", {});
 }
 
 /**
@@ -394,6 +423,45 @@ export async function recoverStaleJobs(admin: AdminClient): Promise<number> {
     if (await recoverStaleGenerationJob(admin, row.id)) failed++;
   }
   return failed;
+}
+
+/**
+ * Durable backstop: any terminal failed/rejected attempt whose refund did NOT
+ * succeed and whose inline successor queue failed is left with no refund, no
+ * result, and no successor. It is no longer active, so recoverStaleJobs never
+ * revisits it and the workflow would die — for ANY failure code, not just a
+ * provider timeout.
+ *
+ * Selection is done by the `generation_failures_without_successor` RPC, which
+ * pushes the missing-successor NOT EXISTS check into SQL and orders oldest-first.
+ * It returns ONLY rows that genuinely lack a successor and still owe work
+ * (status in failed/rejected, refunded = false, below the ceiling), so the scan
+ * always makes forward progress and older rows are never starved by
+ * already-repaired rows. Requeue is idempotent (unique `${workflow}:a${n}` key),
+ * so a run racing the inline queue cannot duplicate. A query failure is THROWN,
+ * never silently reported as zero.
+ */
+export async function recoverFailuresWithoutSuccessor(
+  admin: AdminClient
+): Promise<number> {
+  const { data, error } = await admin.rpc(
+    "generation_failures_without_successor",
+    { p_limit: 20, p_max_attempts: MAX_ATTEMPTS_PER_WORKFLOW }
+  );
+  if (error) {
+    logEvent("refine.failure_scan_failed", {});
+    throw new Error("failure_scan_failed");
+  }
+  let queued = 0;
+  for (const job of (data as WorkflowJobRow[] | null) ?? []) {
+    const id = await maybeQueueRefinement({
+      admin,
+      completedJob: job,
+      acceptedRawScore: null,
+    });
+    if (id) queued++;
+  }
+  return queued;
 }
 
 /**
@@ -716,20 +784,34 @@ export async function runQueuedGenerationOnce(jobId?: string): Promise<string | 
     kind: "failed" | "rejected" | "cancelled",
     unresolvedIssues?: string[]
   ) => {
-    const refund = kind !== "cancelled" && isRefundable(code);
-    if (refund && job.allowance_key) await refundAllowance(job.allowance_key);
+    // wantRefund is the POLICY (drives whether a successor is queued); didRefund
+    // is what actually happened at the ledger. Record refunded truthfully: a
+    // failed refund stays false so a lost credit is never recorded as returned.
+    const wantRefund = kind !== "cancelled" && isRefundable(code);
+    let didRefund = false;
+    if (wantRefund && job.allowance_key) {
+      didRefund = await refundAllowance(job.allowance_key);
+    }
     await patch({
       status: kind,
       stage: null,
       error_code: code,
-      refunded: refund,
+      refunded: didRefund,
       unresolved_issues: unresolvedIssues ?? [],
       completed_at: new Date().toISOString(),
     });
     logEvent("generate.finished", { jobId: job.id, status: kind, code });
-    // A rejected/failed (non-refunded) attempt 1 still gets its bounded
-    // background attempts — weak sources are helped, never abandoned.
-    if (kind !== "cancelled" && !refund) {
+    // Queue the bounded successor unless the charge was successfully refunded.
+    // A non-refundable failure helps a weak source; a refundable failure whose
+    // refund FAILED must not strand the paid user with no result and no money
+    // back — they get the successor attempt instead.
+    if (
+      shouldQueueSuccessorAfterFailure({
+        cancelled: kind === "cancelled",
+        wantRefund,
+        didRefund,
+      })
+    ) {
       const queuedId = await maybeQueueRefinement({
         admin,
         completedJob: job,

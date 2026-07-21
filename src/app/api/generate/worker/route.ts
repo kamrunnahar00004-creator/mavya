@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   recoverStaleJobs,
+  recoverFailuresWithoutSuccessor,
   runQueuedGenerationOnce,
   runQueuedRefinementOnce,
 } from "@/lib/refinement";
@@ -39,6 +40,18 @@ async function handle(req: NextRequest) {
 
   const admin = createSupabaseAdminClient();
   const staleFailed = await recoverStaleJobs(admin);
+  // Durable backstop: re-queue any failed/rejected attempt that owes work but
+  // has no bounded successor (refund failed AND the inline queue failed), for
+  // ANY failure code. A scan-query failure is surfaced (logged + reported),
+  // never a silent zero, and never aborts the rest of the tick.
+  let failuresRequeued = 0;
+  let failureScanError = false;
+  try {
+    failuresRequeued = await recoverFailuresWithoutSuccessor(admin);
+  } catch {
+    failureScanError = true;
+    logEvent("worker.failure_scan_failed", {});
+  }
   const staleRatingsRecovered = await recoverStaleRatingJobs();
   // Durable backstop for the deletion outbox (the delete endpoints also kick a
   // drain via after(); this guarantees eventual cleanup if that kick died).
@@ -60,12 +73,22 @@ async function handle(req: NextRequest) {
 
   logEvent("worker.tick", {
     staleFailed,
+    failuresRequeued,
+    failureScanError,
     staleRatingsRecovered,
     storageCleaned,
     processed: processed.length,
   });
   return NextResponse.json(
-    { ok: true, staleFailed, staleRatingsRecovered, storageCleaned, processed },
+    {
+      ok: true,
+      staleFailed,
+      failuresRequeued,
+      failureScanError,
+      staleRatingsRecovered,
+      storageCleaned,
+      processed,
+    },
     { status: 200 }
   );
 }

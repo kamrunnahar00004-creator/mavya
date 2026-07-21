@@ -177,6 +177,7 @@ function makeUploadAdmin(opts: {
   completionError?: unknown;
   uploadError?: unknown;
   removeError?: unknown;
+  enqueueError?: unknown;
 }) {
   const removed: string[][] = [];
   const uploaded: string[] = [];
@@ -204,7 +205,7 @@ function makeUploadAdmin(opts: {
     };
     // The insert (self-clean enqueue) is awaited directly.
     b.then = (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
-      Promise.resolve({ data: null, error: null }).then(onF, onR);
+      Promise.resolve({ data: null, error: opts.enqueueError ?? null }).then(onF, onR);
     return b;
   };
   const storage = {
@@ -289,6 +290,19 @@ describe("commitCompletedUpload (generation-race protection)", () => {
     expect(enqueued).toEqual([
       { table: "storage_cleanup_queue", user_id: "u1", kind: "object", storage_path: "u1/p1/generated/j1.png" },
     ]);
+  });
+
+  it("self-clean enqueue is retried on transient failure, then does not throw", async () => {
+    const { admin, enqueued } = makeUploadAdmin({
+      preStatus: "rescoring",
+      completionRow: null, // deleted mid-flight
+      removeError: { message: "storage flaky" },
+      enqueueError: { message: "db blip" }, // every enqueue attempt fails
+    });
+    const res = await commitCompletedUpload({ admin, ...base });
+    expect(res).toEqual({ ok: false, reason: "deleted" }); // never throws
+    // Bounded retry: the insert was attempted more than once.
+    expect(enqueued.length).toBeGreaterThan(1);
   });
 
   it("upload failure is reported distinctly (not a deletion), no self-clean", async () => {
