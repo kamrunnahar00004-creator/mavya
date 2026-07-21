@@ -32,7 +32,7 @@ export function candidateIsSafe(
 /**
  * Should the workflow queue another automatic background attempt?
  *
- *  - Never beyond MAX_ATTEMPTS_PER_WORKFLOW (three total).
+ *  - Never beyond MAX_ATTEMPTS_PER_WORKFLOW (two total: attempt 1 + attempt 2).
  *  - Accepted raw score >= 7.5 stops refinement (it presents as 8.0; do not
  *    spend provider money chasing a subjective fraction).
  *  - A safe result below 7.5 refines (targeting its audit's reported problems).

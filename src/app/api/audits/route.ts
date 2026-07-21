@@ -78,6 +78,28 @@ export async function POST(req: NextRequest) {
     return apiError("forbidden", "The score does not match the saved photo.");
   }
 
+  // Idempotent compatibility: all verification above (ownership + stored-image
+  // byte hash + score-cache match) has ALREADY completed. Only now, return an
+  // existing audit for the same (photo, score cache) rather than inserting a
+  // duplicate. Idempotency never shortcuts verification. A genuine re-rating
+  // uses a NEW score-cache row (score_cache uniqueness includes rubric_version),
+  // so a different rubric version still inserts a fresh audit.
+  const findExisting = () =>
+    admin
+      .from("audits")
+      .select("id")
+      .eq("photo_id", photo.id)
+      .eq("score_cache_id", cached.id)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+  const { data: existing } = await findExisting();
+  if (existing) {
+    return NextResponse.json({ ok: true, auditId: existing.id }, { status: 200 });
+  }
+
   const rubric = cached.rubric as { overall_score?: unknown };
   const overallScore =
     typeof rubric.overall_score === "number" ? rubric.overall_score : null;
@@ -94,12 +116,20 @@ export async function POST(req: NextRequest) {
     })
     .select("id")
     .single();
-  if (error || !audit) {
-    logEvent("audit.persist_failed", {
-      userId: user.id,
-      photoId,
-      error: error?.message,
-    });
+  if (error) {
+    // A concurrent writer won the (photo_id, score_cache_id) unique index:
+    // adopt its audit instead of failing.
+    if ((error as { code?: string }).code === "23505") {
+      const { data: winner } = await findExisting();
+      if (winner) {
+        return NextResponse.json({ ok: true, auditId: winner.id }, { status: 200 });
+      }
+    }
+    logEvent("audit.persist_failed", { userId: user.id, photoId, error: error.message });
+    return apiError("persistence_failed", "The audit could not be saved.");
+  }
+  if (!audit) {
+    logEvent("audit.persist_failed", { userId: user.id, photoId });
     return apiError("persistence_failed", "The audit could not be saved.");
   }
   return NextResponse.json({ ok: true, auditId: audit.id }, { status: 201 });

@@ -22,7 +22,8 @@ import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
 
 /**
- * Bounded background refinement (attempts 2-3 of an improvement workflow).
+ * Bounded background refinement (attempt 2, the single automatic follow-up of
+ * an improvement workflow; MAX_ATTEMPTS_PER_WORKFLOW = 2).
  *
  * Durability model (no external queue dependency): a refinement attempt is a
  * `generation_jobs` ROW in status 'queued'. Executors CLAIM it with an atomic
@@ -31,8 +32,9 @@ import type { GenerationJobStatus } from "@/lib/generation-types";
  *   1. `after()` in the generate route (best effort, same serverless invocation).
  *   2. The /api/generate/worker route, callable by Vercel Cron / any scheduler
  *      with the WORKER_SECRET (durable backstop; also recovers stale jobs).
- * The DB constraints are the real safety: attempt_number <= 3 (CHECK) and one
- * active refinement per workflow (partial unique index).
+ * The app enforces the ceiling in maybeQueueRefinement (attempt 2 never queues
+ * attempt 3). The DB additionally guards with one active refinement per
+ * workflow (partial unique index) and a legacy attempt_number CHECK (1..3).
  */
 
 type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
@@ -98,7 +100,7 @@ export async function applySelectionForCompletedJob(args: {
 /**
  * Queue the next bounded background attempt when policy says so.
  * Returns the queued job id, or null when no attempt was queued.
- * Charged 0: attempts 2-3 are internal quality work inside the already-charged
+ * Charged 0: attempt 2 is internal quality work inside the already-charged
  * workflow. Duplicate queueing is prevented by the unique idempotency key and
  * the one-active-refinement partial index.
  */
@@ -146,7 +148,7 @@ export async function maybeQueueRefinement(args: {
       status: "queued",
       stage: "queued",
       operation: "refine",
-      // Edit workflows carry the seller's instruction into attempts 2-3 so a
+      // Edit workflows carry the seller's instruction into attempt 2 so a
       // fresh-from-original retry can re-apply exactly what was asked.
       edit_instruction: job.edit_instruction ?? null,
       provider_model: getImageModel(),
@@ -170,60 +172,226 @@ export async function maybeQueueRefinement(args: {
   return queued?.id ?? null;
 }
 
-/** Fail active jobs stuck longer than 10 minutes; refund attempt-1 allowances. */
+/**
+ * The ONLY generation states eligible for provider-timeout recovery. A `queued`
+ * job is waiting for an executor to claim it, not stuck inside a provider call,
+ * so it is never classified as a timeout here (both polling and the worker
+ * kick queued rows into execution instead).
+ */
+export const RECOVERABLE_ACTIVE_STATUSES = [
+  "generating",
+  "fidelity_check",
+  "rescoring",
+] as const;
+
+/** Active generating attempts idle longer than this are treated as a provider timeout. */
+export const STALE_GENERATION_MS = 10 * 60 * 1000;
+
+/**
+ * True only for an ACTIVE generating attempt overdue past the stale window.
+ * Shared by polling (generate route GET) and the worker so both classify
+ * staleness identically; a queued job always returns false.
+ */
+export function isStaleActiveGenerationJob(job: {
+  status: string;
+  updated_at: string;
+}): boolean {
+  return (
+    (RECOVERABLE_ACTIVE_STATUSES as readonly string[]).includes(job.status) &&
+    Date.now() - new Date(job.updated_at).getTime() > STALE_GENERATION_MS
+  );
+}
+
+/**
+ * Authoritative recovery for ONE overdue active attempt, shared by polling and
+ * the worker so they produce equivalent persisted outcomes. Atomically flips a
+ * still-active row to failed(provider_timeout); ONLY the compare-and-set winner
+ * then refunds an attempt-1 allowance and queues the next bounded attempt. A
+ * second concurrent caller matches zero rows and does nothing (no double refund,
+ * no double successor). The `MAX_ATTEMPTS_PER_WORKFLOW` ceiling inside
+ * maybeQueueRefinement guarantees the final attempt queues no successor.
+ * Returns the recovered job id when THIS caller won, else null.
+ */
+export async function recoverStaleGenerationJob(
+  admin: AdminClient,
+  jobId: string
+): Promise<string | null> {
+  // Staleness is verified ATOMICALLY inside the CAS (updated_at < cutoff), not
+  // just by a prior read: a live executor that refreshed updated_at between any
+  // read and this UPDATE bumps the row out of the cutoff, so it loses the CAS
+  // and keeps running. `refunded` is NOT set here — it is written truthfully
+  // below, only when an attempt-1 allowance is actually refunded.
+  const cutoff = new Date(Date.now() - STALE_GENERATION_MS).toISOString();
+  const { data: won } = await admin
+    .from("generation_jobs")
+    .update({
+      status: "failed",
+      error_code: "provider_timeout",
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .in("status", RECOVERABLE_ACTIVE_STATUSES)
+    .lt("updated_at", cutoff)
+    .select(
+      "id, user_id, product_id, photo_id, source_audit_id, operation, edit_instruction, workflow_id, attempt_number, allowance_key"
+    )
+    .maybeSingle();
+  if (!won) return null;
+  const job = won as Pick<
+    WorkflowJobRow,
+    | "id"
+    | "user_id"
+    | "product_id"
+    | "photo_id"
+    | "source_audit_id"
+    | "operation"
+    | "edit_instruction"
+    | "workflow_id"
+    | "attempt_number"
+    | "allowance_key"
+  >;
+  // Only the charged attempt (attempt 1) consumed a workflow allowance. Set
+  // refunded=true ONLY when a refund actually happened; attempt 2 stays false.
+  if ((job.attempt_number ?? 1) === 1 && job.allowance_key) {
+    await refundAllowance(job.allowance_key);
+    await admin
+      .from("generation_jobs")
+      .update({ refunded: true, updated_at: new Date().toISOString() })
+      .eq("id", job.id);
+  }
+  // A timeout is still a failed bounded attempt: queue the next one immediately
+  // (bounded by MAX_ATTEMPTS_PER_WORKFLOW) rather than waiting for a scheduler.
+  await maybeQueueRefinement({ admin, completedJob: job, acceptedRawScore: null });
+  logEvent("refine.stale_failed", { jobId });
+  return job.id;
+}
+
+type CommitUploadResult =
+  | { ok: true }
+  | { ok: false; reason: "deleted" | "upload_failed" };
+
+/**
+ * Remove a just-uploaded orphan file, and if the removal itself fails, DURABLY
+ * enqueue the exact path into the deletion outbox. A late upload can land after
+ * the original deletion tasks already drained, so logging alone would leak the
+ * file forever — the outbox row guarantees a later drain removes it. The path is
+ * re-validated to be inside the owner's own folder before any action.
+ */
+async function selfCleanOrEnqueue(
+  admin: AdminClient,
+  userId: string,
+  path: string
+): Promise<void> {
+  if (!path.startsWith(`${userId}/`) || path.includes("..")) {
+    logEvent("generate.self_clean_bad_path", {});
+    return;
+  }
+  const { error: rmErr } = await admin.storage
+    .from("product-photos")
+    .remove([path]);
+  if (!rmErr) return;
+  const { error: enqErr } = await admin.from("storage_cleanup_queue").insert({
+    user_id: userId,
+    kind: "object",
+    storage_path: path,
+  });
+  logEvent(
+    enqErr ? "generate.self_clean_enqueue_failed" : "generate.self_clean_enqueued",
+    {}
+  );
+}
+
+/**
+ * Upload a generated result and mark the job completed in a way that is safe
+ * against concurrent product/photo deletion (see the deletion outbox).
+ *
+ * Failure modes are distinguished:
+ *   - A returned DATABASE error (pre-check or completion query) is a persistence
+ *     failure ("upload_failed"), NOT a deletion — the caller fails the job.
+ *   - A missing row / lost CAS (no error, zero rows) means the job was
+ *     cascade-deleted or recovered mid-flight ("deleted").
+ *
+ * Defenses at the single upload site:
+ *   1. Pre-upload: the job must still exist in an active generating state.
+ *      Deletion can still commit between this check and the upload, so this is
+ *      NOT sufficient on its own.
+ *   2. Post-upload: the completion update is conditional (id + still-active
+ *      status) and must affect exactly one row. On zero rows OR a completion
+ *      query error the just-uploaded file is cleaned via selfCleanOrEnqueue,
+ *      which durably enqueues cleanup if the direct removal fails.
+ */
+export async function commitCompletedUpload(args: {
+  admin: AdminClient;
+  jobId: string;
+  userId: string;
+  resultPath: string;
+  imageBase64: string;
+  completionFields: Record<string, unknown>;
+}): Promise<CommitUploadResult> {
+  const { admin, jobId, userId, resultPath, imageBase64, completionFields } = args;
+
+  const { data: pre, error: preErr } = await admin
+    .from("generation_jobs")
+    .select("status")
+    .eq("id", jobId)
+    .maybeSingle();
+  if (preErr) return { ok: false, reason: "upload_failed" }; // DB error, not deletion
+  if (
+    !pre ||
+    !(RECOVERABLE_ACTIVE_STATUSES as readonly string[]).includes(pre.status)
+  ) {
+    return { ok: false, reason: "deleted" };
+  }
+
+  const { error: upErr } = await admin.storage
+    .from("product-photos")
+    .upload(resultPath, Buffer.from(imageBase64, "base64"), {
+      contentType: "image/png",
+      upsert: true,
+    });
+  if (upErr) return { ok: false, reason: "upload_failed" };
+
+  const { data: done, error: doneErr } = await admin
+    .from("generation_jobs")
+    .update({
+      ...completionFields,
+      status: "completed",
+      stage: null,
+      result_storage_path: resultPath,
+      updated_at: new Date().toISOString(),
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .in("status", RECOVERABLE_ACTIVE_STATUSES)
+    .select("id")
+    .maybeSingle();
+  if (doneErr) {
+    // Completion query failed: persistence failure, and nothing references the
+    // uploaded file (result_storage_path was never recorded), so clean it up.
+    await selfCleanOrEnqueue(admin, userId, resultPath);
+    return { ok: false, reason: "upload_failed" };
+  }
+  if (!done) {
+    // Zero rows: cascade-deleted or recovered mid-flight → clean the orphan.
+    await selfCleanOrEnqueue(admin, userId, resultPath);
+    return { ok: false, reason: "deleted" };
+  }
+  return { ok: true };
+}
+
+/** Fail active jobs stuck longer than the stale window; refund attempt-1 allowances. */
 export async function recoverStaleJobs(admin: AdminClient): Promise<number> {
-  const cutoff = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  // Queued rows are waiting for an executor, not stuck; the worker picks them
-  // up in the same pass, so only actively-running states are recovered here.
+  const cutoff = new Date(Date.now() - STALE_GENERATION_MS).toISOString();
   const { data: stale } = await admin
     .from("generation_jobs")
-    .select(
-      "id, user_id, product_id, photo_id, source_audit_id, operation, edit_instruction, workflow_id, attempt_number, allowance_key, credit_key"
-    )
-    .in("status", ["generating", "fidelity_check", "rescoring"])
+    .select("id")
+    .in("status", RECOVERABLE_ACTIVE_STATUSES)
     .lt("updated_at", cutoff)
     .limit(20);
   let failed = 0;
-  for (const job of stale ?? []) {
-    const { data: updated } = await admin
-      .from("generation_jobs")
-      .update({
-        status: "failed",
-        error_code: "provider_timeout",
-        refunded: true,
-        updated_at: new Date().toISOString(),
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", job.id)
-      .in("status", ["generating", "fidelity_check", "rescoring"])
-      .select("id")
-      .maybeSingle();
-    if (updated) {
-      failed++;
-      // Only the charged attempt (attempt 1) consumed a workflow allowance.
-      if ((job.attempt_number ?? 1) === 1 && job.allowance_key) {
-        await refundAllowance(job.allowance_key);
-      }
-      // A timeout is still a failed bounded attempt. Queue the next attempt
-      // immediately so recovery does not wait for the next scheduler tick.
-      await maybeQueueRefinement({
-        admin,
-        completedJob: {
-          id: job.id,
-          user_id: job.user_id,
-          product_id: job.product_id,
-          photo_id: job.photo_id,
-          source_audit_id: job.source_audit_id,
-          operation: job.operation,
-          edit_instruction: job.edit_instruction,
-          workflow_id: job.workflow_id,
-          attempt_number: job.attempt_number,
-          allowance_key: job.allowance_key,
-        },
-        acceptedRawScore: null,
-      });
-      logEvent("refine.stale_failed", { jobId: job.id });
-    }
+  for (const row of stale ?? []) {
+    if (await recoverStaleGenerationJob(admin, row.id)) failed++;
   }
   return failed;
 }
@@ -277,7 +445,7 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
       status: kind,
       stage: null,
       error_code: code,
-      // Attempts 2-3 never consumed an allowance; nothing to refund. isRefundable
+      // Attempt 2 never consumed an allowance; nothing to refund. isRefundable
       // is still recorded for reconciliation visibility.
       refunded: false,
       completed_at: new Date().toISOString(),
@@ -426,7 +594,7 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
       await patch({ unresolved_issues: result.unresolvedIssues });
       await fail(result.code, kind);
       // An unsafe or failed refinement still justifies the final bounded
-      // attempt when one remains (never beyond three total).
+      // attempt when one remains (never beyond MAX_ATTEMPTS_PER_WORKFLOW = 2).
       await maybeQueueRefinement({
         admin,
         completedJob: job,
@@ -436,32 +604,30 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
     }
 
     const resultPath = `${job.user_id}/${photo.product_id}/generated/${job.id}.png`;
-    const { error: upErr } = await admin.storage
-      .from("product-photos")
-      .upload(resultPath, Buffer.from(result.imageBase64, "base64"), {
-        contentType: "image/png",
-        upsert: true,
-      });
-    if (upErr) {
-      await fail("persistence_failed", "failed");
-      return job.id;
-    }
-
     const safe = candidateIsSafe(result.fidelity, mode);
     const raw = rawOverall(result.candidateAudit);
-    await patch({
-      status: "completed",
-      stage: null,
-      result_storage_path: resultPath,
-      candidate_rubric: result.candidateAudit,
-      fidelity: result.fidelity,
-      outcome: result.outcome,
-      raw_score: raw,
-      calibrated_score: calibrateScore(raw),
-      calibration_rule: CALIBRATION_RULE,
-      latency_ms: Date.now() - startedAt,
-      completed_at: new Date().toISOString(),
+    const commit = await commitCompletedUpload({
+      admin,
+      jobId: job.id,
+      userId: job.user_id,
+      resultPath,
+      imageBase64: result.imageBase64,
+      completionFields: {
+        candidate_rubric: result.candidateAudit,
+        fidelity: result.fidelity,
+        outcome: result.outcome,
+        raw_score: raw,
+        calibrated_score: calibrateScore(raw),
+        calibration_rule: CALIBRATION_RULE,
+        latency_ms: Date.now() - startedAt,
+      },
     });
+    if (!commit.ok) {
+      if (commit.reason === "upload_failed") await fail("persistence_failed", "failed");
+      // reason "deleted": the product/photo was deleted mid-generation, the job
+      // row is gone, and the uploaded file was cleaned. Nothing to fail or queue.
+      return job.id;
+    }
 
     const selected = await applySelectionForCompletedJob({
       admin,
@@ -719,32 +885,30 @@ export async function runQueuedGenerationOnce(jobId?: string): Promise<string | 
     }
 
     const resultPath = `${job.user_id}/${photo.product_id}/generated/${job.id}.png`;
-    const { error: upErr } = await admin.storage
-      .from("product-photos")
-      .upload(resultPath, Buffer.from(result.imageBase64, "base64"), {
-        contentType: "image/png",
-        upsert: true,
-      });
-    if (upErr) {
-      await fail("persistence_failed", "failed");
-      return job.id;
-    }
-
     const raw = rawOverall(result.candidateAudit);
     const safe = candidateIsSafe(result.fidelity, mode);
-    await patch({
-      status: "completed",
-      stage: null,
-      result_storage_path: resultPath,
-      candidate_rubric: result.candidateAudit,
-      fidelity: result.fidelity,
-      outcome: result.outcome,
-      raw_score: raw,
-      calibrated_score: calibrateScore(raw),
-      calibration_rule: CALIBRATION_RULE,
-      latency_ms: Date.now() - startedAt,
-      completed_at: new Date().toISOString(),
+    const commit = await commitCompletedUpload({
+      admin,
+      jobId: job.id,
+      userId: job.user_id,
+      resultPath,
+      imageBase64: result.imageBase64,
+      completionFields: {
+        candidate_rubric: result.candidateAudit,
+        fidelity: result.fidelity,
+        outcome: result.outcome,
+        raw_score: raw,
+        calibrated_score: calibrateScore(raw),
+        calibration_rule: CALIBRATION_RULE,
+        latency_ms: Date.now() - startedAt,
+      },
     });
+    if (!commit.ok) {
+      if (commit.reason === "upload_failed") await fail("persistence_failed", "failed");
+      // reason "deleted": the product/photo was deleted mid-generation, the job
+      // row is gone, and the uploaded file was cleaned. Nothing to fail or queue.
+      return job.id;
+    }
 
     const selected = await applySelectionForCompletedJob({
       admin,
@@ -785,7 +949,7 @@ export async function runQueuedGenerationOnce(jobId?: string): Promise<string | 
   }
 }
 
-/** Run the queued attempts for one workflow back-to-back (at most attempts 2-3). */
+/** Run the queued attempts for one workflow back-to-back (at most attempt 2). */
 export async function runQueuedRefinementChain(firstJobId: string): Promise<void> {
   let jobId: string | null = firstJobId;
   for (let i = 0; i < MAX_ATTEMPTS_PER_WORKFLOW - 1 && jobId; i++) {

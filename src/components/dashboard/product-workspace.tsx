@@ -24,7 +24,6 @@ import { coveredShotIds } from "@/lib/checklist-coverage";
 import { mergeChecklist, parseSavedChecklist } from "@/lib/checklist-store";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { prepareUploadImage } from "@/lib/client-image";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { trackClientEvent } from "@/lib/track-client";
 
 export type InitialJob = {
@@ -1023,12 +1022,15 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       return;
     }
     try {
-      const supabase = createSupabaseBrowserClient();
-      if (photo.storagePath) {
-        await supabase.storage.from("product-photos").remove([photo.storagePath]);
-      }
-      const { error } = await supabase.from("photos").delete().eq("id", photo.id);
-      if (error) throw error;
+      // Server-authoritative deletion: the endpoint verifies ownership, removes
+      // the photo row, and durably cleans up its original + every generated
+      // result via the cleanup outbox. The client sends only the photo id.
+      const res = await fetch("/api/photos/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: photo.id }),
+      });
+      if (!res.ok) throw new Error("delete_failed");
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
       setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
       setNotice(null);

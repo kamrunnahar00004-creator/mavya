@@ -9,6 +9,7 @@ import {
   recoverStaleRatingJobs,
   runQueuedRatingOnce,
 } from "@/lib/rating-jobs";
+import { drainStorageCleanup } from "@/lib/storage-cleanup";
 import { logEvent } from "@/lib/errors";
 
 export const runtime = "nodejs";
@@ -39,6 +40,9 @@ async function handle(req: NextRequest) {
   const admin = createSupabaseAdminClient();
   const staleFailed = await recoverStaleJobs(admin);
   const staleRatingsRecovered = await recoverStaleRatingJobs();
+  // Durable backstop for the deletion outbox (the delete endpoints also kick a
+  // drain via after(); this guarantees eventual cleanup if that kick died).
+  const storageCleaned = await drainStorageCleanup(admin);
 
   // Process one queued refinement per tick. Each attempt can take minutes, so
   // a second attempt in the same serverless invocation risks being killed at
@@ -57,10 +61,11 @@ async function handle(req: NextRequest) {
   logEvent("worker.tick", {
     staleFailed,
     staleRatingsRecovered,
+    storageCleaned,
     processed: processed.length,
   });
   return NextResponse.json(
-    { ok: true, staleFailed, staleRatingsRecovered, processed },
+    { ok: true, staleFailed, staleRatingsRecovered, storageCleaned, processed },
     { status: 200 }
   );
 }

@@ -10,11 +10,12 @@ import type { GenerationJobStatus } from "@/lib/generation-types";
 import { createSupabaseServerClient, getProtectedPageIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { batchSignUrls } from "@/lib/batch-sign-urls";
+import { unwrapOrThrow } from "@/lib/unwrap";
 import { timed } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
 
-type AuditRow = { rubric: RubricJson; created_at: string };
+type AuditRow = { id: string; rubric: RubricJson; created_at: string };
 type PhotoRow = {
   id: string;
   role: "main" | "supporting";
@@ -63,25 +64,33 @@ export default async function ProductPage({
   const [entitlement, productResult, photoResult] = await Promise.all([
     timed("product.entitlement", () => getEntitlement(user.id)),
     timed("product.lookup", () =>
-      supabase.from("products").select("id, name").eq("id", id).single()
+      supabase.from("products").select("id, name").eq("id", id).maybeSingle()
     ),
     timed("product.photos", () =>
       supabase
         .from("photos")
-        .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(rubric, created_at)")
+        .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(id, rubric, created_at)")
         .eq("product_id", id)
         .order("role", { ascending: true })
         .order("position", { ascending: true })
         .order("created_at", { ascending: true })
+        // Exactly ONE latest audit per photo crosses the wire (full rubric,
+        // including the persisted supporting checklist), ordered created_at
+        // DESC, id DESC — never the whole audit history.
+        .order("created_at", { ascending: false, referencedTable: "audits" })
+        .order("id", { ascending: false, referencedTable: "audits" })
+        .limit(1, { referencedTable: "audits" })
     ),
   ]);
   if (!entitlement.active && entitlement.reason !== "past_due") {
     redirect("/subscribe");
   }
 
-  const product = productResult.data;
+  // A returned query error must fail visibly (error boundary), never look like
+  // an empty/missing product. Genuine not-found (null data, no error) redirects.
+  const product = unwrapOrThrow(productResult, "product_hydration_failed");
   if (!product) redirect("/dashboard");
-  const photoData = photoResult.data;
+  const photoData = unwrapOrThrow(photoResult, "product_hydration_failed");
 
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);
@@ -94,13 +103,16 @@ export default async function ProductPage({
     { id: string; status: string; error_message: string | null }
   >();
   if (photoIds.length > 0) {
-    const { data: ratingRows } = await timed("product.ratings", () =>
-      supabase
-        .from("rating_jobs")
-        .select("id, photo_id, status, error_message, created_at")
-        .in("photo_id", photoIds)
-        .order("created_at", { ascending: false })
-        .limit(photoIds.length * 3)
+    const ratingRows = unwrapOrThrow(
+      await timed("product.ratings", () =>
+        supabase
+          .from("rating_jobs")
+          .select("id, photo_id, status, error_message, created_at")
+          .in("photo_id", photoIds)
+          .order("created_at", { ascending: false })
+          .limit(photoIds.length * 3)
+      ),
+      "product_hydration_failed"
     );
     for (const r of (ratingRows as
       | { id: string; photo_id: string; status: string; error_message: string | null }[]
@@ -139,7 +151,8 @@ export default async function ProductPage({
         )
       );
       for (const result of perPhoto) {
-        for (const j of (result.data as JobRow[] | null) ?? []) {
+        const jobs = unwrapOrThrow(result, "product_hydration_failed");
+        for (const j of (jobs as JobRow[] | null) ?? []) {
           registerJob(j);
           if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
         }
@@ -150,10 +163,10 @@ export default async function ProductPage({
         .flatMap((r) => [r.selected_generation_job_id, r.alternate_generation_job_id])
         .filter((id): id is string => Boolean(id) && !jobsById.has(id as string));
       if (missingIds.length > 0) {
-        const { data: extra } = await supabase
-          .from("generation_jobs")
-          .select(JOB_SELECT)
-          .in("id", missingIds);
+        const extra = unwrapOrThrow(
+          await supabase.from("generation_jobs").select(JOB_SELECT).in("id", missingIds),
+          "product_hydration_failed"
+        );
         for (const j of (extra as JobRow[] | null) ?? []) registerJob(j);
       }
     });
@@ -383,13 +396,16 @@ export default async function ProductPage({
     // this page when the rating lands.
     const mainRow = rows.find((r) => r.role === "main");
     if (mainRow) {
-      const { data: pendingJob } = await supabase
-        .from("rating_jobs")
-        .select("id, status")
-        .eq("photo_id", mainRow.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      const pendingJob = unwrapOrThrow(
+        await supabase
+          .from("rating_jobs")
+          .select("id, status")
+          .eq("photo_id", mainRow.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        "product_hydration_failed"
+      );
       if (
         pendingJob &&
         (pendingJob.status === "queued" || pendingJob.status === "scoring")

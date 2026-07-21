@@ -159,28 +159,19 @@ export function ProductCard({
     setBusy(true);
     setError(null);
     try {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      // Best-effort storage cleanup (DB cascade handles photos/audits rows).
-      if (user) {
-        const prefix = `${user.id}/${id}`;
-        const { data: files } = await supabase.storage
-          .from("product-photos")
-          .list(prefix);
-        if (files?.length) {
-          await supabase.storage
-            .from("product-photos")
-            .remove(files.map((f) => `${prefix}/${f.name}`));
-        }
-      }
-      const { error } = await supabase.from("products").delete().eq("id", id);
-      if (error) throw error;
+      // Server-authoritative deletion: the endpoint verifies ownership, removes
+      // the DB rows, and durably cleans up ALL stored images (originals +
+      // generated) via the cleanup outbox. The client sends only the product id.
+      const res = await fetch("/api/products/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: id }),
+      });
+      if (!res.ok) throw new Error("delete_failed");
       setConfirming(false);
       router.refresh();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not delete. Try again.");
+    } catch {
+      setError("Could not delete. Try again.");
       setBusy(false);
     }
   }

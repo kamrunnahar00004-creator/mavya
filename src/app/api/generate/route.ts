@@ -12,10 +12,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
 import { generationDisabled, withinGlobalBudget } from "@/lib/usage";
 import { getEntitlement } from "@/lib/entitlements";
-import { refundAllowance } from "@/lib/allowances";
 import {
   runQueuedGenerationOnce,
   runQueuedRefinementChain,
+  isStaleActiveGenerationJob,
+  recoverStaleGenerationJob,
 } from "@/lib/refinement";
 import { getImageModel } from "@/lib/openai";
 import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
@@ -31,9 +32,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
-
-/** Jobs stuck in an active state longer than this are treated as failed. */
-const STALE_JOB_MS = 10 * 60 * 1000;
 
 type JobRow = {
   id: string;
@@ -137,28 +135,25 @@ async function jobPayload(
   };
 }
 
-/** Mark an overdue active job failed and refund its workflow charge. */
-async function failStaleJob(job: JobRow): Promise<JobRow> {
+/**
+ * Recover an overdue ACTIVE generation attempt through the single shared
+ * policy (never a queued job), then refetch so the payload reflects the failed
+ * state and surfaces the queued successor. A queued job is left untouched for
+ * the executor to claim.
+ */
+async function recoverIfStale(
+  supabase: SupabaseClient,
+  job: JobRow
+): Promise<JobRow> {
+  if (!isStaleActiveGenerationJob(job)) return job;
   const admin = createSupabaseAdminClient();
-  const { data } = await admin
+  const recovered = await recoverStaleGenerationJob(admin, job.id);
+  if (!recovered) return job;
+  const { data } = await supabase
     .from("generation_jobs")
-    .update({
-      status: "failed",
-      error_code: "provider_timeout",
-      updated_at: new Date().toISOString(),
-      completed_at: new Date().toISOString(),
-      refunded: true,
-    })
+    .select("*")
     .eq("id", job.id)
-    .in("status", ["queued", "generating", "fidelity_check", "rescoring"])
-    .select()
     .maybeSingle();
-  // Only the charged attempt consumed a workflow allowance; legacy jobs may
-  // carry a credit_key which no longer refunds anything meaningful.
-  if (data && (job.attempt_number ?? 1) === 1 && job.allowance_key) {
-    await refundAllowance(job.allowance_key);
-  }
-  logEvent("generate.stale_job_failed", { jobId: job.id });
   return (data as JobRow) ?? job;
 }
 
@@ -180,13 +175,7 @@ export async function GET(req: NextRequest) {
   const { data } = await query.maybeSingle();
   if (!data) return apiError("source_unavailable", "Job not found.");
 
-  let job = data as JobRow;
-  if (
-    ACTIVE_JOB_STATUSES.has(job.status) &&
-    Date.now() - new Date(job.updated_at).getTime() > STALE_JOB_MS
-  ) {
-    job = await failStaleJob(job);
-  }
+  const job = await recoverIfStale(supabase, data as JobRow);
   // Self-healing execution: the daily worker cron is only a backstop, and the
   // in-invocation after() kick can be frozen by the platform. A poll that
   // finds ANY still-queued job (attempt 1 or a refinement) kicks its
@@ -303,13 +292,7 @@ export async function POST(req: NextRequest) {
           "This request key was already used with different parameters."
         );
       }
-      let current = job;
-      if (
-        ACTIVE_JOB_STATUSES.has(current.status) &&
-        Date.now() - new Date(current.updated_at).getTime() > STALE_JOB_MS
-      ) {
-        current = await failStaleJob(current);
-      }
+      const current = await recoverIfStale(supabase, job);
       return NextResponse.json(await jobPayload(supabase, current), {
         status: ACTIVE_JOB_STATUSES.has(current.status) ? 202 : 200,
       });

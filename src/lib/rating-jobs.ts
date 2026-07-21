@@ -267,12 +267,18 @@ export async function runQueuedRatingOnce(
       return job.id;
     }
 
-    const { data: existingAudit } = await admin
-      .from("audits")
-      .select("id")
-      .eq("photo_id", photo.id)
-      .eq("score_cache_id", scoreCacheId)
-      .maybeSingle();
+    const findExistingAudit = () =>
+      admin
+        .from("audits")
+        .select("id")
+        .eq("photo_id", photo.id)
+        .eq("score_cache_id", scoreCacheId)
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    const { data: existingAudit } = await findExistingAudit();
     let audit = existingAudit;
     let auditError: { message?: string } | null = null;
     if (!audit) {
@@ -291,6 +297,15 @@ export async function runQueuedRatingOnce(
         .single();
       audit = inserted.data;
       auditError = inserted.error;
+      // Concurrent writer won the (photo_id, score_cache_id) unique index:
+      // adopt the winning audit and complete this rating with it.
+      if (auditError && (auditError as { code?: string }).code === "23505") {
+        const { data: winner } = await findExistingAudit();
+        if (winner) {
+          audit = winner;
+          auditError = null;
+        }
+      }
     }
     if (auditError || !audit) {
       await failJob(job, "persistence_failed", "The rating could not be saved.", true);
