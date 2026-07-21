@@ -111,11 +111,11 @@ export default async function DashboardPage() {
         <h1 className="font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
           Get More Etsy Clicks in 4 Simple Steps
         </h1>
-        <p className="mt-3 max-w-[460px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
+        <p className="mt-3 max-w-[480px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
           Upload your Etsy thumbnail. Get an honest score. Fix it in one click.
-          Then optimize every supporting photo to help turn more views into sales.
+          Then improve every supporting photo in your listing.
         </p>
-        <div className="mt-8 w-full max-w-[440px]">
+        <div className="mt-9 w-full max-w-[520px]">
           <AddProductCard variant="dropzone" />
         </div>
       </main>

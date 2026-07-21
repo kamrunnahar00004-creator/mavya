@@ -141,7 +141,7 @@ export function AddProductCard({
               if (f) chooseFile(f);
             }}
             className={cn(
-              "group flex min-h-[256px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-6 py-9 text-center shadow-[var(--shadow-soft)] transition-all",
+              "group flex min-h-[400px] cursor-pointer flex-col items-center justify-center gap-6 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-8 py-16 text-center shadow-[var(--shadow-soft)] transition-all",
               "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
               dragActive && "dropzone-active",
               busy && "pointer-events-none opacity-70"
@@ -151,14 +151,14 @@ export function AddProductCard({
               <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
             </span>
             <span>
-              <span className="block text-[17px] font-bold text-[var(--color-ink)]">
+              <span className="block text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
                 Drop your thumbnail here
               </span>
-              <span className="mt-1 block text-[13px] text-[var(--color-ink-muted)]">
+              <span className="mt-1.5 block text-[13.5px] text-[var(--color-ink-muted)]">
                 JPG or PNG, and your photo stays private
               </span>
             </span>
-            <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+            <span className="rounded-full bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
               Score My Thumbnail
             </span>
           </div>
