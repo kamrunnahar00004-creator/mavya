@@ -19,7 +19,11 @@ type Step = "idle" | "saving";
  * durable scoring pipeline. The server persists the product + photo first,
  * then the dashboard card keeps polling while the rating finishes.
  */
-export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero" }) {
+export function AddProductCard({
+  variant = "tile",
+}: {
+  variant?: "tile" | "hero" | "dropzone";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -108,6 +112,80 @@ export function AddProductCard({ variant = "tile" }: { variant?: "tile" | "hero"
           <Plus className="h-5 w-5" aria-hidden="true" />
           Rate my thumbnail
         </button>
+      ) : variant === "dropzone" ? (
+        <div className="w-full">
+          {/* Inline drag-and-drop card (no modal): drop or click to score a
+              thumbnail in one step. The full-screen analyzing overlay below
+              takes over while the durable rating runs. */}
+          <div
+            role="button"
+            tabIndex={0}
+            aria-label="Upload listing thumbnail"
+            onClick={() => !busy && inputRef.current?.click()}
+            onKeyDown={(e) => {
+              if ((e.key === "Enter" || e.key === " ") && !busy) {
+                e.preventDefault();
+                inputRef.current?.click();
+              }
+            }}
+            onDragOver={(e: DragEvent<HTMLDivElement>) => {
+              e.preventDefault();
+              if (!busy) setDragActive(true);
+            }}
+            onDragLeave={() => setDragActive(false)}
+            onDrop={(e: DragEvent<HTMLDivElement>) => {
+              e.preventDefault();
+              setDragActive(false);
+              if (busy) return;
+              const f = e.dataTransfer.files?.[0];
+              if (f) chooseFile(f);
+            }}
+            className={cn(
+              "group flex min-h-[256px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-6 py-9 text-center shadow-[var(--shadow-soft)] transition-all",
+              "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
+              dragActive && "dropzone-active",
+              busy && "pointer-events-none opacity-70"
+            )}
+          >
+            <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+              <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
+            </span>
+            <span>
+              <span className="block text-[17px] font-bold text-[var(--color-ink)]">
+                Drop your thumbnail here
+              </span>
+              <span className="mt-1 block text-[13px] text-[var(--color-ink-muted)]">
+                JPG or PNG, and your photo stays private
+              </span>
+            </span>
+            <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+              Score My Thumbnail
+            </span>
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) chooseFile(f);
+              e.target.value = "";
+            }}
+          />
+          {error && (
+            <div
+              role="alert"
+              className="mt-4 flex items-start gap-2 rounded-[var(--radius-lg)] border border-[var(--color-weak)] bg-[var(--color-weak-soft)] px-3 py-2 text-left text-[13px] text-[var(--color-ink)]"
+            >
+              <AlertCircle
+                className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-weak)]"
+                aria-hidden="true"
+              />
+              <span>{error}</span>
+            </div>
+          )}
+        </div>
       ) : (
         <button
           type="button"

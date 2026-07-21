@@ -81,31 +81,42 @@ export default async function DashboardPage() {
   ) : null;
 
   if (cards.length === 0) {
-    return (
-      <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pb-20 text-center">
-        {pastDueBanner}
-        <span className="flex h-24 w-24 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-tint)] text-[var(--color-primary)] shadow-[var(--shadow-soft)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
-          <ImageUp className="h-11 w-11" strokeWidth={1.5} aria-hidden="true" />
-        </span>
-        <h1 className="mt-7 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
-          {pastDue ? "Your credits are paused" : "Rate your first product thumbnail"}
-        </h1>
-        <p className="mt-3 max-w-[400px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-          {pastDue
-            ? "Update your billing details to rate and improve a new photo."
-            : "Get an honest score, then let Mavya improve the photo automatically."}
-        </p>
-        <div className="mt-7">
-          {pastDue ? (
+    if (pastDue) {
+      return (
+        <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pb-20 text-center">
+          {pastDueBanner}
+          <span className="flex h-24 w-24 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-tint)] text-[var(--color-primary)] shadow-[var(--shadow-soft)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+            <ImageUp className="h-11 w-11" strokeWidth={1.5} aria-hidden="true" />
+          </span>
+          <h1 className="mt-7 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
+            Your credits are paused
+          </h1>
+          <p className="mt-3 max-w-[400px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
+            Update your billing details to rate and improve a new photo.
+          </p>
+          <div className="mt-7">
             <Link
               href="/settings"
               className="inline-flex rounded-full bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
             >
               Fix billing in Settings
             </Link>
-          ) : (
-            <AddProductCard variant="hero" />
-          )}
+          </div>
+        </main>
+      );
+    }
+
+    return (
+      <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pb-20 text-center">
+        <h1 className="font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
+          Get More Etsy Clicks in 4 Simple Steps
+        </h1>
+        <p className="mt-3 max-w-[460px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
+          Upload your Etsy thumbnail. Get an honest score. Fix it in one click.
+          Then optimize every supporting photo to help turn more views into sales.
+        </p>
+        <div className="mt-8 w-full max-w-[440px]">
+          <AddProductCard variant="dropzone" />
         </div>
       </main>
     );
