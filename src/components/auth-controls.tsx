@@ -18,7 +18,12 @@ type ModalState = "login" | "signup" | null;
  * render, and opening the modal surfaces the "env not set" error rather than
  * crashing the page.
  */
-export function AuthControls() {
+export function AuthControls({
+  hideDashboard = false,
+}: {
+  /** Route-driven: hide the Dashboard pill on the subscription surface. */
+  hideDashboard?: boolean;
+} = {}) {
   const router = useRouter();
   const [modal, setModal] = useState<ModalState>(null);
   const [signedIn, setSignedIn] = useState<boolean | null>(null);
@@ -109,14 +114,16 @@ export function AuthControls() {
           >
             Feedback
           </Link>
-          <Link
-            href="/dashboard"
-            prefetch
-            className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
-          >
-            <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
-            Dashboard
-          </Link>
+          {!hideDashboard && (
+            <Link
+              href="/dashboard"
+              prefetch
+              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
+            >
+              <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
+              Dashboard
+            </Link>
+          )}
           <div className="relative" ref={settingsRef}>
             <button
               type="button"
