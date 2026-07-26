@@ -218,9 +218,9 @@ function SubscribeInner() {
             </p>
             <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
               Need more credits?{" "}
-              <a href="mailto:hello@mavya.ai" className="font-semibold text-[var(--color-primary)]">
+              <span className="font-semibold text-[var(--color-primary)]">
                 Contact us
-              </a>
+              </span>
               .
             </p>
           </div>
