@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -66,8 +65,6 @@ function UsageBar({ used, limit }: { used: number; limit: number }) {
 }
 
 function SubscribeInner() {
-  const params = useSearchParams();
-  const cancelled = params.get("checkout") === "cancelled";
 
   const [authState, setAuthState] = useState<"checking" | "in" | "out">("checking");
   const [authOpen, setAuthOpen] = useState(false);
@@ -162,30 +159,13 @@ function SubscribeInner() {
       </h1>
       <p className="mt-2.5 max-w-[520px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
         Mavya scores your product photos, shows you what&apos;s weakening them,
-        and creates stronger versions in seconds. Improve your thumbnail,
-        strengthen your supporting images, and present your products
-        professionally, without hours of editing.
+        and creates stronger versions in seconds.
       </p>
-
-      {cancelled && !active && (
-        <Banner tone="tint">
-          Checkout was cancelled. Nothing was charged. Your photo is still
-          saved, so you can start whenever you are ready.
-        </Banner>
-      )}
 
       {pastDue && (
         <Banner tone="weak">
           Your payment did not go through. Update your payment method to keep
           using your credits. Your saved results are safe.
-        </Banner>
-      )}
-
-      {billingConfigurationIssue && (
-        <Banner tone="tint">
-          We found an older or expired plan on your account. Use Manage billing
-          to update it safely; we will not start a second subscription by
-          accident.
         </Banner>
       )}
 
@@ -224,8 +204,8 @@ function SubscribeInner() {
               Founding price. Rises to $29 as we add features.
             </p>
             <p className="mt-2 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
-              Enough for about 20 complete Etsy listing reviews and photo
-              improvements each month.
+              1,000 AI credits every month, enough for about 20 complete Etsy
+              listing reviews and photo improvements.
             </p>
             <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
               Need more credits?{" "}
