@@ -30,11 +30,13 @@ type BillingStatus = {
  * Features listed by capability, not cost conversion.
  */
 const FEATURES = [
-  "Product photo ratings",
-  "Thumbnail improvements",
-  "Supporting photo improvements",
-  "Automatic background processing",
-  "Best version selected for you",
+  "Full listing-photo ratings",
+  "Clear improvement recommendations",
+  "Enhanced main and supporting photos",
+  "Multiple versions generated automatically",
+  "Strongest result selected for you",
+  "Original product preserved during enhancement",
+  "Full-resolution downloads",
   "Cancel anytime",
 ];
 
@@ -156,11 +158,13 @@ function SubscribeInner() {
   return (
     <main className="mx-auto max-w-[640px] px-6 pb-20 pt-12 sm:pt-16">
       <h1 className="font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
-        Mavya Credits
+        See exactly what&apos;s costing your Etsy listing clicks
       </h1>
       <p className="mt-2.5 max-w-[520px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-        Improve your product photos with honest ratings and AI-powered photo
-        improvements.
+        Mavya scores your product photos, shows you what&apos;s weakening them,
+        and creates stronger versions in seconds. Improve your thumbnail,
+        strengthen your supporting images, and present your products
+        professionally, without hours of editing.
       </p>
 
       {cancelled && !active && (
@@ -201,20 +205,27 @@ function SubscribeInner() {
         {/* Price header */}
         <div className="flex flex-col gap-2 px-6 py-6 sm:px-8 sm:py-8">
           <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">
-            Early user discount
+            Founding Seller Plan
           </p>
           <p className="text-[13px] font-semibold uppercase tracking-[0.08em] text-[var(--color-primary)]">
             Lock in this price forever
           </p>
           <div>
             <p className="font-display text-[40px] font-bold leading-none tracking-[-0.03em] text-[var(--color-ink)]">
+              <span className="mr-2 align-middle text-[24px] font-semibold text-[var(--color-ink-soft)] line-through">
+                $29
+              </span>
               $19
               <span className="text-[16px] font-semibold tracking-normal text-[var(--color-ink-muted)]">
                 /month
               </span>
             </p>
+            <p className="mt-2 text-[13px] text-[var(--color-ink-soft)]">
+              Founding price. Rises to $29 as we add features.
+            </p>
             <p className="mt-2 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
-              Up to 1,000 AI credits per month
+              Enough for about 20 complete Etsy listing reviews and photo
+              improvements each month.
             </p>
             <p className="mt-1 text-[13px] text-[var(--color-ink-soft)]">
               Need more credits?{" "}
@@ -295,7 +306,7 @@ function SubscribeInner() {
                 {busy === "checkout" && (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 )}
-                Start with Mavya
+                Improve My Etsy Listings
               </button>
               {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
                 <button
