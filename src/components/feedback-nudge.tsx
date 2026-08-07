@@ -23,6 +23,7 @@ export function FeedbackNudge({ workflowId }: { workflowId: string }) {
   const [imageNote, setImageNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   // Show only if this workflow has not been answered/dismissed before. Start
   // hidden on both server and first client render (no hydration mismatch), then
@@ -55,8 +56,10 @@ export function FeedbackNudge({ workflowId }: { workflowId: string }) {
   async function submit() {
     if (submitting) return;
     setSubmitting(true);
+    setFailed(false);
+    let ok = false;
     try {
-      await fetch("/api/feedback/workflow", {
+      const res = await fetch("/api/feedback/workflow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -67,12 +70,19 @@ export function FeedbackNudge({ workflowId }: { workflowId: string }) {
           imageRatingNote: imageNote.trim() || undefined,
         }),
       });
+      ok = res.ok;
     } catch {
-      // Best-effort: never block the seller on a feedback save.
+      ok = false;
+    }
+    setSubmitting(false);
+    if (!ok) {
+      // Never lose feedback on a failure: keep the form open and let them retry.
+      // Do NOT remember() or mark done, so the widget is not permanently hidden.
+      setFailed(true);
+      return;
     }
     trackClientEvent("wf_feedback_submitted");
     remember();
-    setSubmitting(false);
     setDone(true);
     window.setTimeout(() => setHidden(true), 1400);
   }
@@ -128,8 +138,13 @@ export function FeedbackNudge({ workflowId }: { workflowId: string }) {
                   className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_2px_8px_rgba(232,107,57,0.25)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-                  Send feedback
+                  {failed ? "Try again" : "Send feedback"}
                 </button>
+                {failed && (
+                  <span className="text-[12px] text-[var(--color-weak)]" role="alert">
+                    Could not save just now. Your answers are still here, try again.
+                  </span>
+                )}
               </div>
             </>
           )}

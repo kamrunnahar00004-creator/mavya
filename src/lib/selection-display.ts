@@ -34,3 +34,27 @@ export function oneClickGenerationAllowed(flags: {
 }): boolean {
   return !(flags.wrongProduct || flags.digital || flags.graphic);
 }
+
+/**
+ * The workflow ROOT job id (attempt-1's id) that /api/feedback/workflow accepts.
+ * Every version carries its workflow_id: the root's is null (it IS the root), a
+ * refinement's points back at the root. So root = workflowId ?? (attempt 1 ? id).
+ * Works even when attempt 1 failed and only a later attempt is a completed
+ * version — that version's workflowId still points at the root. Never falls back
+ * to a non-root version id (which the API rejects).
+ */
+export function deriveWorkflowRootId(
+  versions:
+    | readonly {
+        id: string;
+        attemptNumber?: number;
+        workflowId?: string | null;
+      }[]
+    | undefined
+): string | null {
+  for (const v of versions ?? []) {
+    const root = v.workflowId ?? ((v.attemptNumber ?? 1) === 1 ? v.id : null);
+    if (root) return root;
+  }
+  return null;
+}

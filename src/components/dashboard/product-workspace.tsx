@@ -23,6 +23,7 @@ import {
 } from "@/lib/generation-types";
 import {
   candidateBeatsKept,
+  deriveWorkflowRootId,
   oneClickGenerationAllowed,
 } from "@/lib/selection-display";
 import { coveredShotIds } from "@/lib/checklist-coverage";
@@ -42,6 +43,9 @@ export type InitialJob = {
   fidelity: FidelityReport | null;
   /** 1 = user-visible attempt; 2-3 = quiet background refinement. */
   attemptNumber?: number;
+  /** generation_jobs.workflow_id: null on the attempt-1 root, else the root id.
+   *  Used to derive the feedback workflow root (see deriveWorkflowRootId). */
+  workflowId?: string | null;
   /** ISO timestamp of the version's completion (for picker labels). */
   createdAt?: string;
 };
@@ -363,6 +367,7 @@ function withVersion(photo: Photo, payload: GenerationJobPayload): InitialJob[] 
     candidateRubric: payload.candidateRubric,
     fidelity: payload.fidelity,
     attemptNumber: payload.attemptNumber ?? 1,
+    workflowId: payload.workflowId ?? null,
     createdAt: new Date().toISOString(),
   };
   const rest = photo.versions.filter((v) => v.id !== entry.id);
@@ -1256,10 +1261,7 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     active.improveStatus !== "generating" &&
     !active.backgroundRefining &&
     (active.versions?.length ?? 0) > 0;
-  const feedbackWorkflowId =
-    (active.versions ?? []).find((v) => (v.attemptNumber ?? 1) === 1)?.id ??
-    active.versions?.[0]?.id ??
-    null;
+  const feedbackWorkflowId = deriveWorkflowRootId(active.versions);
 
   // Version picker (top-right menu on the photo): Original + the last five
   // generated versions of the ACTIVE photo, newest first, current checkmarked.

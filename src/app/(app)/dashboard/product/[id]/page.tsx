@@ -40,6 +40,7 @@ type JobRow = {
   candidate_rubric: RubricJson | null;
   fidelity: FidelityReport | null;
   attempt_number: number | null;
+  workflow_id: string | null;
   created_at: string;
 };
 
@@ -127,7 +128,7 @@ export default async function ProductPage({
   // margin, and keeps the page fast for heavy generators. Per-photo queries
   // run concurrently (a product has at most one main + a few supporting).
   const JOB_SELECT =
-    "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, created_at";
+    "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, workflow_id, created_at";
   const jobsByPhoto = new Map<string, JobRow>();
   const jobsByPhotoId = new Map<string, JobRow[]>();
   const jobsById = new Map<string, JobRow>();
@@ -312,6 +313,7 @@ export default async function ProductPage({
         candidateRubric: v.candidate_rubric,
         fidelity: v.fidelity,
         attemptNumber: v.attempt_number ?? 1,
+        workflowId: v.workflow_id,
         createdAt: v.created_at,
       });
     }
@@ -331,6 +333,7 @@ export default async function ProductPage({
         candidateRubric: jobRow.candidate_rubric,
         fidelity: jobRow.fidelity,
         attemptNumber: jobRow.attempt_number ?? 1,
+        workflowId: jobRow.workflow_id,
         createdAt: jobRow.created_at,
       };
     }

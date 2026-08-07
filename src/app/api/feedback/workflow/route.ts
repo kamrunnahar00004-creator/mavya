@@ -3,11 +3,10 @@ import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/serve
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
+import { buildWorkflowFeedbackFields } from "@/lib/workflow-feedback";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-const MAX_TEXT = 500;
 
 /**
  * Post-workflow seller feedback. Evidence for the founder's weekly review —
@@ -47,30 +46,14 @@ export async function POST(req: NextRequest) {
     return apiError("source_unavailable", "Workflow not found.");
   }
 
-  const optionalBool = (v: unknown) => (typeof v === "boolean" ? v : null);
-  const optionalText = (v: unknown) =>
-    typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT) || null : null;
-  // 1-5 star rating; anything else is treated as "not answered".
-  const optionalStar = (v: unknown) =>
-    typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5 ? v : null;
+  const built = buildWorkflowFeedbackFields(body);
+  if (!built.ok) return apiError("bad_request", built.error);
+  const patch = { user_id: user.id, workflow_id: workflowId, ...built.fields };
 
   const admin = createSupabaseAdminClient();
-  const { error } = await admin.from("workflow_feedback").upsert(
-    {
-      user_id: user.id,
-      workflow_id: workflowId,
-      better_than_original: optionalBool(body.betterThanOriginal),
-      would_use: optionalBool(body.wouldUse),
-      detail_changed: optionalBool(body.detailChanged),
-      preferred_version: optionalText(body.preferredVersion),
-      rejection_reason: optionalText(body.rejectionReason),
-      rating_agreement: optionalStar(body.ratingAgreement),
-      rating_agreement_note: optionalText(body.ratingAgreementNote),
-      image_rating: optionalStar(body.imageRating),
-      image_rating_note: optionalText(body.imageRatingNote),
-    },
-    { onConflict: "user_id,workflow_id" }
-  );
+  const { error } = await admin
+    .from("workflow_feedback")
+    .upsert(patch, { onConflict: "user_id,workflow_id" });
   if (error) {
     logEvent("wf_feedback.failed", { userId: user.id, workflowId, error: error.message });
     return apiError("persistence_failed", "Your feedback could not be saved. Try again.");
