@@ -36,12 +36,19 @@ export function oneClickGenerationAllowed(flags: {
 }
 
 /**
- * The workflow ROOT job id (attempt-1's id) that /api/feedback/workflow accepts.
+ * The workflow ROOT job id (attempt-1's id) that /api/feedback/workflow accepts,
+ * for the MOST RECENTLY COMPLETED workflow (feedback should target the last
+ * thing the seller just saw, not an old one). `versions` order is not
+ * guaranteed by callers (hydration is oldest-first; the live path appends), so
+ * this picks the entry with the latest createdAt rather than the first/last
+ * array element.
+ *
  * Every version carries its workflow_id: the root's is null (it IS the root), a
  * refinement's points back at the root. So root = workflowId ?? (attempt 1 ? id).
- * Works even when attempt 1 failed and only a later attempt is a completed
- * version — that version's workflowId still points at the root. Never falls back
- * to a non-root version id (which the API rejects).
+ * Works even when the LATEST workflow's attempt 1 failed and only its attempt 2
+ * is a completed version — that version's workflowId still points at the true
+ * root. Never returns a non-root version id (which the API rejects); returns
+ * null instead when the latest entry cannot resolve one.
  */
 export function deriveWorkflowRootId(
   versions:
@@ -49,12 +56,15 @@ export function deriveWorkflowRootId(
         id: string;
         attemptNumber?: number;
         workflowId?: string | null;
+        createdAt?: string;
       }[]
     | undefined
 ): string | null {
-  for (const v of versions ?? []) {
-    const root = v.workflowId ?? ((v.attemptNumber ?? 1) === 1 ? v.id : null);
-    if (root) return root;
-  }
-  return null;
+  if (!versions || versions.length === 0) return null;
+  const latest = versions.reduce((best, v) => {
+    const bestTime = best.createdAt ? Date.parse(best.createdAt) : -Infinity;
+    const vTime = v.createdAt ? Date.parse(v.createdAt) : -Infinity;
+    return vTime > bestTime ? v : best;
+  });
+  return latest.workflowId ?? ((latest.attemptNumber ?? 1) === 1 ? latest.id : null);
 }

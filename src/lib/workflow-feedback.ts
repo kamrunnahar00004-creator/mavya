@@ -42,12 +42,33 @@ export function buildWorkflowFeedbackFields(
 ): FeedbackFieldsResult {
   const fields: Record<string, unknown> = {};
 
+  // Every field below follows the same rule: a SUPPLIED value must be either
+  // `null` (explicit "clear this") or the correct type. Any other supplied type
+  // (wrong-shaped client, a bug, a malicious request) is a 400, never a silent
+  // null — silently coercing a bad value would look identical to "the seller
+  // said nothing" and could quietly erase real intent.
   for (const [key, col] of BOOL_FIELDS) {
-    if (key in body) fields[col] = typeof body[key] === "boolean" ? body[key] : null;
+    if (!(key in body)) continue;
+    const v = body[key];
+    if (v === null || typeof v === "boolean") {
+      fields[col] = v;
+      continue;
+    }
+    return { ok: false, error: `Invalid ${key}: expected a boolean or null.` };
   }
 
   for (const [key, col] of TEXT_FIELDS) {
-    if (key in body) fields[col] = cleanText(body[key]);
+    if (!(key in body)) continue;
+    const v = body[key];
+    if (v === null) {
+      fields[col] = null;
+      continue;
+    }
+    if (typeof v === "string") {
+      fields[col] = cleanText(v);
+      continue;
+    }
+    return { ok: false, error: `Invalid ${key}: expected a string or null.` };
   }
 
   for (const [key, col] of STAR_FIELDS) {
@@ -61,7 +82,7 @@ export function buildWorkflowFeedbackFields(
       fields[col] = v;
       continue;
     }
-    return { ok: false, error: `Invalid ${key}: expected an integer 1 to 5.` };
+    return { ok: false, error: `Invalid ${key}: expected an integer 1 to 5, or null.` };
   }
 
   if (Object.keys(fields).length === 0) {

@@ -51,9 +51,15 @@ export async function POST(req: NextRequest) {
   const patch = { user_id: user.id, workflow_id: workflowId, ...built.fields };
 
   const admin = createSupabaseAdminClient();
-  const { error } = await admin
-    .from("workflow_feedback")
-    .upsert(patch, { onConflict: "user_id,workflow_id" });
+  const { error } = await admin.from("workflow_feedback").upsert(patch, {
+    onConflict: "user_id,workflow_id",
+    // Defensive: defaultToNull's null-filling only affects postgrest-js's
+    // bulk/array upsert path (it unions columns across array items and fills
+    // gaps with null); a single-object upsert like this one is unaffected
+    // either way. Set explicitly so this call is correct even if a future edit
+    // switches to a batch upsert.
+    defaultToNull: false,
+  });
   if (error) {
     logEvent("wf_feedback.failed", { userId: user.id, workflowId, error: error.message });
     return apiError("persistence_failed", "Your feedback could not be saved. Try again.");
