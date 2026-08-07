@@ -495,6 +495,21 @@
       },
       "strictness": "soft",
       "notes": "The worse AI-'improved' version of the graphic (production 3.9, below the 6.0 original; ~3.1 under supporting-v8). Confirms the generator cannot turn a marketing graphic into a good clean photo, which is exactly why one-click fix is now gated off for graphics. upload_kind unstable run-to-run; band=weak is the assertion."
+    },
+    {
+      "id": "customer1-main-graphic",
+      "image": "eval/fixtures/customer1/4_SUPPORTING2_original_score6.0.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "score_range": [
+          0.1,
+          7.9
+        ]
+      },
+      "strictness": "soft",
+      "notes": "The composed listing graphic scored through the MAIN rubric (main-v13 is_marketing_graphic contract). The CRITICAL check this guards is the false-positive risk: the ordinary main photos (customer1-main-original / -improved) must flag is_marketing_graphic=false so One-click is never wrongly disabled on a real photo (verified). Main-photo true-positive detection is intentionally weak (no main worked example): the model often classifies a composed graphic-as-main as digital_product and scores it low, which the digital server gate + low score already handle. band/upload_kind are not the assertion; the graphic flag on ordinary mains is."
     }
   ]
 }

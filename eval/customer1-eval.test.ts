@@ -37,7 +37,7 @@ describe.skipIf(!LIVE)("live customer-1 scoring eval", () => {
 
       const set = loadGoldenSet();
       const fixtures = set.fixtures.filter((f) => f.id.startsWith("customer1-"));
-      expect(fixtures.length, "customer1 fixtures present").toBe(5);
+      expect(fixtures.length, "customer1 fixtures present").toBe(6);
 
       const run: EvalRun = { ...runMeta(), results: [] };
       for (const f of fixtures) {

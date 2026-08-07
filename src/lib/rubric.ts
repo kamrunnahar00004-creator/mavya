@@ -176,11 +176,13 @@ export type RubricJson = {
   /** One sentence naming the concrete visible evidence; "" when none. */
   trust_evidence?: string;
   /** True when the image is a composed listing/advertising GRAPHIC (sales-text
-   *  banner, promo/price/CTA overlay, or an ad-style collage) rather than a
-   *  photograph or a clean file preview. Populated by the supporting rubric;
-   *  deterministically caps the supporting overall into the weak band because a
-   *  buyer does not receive the composed advertisement. Optional/false on main
-   *  and legacy rubrics. */
+   *  banner, promo/price/CTA overlay, or an ad-style collage/diagram) rather
+   *  than a photograph or a clean file preview. Emitted by BOTH the main and
+   *  supporting rubrics (the strict response schema requires it); an ordinary
+   *  studio/lifestyle product photo is false. DETECTION ONLY — it never changes
+   *  the score; it drives the UI disclosure banner and gates one-click
+   *  generation (which cannot preserve a graphic's text/layout). Optional only
+   *  on legacy audits scored before this field existed. */
   is_marketing_graphic?: boolean;
 };
 
@@ -343,6 +345,8 @@ product_summary: a short, specific description of the main product for listing c
 
 Main-photo only fields: this prompt grades a MAIN listing photo, not a supporting photo. Always return supporting_photo_role: "other", buyer_question_answered: "", and supporting_verdict: "". Those three fields are only populated when a supporting photo is graded.
 
+is_marketing_graphic: a MAIN listing photo is almost always a real product PHOTOGRAPH, so this is false. Set it true ONLY when the uploaded main image is itself a composed promotional/listing GRAPHIC rather than a photograph of the product: a sales-text banner, a headline / price / discount / call-to-action overlay, or an ad-style collage assembled from product cut-outs plus text blocks, arrows, or diagrams. Ordinary studio, white-background, or lifestyle product photography is false, even with a small logo or watermark. When it is true, priority_action should tell the seller to upload a plain photograph of the actual product instead of the graphic.
+
 Output rules:
 - Return exactly 3 next_steps.
 - priority_action: imperative, max 12 words. Make it a scannable command.
@@ -385,7 +389,8 @@ Invalid-input JSON:
   "generation_risk": "unsupported",
   "generation_risk_reason": "No product photo is available to improve.",
   "trust_risk": "none",
-  "trust_evidence": ""
+  "trust_evidence": "",
+  "is_marketing_graphic": false
 }
 
 Valid JSON shape:
@@ -416,7 +421,8 @@ Valid JSON shape:
   "generation_risk": "standard" | "review_text" | "unsupported",
   "generation_risk_reason": string,
   "trust_risk": "none" | "moderate" | "high" (evidence-based provenance/trust risk; "none" without concrete visible evidence; "moderate" for minor evidence such as a slight halo or one ambiguous artifact; "high" for clear evidence: AI-invented product design, garbled/melted text, warped anatomy, impossible scale, hard cutout with no contact shadow),
-  "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none". Never claim evidence you cannot point at.)
+  "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none". Never claim evidence you cannot point at.),
+  "is_marketing_graphic": boolean (true ONLY when the main image is a composed promotional graphic: sales-text banner, price/CTA overlay, or ad-style collage/diagram. An ordinary product photograph is false. Detection only; it never changes the score)
 }`;
 
 export const INVALID_RESPONSE: RubricJson = {
