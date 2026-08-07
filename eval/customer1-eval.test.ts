@@ -15,7 +15,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
-import { loadGoldenSet, runFixture, runMeta, type EvalRun } from "./harness";
+import { loadGoldenSet, runFixture, runMeta } from "./harness";
 
 function loadLocalEnv(): void {
   const envPath = path.resolve(__dirname, "..", ".env.local");
@@ -39,23 +39,50 @@ describe.skipIf(!LIVE)("live customer-1 scoring eval", () => {
       const fixtures = set.fixtures.filter((f) => f.id.startsWith("customer1-"));
       expect(fixtures.length, "customer1 fixtures present").toBe(6);
 
-      const run: EvalRun = { ...runMeta(), results: [] };
+      // Repeated runs measure is_marketing_graphic stability (false positives on
+      // ordinary photos, false negatives on graphics). EVAL_REPEATS=3 recommended.
+      const repeats = Math.max(1, Number(process.env.EVAL_REPEATS || 1));
+      const meta = runMeta();
+      console.log(
+        `\n[customer1-eval] model ${meta.model} · main ${meta.rubricVersions.main} / ${meta.rubricVersions.supporting} · repeats=${repeats}`
+      );
+
+      const flagGot: Record<string, boolean[]> = {};
+      let anyError = false;
       for (const f of fixtures) {
-        run.results.push(await runFixture(f));
-        await new Promise((r) => setTimeout(r, 3000));
+        const expected = f.expected.is_marketing_graphic;
+        flagGot[f.id] = [];
+        for (let i = 0; i < repeats; i++) {
+          const r = await runFixture(f);
+          if (r.band === "error") anyError = true;
+          flagGot[f.id].push(r.isMarketingGraphic);
+          const flagBad =
+            expected !== undefined && r.isMarketingGraphic !== expected;
+          console.log(
+            `[customer1-eval] ${f.id.padEnd(30)} run${i + 1} score=${r.score.toFixed(1)} band=${r.band.padEnd(6)} kind=${r.uploadKind} graphic=${r.isMarketingGraphic}${expected !== undefined ? ` (want ${expected})` : ""}${flagBad ? " <-- FLAG MISMATCH" : ""}`
+          );
+          await new Promise((res) => setTimeout(res, 3000));
+        }
       }
 
-      console.log(`\n[customer1-eval] model ${run.model} · ${run.rubricVersions.supporting}`);
-      for (const r of run.results) {
-        const soft = r.checks.filter((c) => c.level === "soft" && !c.pass);
-        console.log(
-          `[customer1-eval] ${r.id.padEnd(30)} score=${r.score.toFixed(1)} band=${r.band.padEnd(6)} kind=${r.uploadKind} graphic=${r.isMarketingGraphic} role=${r.priorityFamily}` +
-            (soft.length ? ` · WARN: ${soft.map((c) => `${c.name}(${c.detail})`).join("; ")}` : "")
-        );
+      // False-positive / false-negative tally for the graphic flag.
+      let fp = 0;
+      let fn = 0;
+      let n = 0;
+      for (const f of fixtures) {
+        const expected = f.expected.is_marketing_graphic;
+        if (expected === undefined) continue;
+        for (const got of flagGot[f.id]) {
+          n++;
+          if (expected === false && got === true) fp++;
+          if (expected === true && got === false) fn++;
+        }
       }
+      console.log(
+        `[customer1-eval] is_marketing_graphic over ${n} runs -> false positives (ordinary flagged graphic): ${fp}, false negatives (graphic missed): ${fn}`
+      );
 
-      // Report-only: soft fixtures never assert. The score table is the artifact.
-      expect(run.results.every((r) => r.band !== "error"), "no run errors").toBe(true);
+      expect(anyError, "no run errors").toBe(false);
     },
     20 * 60_000
   );

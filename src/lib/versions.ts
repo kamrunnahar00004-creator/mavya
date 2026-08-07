@@ -24,12 +24,13 @@ export const TAXONOMY_VERSION = 1;
 // worked examples teach the boundary; the flag drives UI disclosure + generation
 // gating. Keeps the supporting-v7 Accuracy gate (background <= 3 caps at 4.9) as
 // the only misleading-graphic safety net. (2026-08-07.)
-// main-v13: is_marketing_graphic added to the MAIN prompt + its JSON shapes so
-// the strict-schema-required field is defined for main scoring too (an ordinary
-// product photo is false; a composed promo graphic used as the main image is
-// true). Bumped so main audits cached under v12 (which lacked the field) are
-// invalidated and cannot mix contracts. Detection only; no score change.
-export const RUBRIC_VERSION = "main-v13";
+// main-v14: main-rubric is_marketing_graphic WORKED EXAMPLES (a positive
+// banner+diagram-as-main -> true even when physical_product; a negative
+// studio/lifestyle photo -> false). v13's plain instruction was ignored on the
+// positive case (composed graphic-as-main flagged false, leaving one-click
+// permitted); the worked example is the lever that moves gpt-4o. Detection only.
+// v13: is_marketing_graphic first added to the MAIN prompt + JSON shapes.
+export const RUBRIC_VERSION = "main-v14";
 export const SUPPORTING_RUBRIC_VERSION = "supporting-v9";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";

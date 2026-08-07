@@ -244,6 +244,15 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
         detail: `expected ${e.supporting_role}, got ${rubric.supporting_photo_role}`,
       });
     }
+    if (e.is_marketing_graphic !== undefined) {
+      const got = rubric.is_marketing_graphic === true;
+      checks.push({
+        name: "is_marketing_graphic",
+        level: strict,
+        pass: got === e.is_marketing_graphic,
+        detail: `expected ${e.is_marketing_graphic}, got ${got}`,
+      });
+    }
 
     return {
       id: fixture.id,

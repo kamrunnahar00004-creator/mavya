@@ -41,6 +41,8 @@ export type GoldenFixture = {
     must_not_claim?: string[];
     generation_risk?: "standard" | "review_text" | "unsupported";
     supporting_role?: string;
+    /** Expected is_marketing_graphic flag (detection gate for one-click). */
+    is_marketing_graphic?: boolean;
   };
   /**
    * hard  = founder-locked gold (calibration log) — failures are regressions.
@@ -129,6 +131,11 @@ export function validateFixture(f: unknown, index: number): string[] {
     !(SUPPORTING_PHOTO_ROLES as readonly string[]).includes(e.supporting_role)
   )
     errs.push(`${where}: bad expected.supporting_role`);
+  if (
+    e.is_marketing_graphic !== undefined &&
+    typeof e.is_marketing_graphic !== "boolean"
+  )
+    errs.push(`${where}: bad expected.is_marketing_graphic`);
   if (e.must_not_claim !== undefined) {
     if (!Array.isArray(e.must_not_claim) || e.must_not_claim.some((m) => typeof m !== "string"))
       errs.push(`${where}: bad expected.must_not_claim`);

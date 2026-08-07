@@ -416,6 +416,7 @@
           5.0,
           8.0
         ],
+        "is_marketing_graphic": false,
         "must_not_claim": [
           "dropshipping",
           "scam",
@@ -436,6 +437,7 @@
           6.0,
           9.0
         ],
+        "is_marketing_graphic": false,
         "must_not_claim": [
           "dropshipping",
           "scam",
@@ -457,7 +459,8 @@
         "score_range": [
           7.5,
           10
-        ]
+        ],
+        "is_marketing_graphic": false
       },
       "strictness": "soft",
       "notes": "First customer strong SUPPORTING photo (production 8.4, correctly kept, not regenerated). KEY no-regression guard: the Accuracy floor must NOT touch an honest, accurate supporting photo. Must stay strong."
@@ -474,7 +477,8 @@
         "score_range": [
           0.1,
           5.4
-        ]
+        ],
+        "is_marketing_graphic": true
       },
       "strictness": "soft",
       "notes": "THE fix target. Composed listing graphic (teal sales banner + rack diagram), misrepresents the product. Production over-scored it 6.0; supporting-v7 alone still let the model rate it 6.8-7.3 (it would not score Accuracy low). Adding the supporting-v8 is_marketing_graphic WORKED EXAMPLE moved it: the model now flags the composite (as marketing-graphic / wrong-product) and it lands ~3.5 WEAK. The model's exact upload_kind/supporting_role for this composite is unstable run-to-run (digital_preview vs unrelated_or_wrong_product); band=weak is the assertion that matters."
@@ -491,7 +495,8 @@
         "score_range": [
           0.1,
           5.9
-        ]
+        ],
+        "is_marketing_graphic": true
       },
       "strictness": "soft",
       "notes": "The worse AI-'improved' version of the graphic (production 3.9, below the 6.0 original; ~3.1 under supporting-v8). Confirms the generator cannot turn a marketing graphic into a good clean photo, which is exactly why one-click fix is now gated off for graphics. upload_kind unstable run-to-run; band=weak is the assertion."
@@ -506,7 +511,8 @@
         "score_range": [
           0.1,
           7.9
-        ]
+        ],
+        "is_marketing_graphic": true
       },
       "strictness": "soft",
       "notes": "The composed listing graphic scored through the MAIN rubric (main-v13 is_marketing_graphic contract). The CRITICAL check this guards is the false-positive risk: the ordinary main photos (customer1-main-original / -improved) must flag is_marketing_graphic=false so One-click is never wrongly disabled on a real photo (verified). Main-photo true-positive detection is intentionally weak (no main worked example): the model often classifies a composed graphic-as-main as digital_product and scores it low, which the digital server gate + low score already handle. band/upload_kind are not the assertion; the graphic flag on ordinary mains is."
