@@ -83,6 +83,11 @@ describe.skipIf(!LIVE)("live customer-1 scoring eval", () => {
       );
 
       expect(anyError, "no run errors").toBe(false);
+      // Deploy-blocking: the graphic-detection gate is the whole point of this
+      // change. A future prompt/schema regression that silently breaks it must
+      // fail this pre-deploy live eval, not merely warn.
+      expect(fp, "is_marketing_graphic false positives (ordinary flagged graphic)").toBe(0);
+      expect(fn, "is_marketing_graphic false negatives (graphic missed)").toBe(0);
     },
     20 * 60_000
   );
