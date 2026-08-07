@@ -46,3 +46,8 @@ next-env.d.ts
 
 # scaffold leftover
 _scaffold/
+
+# Real customer images used only as LOCAL eval fixtures. Never committed to the
+# public repo (privacy). The golden-set entries + customer1-eval.test.ts
+# reference these paths, so they must be present locally to run that eval.
+eval/fixtures/customer1/

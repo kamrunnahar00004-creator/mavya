@@ -7,6 +7,10 @@ import {
   shouldQueueRefinement,
 } from "@/lib/workflow-rules";
 import {
+  candidateBeatsKept,
+  oneClickGenerationAllowed,
+} from "@/lib/selection-display";
+import {
   CREDITS_PER_PERIOD,
   RATING_COST,
   WORKFLOW_COST,
@@ -242,6 +246,46 @@ describe("resolveAutoSelection (score-based, never override the seller)", () => 
         currentRawScore: 3.0,
         currentSelectionSource: "user", // Seller chose this
       })
+    ).toBe(false);
+  });
+});
+
+describe("candidateBeatsKept (client display mirror of the keep-better floor)", () => {
+  it("a worse or equal first candidate does NOT display (original stays)", () => {
+    // First improve: kept score is the original audit. 3.9 vs 6.0 -> keep original.
+    expect(candidateBeatsKept(3.9, 6.0)).toBe(false);
+    expect(candidateBeatsKept(6.0, 6.0)).toBe(false); // ties keep current
+  });
+
+  it("a strictly higher candidate displays as the preview", () => {
+    expect(candidateBeatsKept(7.3, 6.0)).toBe(true);
+  });
+
+  it("with nothing kept, any scored candidate displays; a scoreless one does not", () => {
+    expect(candidateBeatsKept(4.0, null)).toBe(true);
+    expect(candidateBeatsKept(undefined, 6.0)).toBe(false);
+  });
+});
+
+describe("oneClickGenerationAllowed (graphics/digital cannot enter generation)", () => {
+  it("allows generation only for an ordinary product photo", () => {
+    expect(
+      oneClickGenerationAllowed({ wrongProduct: false, digital: false, graphic: false })
+    ).toBe(true);
+  });
+
+  it("blocks a detected marketing/informational graphic", () => {
+    expect(
+      oneClickGenerationAllowed({ wrongProduct: false, digital: false, graphic: true })
+    ).toBe(false);
+  });
+
+  it("blocks wrong-product and digital listings too", () => {
+    expect(
+      oneClickGenerationAllowed({ wrongProduct: true, digital: false, graphic: false })
+    ).toBe(false);
+    expect(
+      oneClickGenerationAllowed({ wrongProduct: false, digital: true, graphic: false })
     ).toBe(false);
   });
 });

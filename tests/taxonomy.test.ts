@@ -95,7 +95,9 @@ describe("canonical taxonomy", () => {
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
     expect(RUBRIC_VERSION).toBe("main-v12");
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v6");
+    // supporting-v8 = is_marketing_graphic detection + deterministic weak-band
+    // cap (independent of the Accuracy pillar); keeps the v7 Accuracy gate.
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v8");
   });
 });
 

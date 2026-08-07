@@ -321,11 +321,25 @@ export async function POST(req: NextRequest) {
   const originalAudit = auditRow.rubric as RubricJson;
   const mode: "main" | "extra" = photo.role === "main" ? "main" : "extra";
 
-  // Server-side generation gates (mirror the UI, never trust it).
-  if (mode === "main" && originalAudit.upload_kind === "digital_product") {
+  // Server-side generation gates (mirror the UI, never trust it). AUTO
+  // generation (one-click improve / retry) cannot preserve the exact text and
+  // layout of a digital listing asset or a composed listing graphic, so it is
+  // refused for those regardless of what the browser sent. Seller-directed
+  // EDITs are still allowed (explicit intent; the seller reviews the result).
+  const auditIsDigital = originalAudit.upload_kind === "digital_product";
+  const auditIsGraphic =
+    originalAudit.is_marketing_graphic === true ||
+    originalAudit.supporting_photo_role === "digital_preview";
+  if (operation !== "edit" && auditIsDigital) {
     return apiError(
       "unsupported_digital_generation",
-      "AI improvement for digital product listings is not available yet because exact text and layout cannot be guaranteed. Your audit is still ready."
+      "One-click improvement for digital product listings is not available yet because exact text and layout cannot be guaranteed. Your audit is still ready."
+    );
+  }
+  if (operation !== "edit" && auditIsGraphic) {
+    return apiError(
+      "unsupported_graphic_generation",
+      "One-click improvement is not available for a listing graphic because generation cannot preserve its exact text and layout. Your rating is ready."
     );
   }
   if (originalAudit.generation_risk === "unsupported") {

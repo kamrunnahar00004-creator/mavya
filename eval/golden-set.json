@@ -404,6 +404,97 @@
       "strictness": "hard",
       "consistency": true,
       "notes": "Founder-locked gold 8 (2026-07-17). Green pendant necklace WORN on a model, tasteful close crop: the design and how it sits when worn read instantly. Under v10 the model called it 'partially cut off at the top' (6.9) - a worn necklace cannot show front and back at once. Guards the on-model/worn framing rule added in main-v11; must never again be told to pull back. Band check removed 2026-07-17: golds compare RAW scores, and raw 7.5-7.9 already presents as strong 8.0 via calibration; the 7.5 range floor is the strong threshold."
+    },
+    {
+      "id": "customer1-main-original",
+      "image": "eval/fixtures/customer1/1_MAIN_original_score6.5.jpg",
+      "mime": "image/jpeg",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "score_range": [
+          5.0,
+          8.0
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
+      },
+      "strictness": "soft",
+      "notes": "First real customer (2026-08-07), MAIN mahjong rack/set photo. Production scored 6.5. Soft regression guard: the accuracy-floor + selection fixes must NOT depress a legitimate main product photo. Confirm it stays sane (roughly mid)."
+    },
+    {
+      "id": "customer1-main-improved",
+      "image": "eval/fixtures/customer1/2_MAIN_improved_score7.3.png",
+      "mime": "image/png",
+      "role": "main",
+      "expected": {
+        "upload_kind": "physical_product",
+        "score_range": [
+          6.0,
+          9.0
+        ],
+        "must_not_claim": [
+          "dropshipping",
+          "scam",
+          "spam"
+        ]
+      },
+      "strictness": "soft",
+      "notes": "First customer AI-improved MAIN (production 7.3). Confirms the generator's output on a real product still scores well and the fixes did not regress it."
+    },
+    {
+      "id": "customer1-supporting1-kept",
+      "image": "eval/fixtures/customer1/3_SUPPORTING1_original_score8.4_kept.jpg",
+      "mime": "image/jpeg",
+      "role": "supporting",
+      "main_product_context": "A 3D printed mahjong tile rack set shown with pink racks and mahjong tiles on green felt.",
+      "expected": {
+        "upload_kind": "physical_product",
+        "band": "strong",
+        "score_range": [
+          7.5,
+          10
+        ]
+      },
+      "strictness": "soft",
+      "notes": "First customer strong SUPPORTING photo (production 8.4, correctly kept, not regenerated). KEY no-regression guard: the Accuracy floor must NOT touch an honest, accurate supporting photo. Must stay strong."
+    },
+    {
+      "id": "customer1-supporting2-graphic",
+      "image": "eval/fixtures/customer1/4_SUPPORTING2_original_score6.0.jpg",
+      "mime": "image/jpeg",
+      "role": "supporting",
+      "main_product_context": "A 3D printed mahjong tile rack set shown with pink racks and mahjong tiles on green felt.",
+      "expected": {
+        "band": "weak",
+        "upload_kind": "physical_product",
+        "score_range": [
+          0.1,
+          5.4
+        ]
+      },
+      "strictness": "soft",
+      "notes": "THE fix target. Composed listing graphic (teal sales banner + rack diagram), misrepresents the product. Production over-scored it 6.0; supporting-v7 alone still let the model rate it 6.8-7.3 (it would not score Accuracy low). Adding the supporting-v8 is_marketing_graphic WORKED EXAMPLE moved it: the model now flags the composite (as marketing-graphic / wrong-product) and it lands ~3.5 WEAK. The model's exact upload_kind/supporting_role for this composite is unstable run-to-run (digital_preview vs unrelated_or_wrong_product); band=weak is the assertion that matters."
+    },
+    {
+      "id": "customer1-supporting2-improved",
+      "image": "eval/fixtures/customer1/5_SUPPORTING2_improved_score3.9_WORSE.png",
+      "mime": "image/png",
+      "role": "supporting",
+      "main_product_context": "A 3D printed mahjong tile rack set shown with pink racks and mahjong tiles on green felt.",
+      "expected": {
+        "band": "weak",
+        "upload_kind": "physical_product",
+        "score_range": [
+          0.1,
+          5.9
+        ]
+      },
+      "strictness": "soft",
+      "notes": "The worse AI-'improved' version of the graphic (production 3.9, below the 6.0 original; ~3.1 under supporting-v8). Confirms the generator cannot turn a marketing graphic into a good clean photo, which is exactly why one-click fix is now gated off for graphics. upload_kind unstable run-to-run; band=weak is the assertion."
     }
   ]
 }
