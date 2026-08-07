@@ -50,6 +50,9 @@ export async function POST(req: NextRequest) {
   const optionalBool = (v: unknown) => (typeof v === "boolean" ? v : null);
   const optionalText = (v: unknown) =>
     typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, MAX_TEXT) || null : null;
+  // 1-5 star rating; anything else is treated as "not answered".
+  const optionalStar = (v: unknown) =>
+    typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 5 ? v : null;
 
   const admin = createSupabaseAdminClient();
   const { error } = await admin.from("workflow_feedback").upsert(
@@ -61,6 +64,10 @@ export async function POST(req: NextRequest) {
       detail_changed: optionalBool(body.detailChanged),
       preferred_version: optionalText(body.preferredVersion),
       rejection_reason: optionalText(body.rejectionReason),
+      rating_agreement: optionalStar(body.ratingAgreement),
+      rating_agreement_note: optionalText(body.ratingAgreementNote),
+      image_rating: optionalStar(body.imageRating),
+      image_rating_note: optionalText(body.imageRatingNote),
     },
     { onConflict: "user_id,workflow_id" }
   );

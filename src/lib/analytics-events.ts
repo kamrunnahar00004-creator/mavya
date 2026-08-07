@@ -17,6 +17,10 @@ export const FUNNEL_EVENTS = [
   "supporting_improve_completed",
   "supporting_edit_clicked",
   "supporting_edit_completed",
+  // Post-workflow feedback nudge engagement.
+  "wf_feedback_opened",
+  "wf_feedback_submitted",
+  "wf_feedback_dismissed",
 ] as const;
 
 export type FunnelEvent = (typeof FUNNEL_EVENTS)[number];

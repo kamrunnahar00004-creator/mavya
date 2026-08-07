@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { AnalyzingState } from "@/components/analyzing-state";
+import { FeedbackNudge } from "@/components/feedback-nudge";
 import type { SlotView } from "@/components/photo-slot-strip";
 import {
   rubricToAuditResult,
@@ -1246,6 +1247,20 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
     ? "Digital product detected. We scored how clearly the thumbnail shows what the buyer receives, not physical photography."
     : undefined;
 
+  // Feedback nudge fires ONCE per improvement workflow, only after it has fully
+  // SETTLED: attempt 1 plus any background refinement finished, nothing
+  // generating. workflowId is the attempt-1 root job (what the feedback route
+  // validates). Same for main and supporting photos.
+  const workflowSettled =
+    active.status === "graded" &&
+    active.improveStatus !== "generating" &&
+    !active.backgroundRefining &&
+    (active.versions?.length ?? 0) > 0;
+  const feedbackWorkflowId =
+    (active.versions ?? []).find((v) => (v.attemptNumber ?? 1) === 1)?.id ??
+    active.versions?.[0]?.id ??
+    null;
+
   // Version picker (top-right menu on the photo): Original + the last five
   // generated versions of the ACTIVE photo, newest first, current checkmarked.
   const activeVersions = (active.versions ?? []).slice(-5);
@@ -1357,6 +1372,9 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       />
       {/* Version strip hidden: seller sees one current improved preview, not 1/2/3 picker. */}
       {/* Generation history preserved in database for analytics and debugging. */}
+      {workflowSettled && feedbackWorkflowId && (
+        <FeedbackNudge key={feedbackWorkflowId} workflowId={feedbackWorkflowId} />
+      )}
     </>
   );
 }
