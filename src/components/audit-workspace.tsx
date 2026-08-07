@@ -105,6 +105,9 @@ type Props = {
   onAddPhoto?: () => void;
   /** Transient workspace notice (e.g. a rejected extra upload). */
   notice?: string;
+  /** Persistent context line above the pillar bars: graphic vs digital-item
+   *  disclosure so the seller knows what lens the score was applied with. */
+  contextBanner?: string;
   /** Active slot is still being graded — right panel shows an inline loader. */
   analyzing?: boolean;
   animate?: boolean;
@@ -139,6 +142,7 @@ export function AuditWorkspace({
   onSelectSlot,
   onAddPhoto,
   notice,
+  contextBanner,
   analyzing = false,
   animate = true,
   initialPreview = false,
@@ -203,6 +207,48 @@ export function AuditWorkspace({
     ? state.improvedAudit.overallScore < 8
     : true;
   const refiningVisible = backgroundRefining && improvedBelowBar;
+
+  // Unified action rule (main + supporting behave identically):
+  //   One-click fix is available ONLY for a real product photo that can still
+  //   improve (parent passes onImprove), scores below 8, and has no preview yet.
+  //   Whenever it is not available (digital, graphic, strong, or already
+  //   improved), the slot becomes "Score another photo". Edit is always offered
+  //   when the parent allows it.
+  const oneClickAvailable =
+    Boolean(onImprove) && canShowImprovement && !generatedPreviewExists;
+  // The generated candidate's own re-scored value (null until it exists).
+  const improvedScoreValue = state.improvedAudit?.overallScore;
+  // Only claim "better than your original" when the candidate ACTUALLY beat the
+  // original. A worse/equal candidate is kept unselected (see keep-better), so
+  // the message must not contradict the score delta shown next to it.
+  const previewBeatsOriginal =
+    typeof improvedScoreValue === "number" &&
+    improvedScoreValue > state.overallScore;
+  const backgroundImproveMessage = generatedPreviewExists
+    ? previewBeatsOriginal
+      ? "This version is better than your original, but we think we can do even better."
+      : "Your original still scores higher, so we kept it. We are still trying to beat it in the background."
+    : "Still improving your photo in the background.";
+
+  const editPhotoButton = onEdit ? (
+    <button
+      type="button"
+      onClick={() => setEditModalOpen(true)}
+      aria-label="Edit photo"
+      title="Edit however you like."
+      className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+    >
+      <Wrench className="h-4 w-4" aria-hidden="true" />
+      Edit photo
+    </button>
+  ) : null;
+
+  const scoreAnotherButton = (
+    <PrimaryButton onClick={onCta} variant="primary">
+      Score another photo
+      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+    </PrimaryButton>
+  );
 
   // A NEWLY ARRIVED preview must PRESENT itself: after a refresh mid-flow the
   // workspace mounts locked, and the polled attempt-1 result used to appear
@@ -596,6 +642,15 @@ export function AuditWorkspace({
             />
           </div>
 
+          {contextBanner && (
+            <div
+              className="reveal-item rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
+              data-reveal-order="2"
+            >
+              {contextBanner}
+            </div>
+          )}
+
           <div className="reveal-item" data-reveal-order="2">
             <PillarScores pillars={activeAudit.pillars} />
           </div>
@@ -701,9 +756,7 @@ export function AuditWorkspace({
                         role="status"
                         aria-live="polite"
                       >
-                        {generatedPreviewExists
-                          ? "This version is better than your original, but we think we can do even better."
-                          : "Still improving your photo in the background."}
+                        {backgroundImproveMessage}
                       </span>
                     )}
                     <div className="flex flex-wrap items-center gap-3">
@@ -725,113 +778,65 @@ export function AuditWorkspace({
                       )}
                     </div>
                   </div>
-                ) : onEdit ? (
+                ) : (
                   <div className="flex flex-wrap items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setEditModalOpen(true)}
-                      aria-label="Edit photo"
-                      title="Edit however you like."
-                      className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                    >
-                      <Wrench className="h-4 w-4" aria-hidden="true" />
-                      Edit photo
-                    </button>
+                    {editPhotoButton}
+                    {scoreAnotherButton}
                   </div>
-                ) : null}
+                )}
+              </div>
+            ) : refiningVisible && !improveLoading ? (
+              // Background attempt running on the original tab: white generating
+              // state, honest message (never claims improvement it did not make).
+              <div className="flex flex-col items-start gap-2">
+                <span
+                  className="text-[12.5px] text-[var(--color-ink-soft)]"
+                  role="status"
+                  aria-live="polite"
+                >
+                  {backgroundImproveMessage}
+                </span>
+                <button
+                  type="button"
+                  disabled
+                  className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                >
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  {backgroundCountdown}
+                </button>
+              </div>
+            ) : oneClickAvailable ? (
+              // Real product photo below 8, not yet improved: One-click fix is the
+              // primary action; Edit sits beside it.
+              <div className="flex flex-wrap items-center gap-3">
+                <PrimaryButton
+                  onClick={async () => {
+                    if (onImprove) {
+                      await onImprove();
+                      setPreviewUnlocked(true);
+                      setActiveTab("preview");
+                    }
+                  }}
+                  variant="primary"
+                  disabled={improveLoading}
+                  title="We generate the best version of your existing photo. Your original is always preserved."
+                >
+                  {improveLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <WandSparkles className="h-4 w-4" aria-hidden="true" />
+                  )}
+                  {improveLoading ? improveCountdown : "One-click fix"}
+                </PrimaryButton>
+                {editPhotoButton}
               </div>
             ) : (
-              <>
-                {isStrong && (
-                  <PrimaryButton onClick={onCta} variant="primary">
-                    {state.ctaLabel}
-                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                  </PrimaryButton>
-                )}
-                {canShowImprovement &&
-                  activeTab === "original" &&
-                  (hasImprovement || onImprove) && (
-                    <div className="flex flex-wrap items-center gap-3">
-                      {!generatedPreviewExists && <PrimaryButton
-                        onClick={async () => {
-                          if (generatedPreviewExists) {
-                            return;
-                          }
-                          if (onImprove) {
-                            await onImprove();
-                            setPreviewUnlocked(true);
-                            setActiveTab("preview");
-                          } else if (hasImprovement) {
-                            setPreviewUnlocked(true);
-                            setActiveTab("preview");
-                            onCta();
-                          }
-                        }}
-                        variant="primary"
-                        disabled={improveLoading}
-                        title="We generate the best version of your existing photo. Your original is always preserved."
-                      >
-                        {improveLoading ? (
-                          <Loader2
-                            className="h-4 w-4 animate-spin"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <WandSparkles
-                            className="h-4 w-4"
-                            aria-hidden="true"
-                          />
-                        )}
-                        {improveLoading
-                          ? improveCountdown
-                          : "One-click fix"}
-                      </PrimaryButton>
-                      }
-                      {refiningVisible && !improveLoading && (
-                        // Background attempt running: the ORIGINAL tab shows
-                        // the same white generating state as the preview tab.
-                        <div className="flex flex-col items-start gap-2">
-                          <span
-                            className="text-[12.5px] text-[var(--color-ink-soft)]"
-                            role="status"
-                            aria-live="polite"
-                          >
-                            {generatedPreviewExists
-                              ? "This version is better than your original, but we think we can do even better."
-                              : "Still improving your photo in the background."}
-                          </span>
-                          <button
-                            type="button"
-                            disabled
-                            className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
-                          >
-                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                            {backgroundCountdown}
-                          </button>
-                        </div>
-                      )}
-                      {onEdit && !improveLoading && !refiningVisible && (
-                        <button
-                          type="button"
-                          onClick={() => setEditModalOpen(true)}
-                          title="Edit however you like."
-                          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
-                        >
-                          <Wrench className="h-4 w-4" aria-hidden="true" />
-                          Edit photo
-                        </button>
-                      )}
-                      {improveLoading && (
-                        <span
-                          className="text-[12.5px] text-[var(--color-ink-soft)]"
-                          aria-live="polite"
-                        >
-                          {improveStatus}
-                        </span>
-                      )}
-                    </div>
-                  )}
-              </>
+              // One-click fix not available (strong, digital, graphic, or already
+              // improved): Edit + Score another photo, same for main and supporting.
+              <div className="flex flex-wrap items-center gap-3">
+                {editPhotoButton}
+                {scoreAnotherButton}
+              </div>
             )}
           </div>
           )}

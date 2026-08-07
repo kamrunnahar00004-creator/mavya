@@ -1197,7 +1197,18 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
   }
 
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
-  const digitalMain = active.kind === "main" && active.isDigital;
+  // A marketing/listing graphic (sales text or collage, detected as the
+  // digital_preview supporting role) is scored on usefulness, not photography.
+  const graphic = active.supportingRole === "digital_preview";
+  // Any digital listing asset (planner, template, printable, or a graphic).
+  // One-click fix is not offered for digital because generation cannot yet
+  // guarantee exact text/layout; Edit stays so the seller can direct changes.
+  const digital = active.isDigital;
+  const contextBanner = graphic
+    ? "This is a listing graphic, not a product photo. We rated it on how useful it is to buyers, not on photo quality."
+    : digital
+    ? "Digital product detected. We scored how clearly the thumbnail shows what the buyer receives, not physical photography."
+    : undefined;
 
   // Version picker (top-right menu on the photo): Original + the last five
   // generated versions of the ACTIVE photo, newest first, current checkmarked.
@@ -1278,18 +1289,14 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         slots={slotViews}
         onSelectSlot={handleSelectSlot}
         onAddPhoto={handleAddPhoto}
-        notice={
-          digitalMain
-            ? notice ??
-              "Digital product detected. AI improvement is disabled for digital listings because exact text and layout cannot be guaranteed yet."
-            : notice ?? undefined
-        }
+        notice={notice ?? undefined}
+        contextBanner={contextBanner}
         checklistError={checklistError}
         onChecklistRetry={handleChecklistRetry}
         onRemovePhoto={active.kind === "supporting" ? handleRemovePhoto : undefined}
         onCta={() => router.push("/dashboard")}
-        onImprove={wrongProduct || digitalMain ? undefined : handleImprove}
-        onEdit={digitalMain || wrongProduct ? undefined : handleEdit}
+        onImprove={wrongProduct || digital ? undefined : handleImprove}
+        onEdit={wrongProduct ? undefined : handleEdit}
         versionOptions={versionOptions}
         onSelectVersion={handleSelectVersion}
         versionBusy={versionBusy}

@@ -1,0 +1,926 @@
+{
+  "at": "2026-08-07T09:56:03.786Z",
+  "model": "gpt-4o",
+  "rubricVersions": {
+    "main": "main-v12",
+    "supporting": "supporting-v8"
+  },
+  "results": [
+    {
+      "id": "candle-02-main",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [3.1, 6.1], got 5.9"
+        },
+        {
+          "name": "priority_pillar",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected lighting, got lighting"
+        },
+        {
+          "name": "priority_issue_family",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected lighting, got lighting"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 5.9,
+      "band": "weak",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "lighting",
+      "priorityFamily": "lighting",
+      "latencyMs": 5636
+    },
+    {
+      "id": "candle-03-main",
+      "ok": true,
+      "warnings": 2,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "band",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected weak, got weak (4.8)"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [3, 5.4], got 4.8"
+        },
+        {
+          "name": "priority_pillar",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected background, got click_appeal"
+        },
+        {
+          "name": "priority_issue_family",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected trust, got trust"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        },
+        {
+          "name": "generation_risk",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected review_text, got standard"
+        }
+      ],
+      "score": 4.8,
+      "band": "weak",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "trust",
+      "latencyMs": 3669
+    },
+    {
+      "id": "candle-03-improved-main",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "band",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected strong, got strong (8.4)"
+        },
+        {
+          "name": "score_range",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected [7.3, 10], got 8.4"
+        }
+      ],
+      "score": 8.4,
+      "band": "strong",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "other",
+      "latencyMs": 3662
+    },
+    {
+      "id": "candle-02-improved-main",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected [5.5, 10], got 7.7"
+        }
+      ],
+      "score": 7.7,
+      "band": "mid",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "other",
+      "latencyMs": 4155
+    },
+    {
+      "id": "candle-02-ai-render-main",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        }
+      ],
+      "score": 5.8,
+      "band": "weak",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "lighting",
+      "priorityFamily": "lighting",
+      "latencyMs": 3630
+    },
+    {
+      "id": "logo-invalid",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected invalid, got invalid"
+        },
+        {
+          "name": "band",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected invalid, got invalid (0.0)"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [0, 0], got 0.0"
+        }
+      ],
+      "score": 0,
+      "band": "invalid",
+      "category": "other",
+      "uploadKind": "invalid",
+      "priorityPillar": "thumbnail",
+      "priorityFamily": "other",
+      "latencyMs": 2372
+    },
+    {
+      "id": "candle-02-supporting-self",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 8.4,
+      "band": "strong",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "framing",
+      "latencyMs": 4352
+    },
+    {
+      "id": "candle-03-supporting-wrong-product",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "band",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected weak, got weak (2.8)"
+        },
+        {
+          "name": "supporting_role",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected unrelated_or_wrong_product, got unrelated_or_wrong_product"
+        }
+      ],
+      "score": 2.8,
+      "band": "weak",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "thumbnail",
+      "priorityFamily": "identity",
+      "latencyMs": 2997
+    },
+    {
+      "id": "candle-proof-before-main",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected [2.5, 6.5], got 4.4"
+        }
+      ],
+      "score": 4.4,
+      "band": "weak",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "background",
+      "priorityFamily": "background",
+      "latencyMs": 3106
+    },
+    {
+      "id": "candle-proof-after-main",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected [6, 10], got 7.7"
+        }
+      ],
+      "score": 7.7,
+      "band": "mid",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "other",
+      "latencyMs": 3817
+    },
+    {
+      "id": "necklace-macro-leniency-01",
+      "ok": true,
+      "warnings": 4,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected jewelry, got jewelry"
+        },
+        {
+          "name": "band",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected weak, got mid (6.9)"
+        },
+        {
+          "name": "score_range",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected [4.8, 6.2], got 6.9"
+        },
+        {
+          "name": "priority_pillar",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected thumbnail, got lighting"
+        },
+        {
+          "name": "priority_issue_family",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected framing, got lighting"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 6.9,
+      "band": "mid",
+      "category": "jewelry",
+      "uploadKind": "physical_product",
+      "priorityPillar": "lighting",
+      "priorityFamily": "lighting",
+      "latencyMs": 3216
+    },
+    {
+      "id": "mug-pod-mashup-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected mugs, got mugs"
+        },
+        {
+          "name": "band",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected weak, got weak (5.4)"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [1, 5.4], got 5.4"
+        },
+        {
+          "name": "priority_issue_family",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected trust, got trust"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 5.4,
+      "band": "weak",
+      "category": "mugs",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "trust",
+      "latencyMs": 5504
+    },
+    {
+      "id": "candle-pink-weak-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "band",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected weak, got weak (4.4)"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [3.6, 5.2], got 4.4"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 4.4,
+      "band": "weak",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "background",
+      "priorityFamily": "background",
+      "latencyMs": 3442
+    },
+    {
+      "id": "candle-pink-improved-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [7.5, 10], got 8.4"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 8.4,
+      "band": "strong",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "other",
+      "latencyMs": 3392
+    },
+    {
+      "id": "candle-label-mid-01",
+      "ok": true,
+      "warnings": 1,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [5.2, 7], got 6.9"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        },
+        {
+          "name": "generation_risk",
+          "level": "soft",
+          "pass": false,
+          "detail": "expected review_text, got standard"
+        }
+      ],
+      "score": 6.9,
+      "band": "mid",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "background",
+      "latencyMs": 2962
+    },
+    {
+      "id": "candle-label-improved-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected candles, got candles"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [7.5, 10], got 8.4"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 8.4,
+      "band": "strong",
+      "category": "candles",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "other",
+      "latencyMs": 3727
+    },
+    {
+      "id": "necklace-pearl-weak-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected jewelry, got jewelry"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [4.1, 5.7], got 5.4"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 5.4,
+      "band": "weak",
+      "category": "jewelry",
+      "uploadKind": "physical_product",
+      "priorityPillar": "lighting",
+      "priorityFamily": "lighting",
+      "latencyMs": 3283
+    },
+    {
+      "id": "necklace-pearl-improved-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected jewelry, got jewelry"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [7, 10], got 7.5"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 7.5,
+      "band": "mid",
+      "category": "jewelry",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "clarity",
+      "latencyMs": 4326
+    },
+    {
+      "id": "necklace-macro-crop-weak-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected jewelry, got jewelry"
+        },
+        {
+          "name": "band",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected weak, got weak (5.0)"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [4.3, 5.9], got 5.0"
+        },
+        {
+          "name": "priority_issue_family",
+          "level": "soft",
+          "pass": true,
+          "detail": "expected framing, got framing"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 5,
+      "band": "weak",
+      "category": "jewelry",
+      "uploadKind": "physical_product",
+      "priorityPillar": "thumbnail",
+      "priorityFamily": "framing",
+      "latencyMs": 3387
+    },
+    {
+      "id": "necklace-worn-strong-01",
+      "ok": true,
+      "warnings": 0,
+      "checks": [
+        {
+          "name": "schema_valid",
+          "level": "hard",
+          "pass": true,
+          "detail": "validated by scorePhoto"
+        },
+        {
+          "name": "upload_kind",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected physical_product, got physical_product"
+        },
+        {
+          "name": "category",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected jewelry, got jewelry"
+        },
+        {
+          "name": "score_range",
+          "level": "hard",
+          "pass": true,
+          "detail": "expected [7.5, 10], got 8.4"
+        },
+        {
+          "name": "forbidden_claims",
+          "level": "hard",
+          "pass": true,
+          "detail": "clean"
+        }
+      ],
+      "score": 8.4,
+      "band": "strong",
+      "category": "jewelry",
+      "uploadKind": "physical_product",
+      "priorityPillar": "click_appeal",
+      "priorityFamily": "other",
+      "latencyMs": 4074
+    }
+  ]
+}

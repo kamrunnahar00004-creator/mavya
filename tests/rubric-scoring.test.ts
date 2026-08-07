@@ -23,6 +23,36 @@ describe("score computation (server-owned)", () => {
     ).toBeGreaterThan(6.9);
   });
 
+  it("Accuracy gate: background <= 3 caps the supporting overall into the weak band", () => {
+    // Strong Buyer Confidence / Clarity / Presentation but Accuracy 3 (misleading
+    // graphic). Un-gated this averages to ~6.0; the gate pulls it to <= 4.9.
+    const capped = computeSupportingOverall({
+      thumbnail: 7,
+      lighting: 7,
+      background: 3,
+      click_appeal: 6,
+    });
+    expect(capped).toBeLessThanOrEqual(4.9);
+  });
+
+  it("Marketing-graphic gate: is_marketing_graphic caps into the weak band even with high pillars", () => {
+    const pillars = { thumbnail: 8, lighting: 8, background: 7, click_appeal: 7 };
+    // Same pillars, not flagged -> strong/usable.
+    expect(computeSupportingOverall(pillars, undefined, false)).toBeGreaterThan(6);
+    // Flagged as a composed sales graphic -> weak regardless of pillar values.
+    expect(computeSupportingOverall(pillars, undefined, true)).toBeLessThanOrEqual(4.9);
+  });
+
+  it("Accuracy gate leaves honest supporting photos untouched (background >= 4)", () => {
+    const ok = computeSupportingOverall({
+      thumbnail: 8,
+      lighting: 8,
+      background: 8,
+      click_appeal: 8,
+    });
+    expect(ok).toBeCloseTo(8, 1);
+  });
+
   it("validates the canonical invalid response", () => {
     expect(isRubricJson(INVALID_RESPONSE)).toBe(true);
   });

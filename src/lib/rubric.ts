@@ -175,6 +175,13 @@ export type RubricJson = {
   trust_risk?: "none" | "moderate" | "high";
   /** One sentence naming the concrete visible evidence; "" when none. */
   trust_evidence?: string;
+  /** True when the image is a composed listing/advertising GRAPHIC (sales-text
+   *  banner, promo/price/CTA overlay, or an ad-style collage) rather than a
+   *  photograph or a clean file preview. Populated by the supporting rubric;
+   *  deterministically caps the supporting overall into the weak band because a
+   *  buyer does not receive the composed advertisement. Optional/false on main
+   *  and legacy rubrics. */
+  is_marketing_graphic?: boolean;
 };
 
 export const RUBRIC_PROMPT = `You are Mavya, an Etsy product-photo auditor.
@@ -452,6 +459,7 @@ export const INVALID_RESPONSE: RubricJson = {
   generation_risk_reason: "No product photo is available to improve.",
   trust_risk: "none",
   trust_evidence: "",
+  is_marketing_graphic: false,
 };
 
 /**
@@ -480,13 +488,30 @@ export function computeOverall(
 export const TRUST_RISK_CAP = 5.4;
 
 /**
+ * Supporting Accuracy gate (background pillar = Accuracy & Specificity). At or
+ * below this pillar value the photo does NOT honestly show what the buyer
+ * receives — it is misleading, vague, or a marketing graphic that misrepresents
+ * the product. A supporting photo that fails accuracy this hard cannot present
+ * as usable no matter how clean or clear the other pillars are, so the overall
+ * is pulled into the weak band. Legitimate informational photos (size charts,
+ * packaging, honest digital previews) score Accuracy high and are unaffected.
+ * (Founder decision 2026-08-07: a confusing listing graphic presenting as 6.0
+ * is wrong; Accuracy must gate the ceiling, not average out.)
+ */
+export const SUPPORTING_ACCURACY_FLOOR_PILLAR = 3;
+export const SUPPORTING_ACCURACY_FLOOR_CAP = 4.9;
+
+/**
  * Supporting-photo overall using SUPPORTING_PILLAR_WEIGHTS (35/30/20/15). No
  * click_appeal cap here: for supporting photos click_appeal maps to Presentation
- * (only 15% weight), so a low value must not cap the whole score.
+ * (only 15% weight), so a low value must not cap the whole score. Accuracy,
+ * however, DOES gate: a photo that fails to honestly show what the buyer
+ * receives is capped into the weak band.
  */
 export function computeSupportingOverall(
   pillars: RubricJson["pillars"],
-  trustRisk?: RubricJson["trust_risk"]
+  trustRisk?: RubricJson["trust_risk"],
+  isMarketingGraphic?: boolean
 ): number {
   const raw =
     pillars.thumbnail * SUPPORTING_PILLAR_WEIGHTS.thumbnail +
@@ -494,8 +519,20 @@ export function computeSupportingOverall(
     pillars.background * SUPPORTING_PILLAR_WEIGHTS.background +
     pillars.click_appeal * SUPPORTING_PILLAR_WEIGHTS.click_appeal;
   const weighted = Math.round(raw * 10) / 10;
+  let capped = weighted;
+  // Marketing-graphic gate: a composed sales/advertising graphic is not a photo
+  // of what the buyer receives. Cap into the weak band DETERMINISTICALLY, so the
+  // verdict does not depend on the model scoring the Accuracy pillar low (which
+  // it does inconsistently on collages with sales text).
+  if (isMarketingGraphic) {
+    capped = Math.min(capped, SUPPORTING_ACCURACY_FLOOR_CAP);
+  }
+  // Accuracy gate: misleading/inaccurate supporting photos cannot present usable.
+  if (pillars.background <= SUPPORTING_ACCURACY_FLOOR_PILLAR) {
+    capped = Math.min(capped, SUPPORTING_ACCURACY_FLOOR_CAP);
+  }
   // Same deterministic trust verdict gate as main photos.
-  return trustRisk === "high" ? Math.min(weighted, TRUST_RISK_CAP) : weighted;
+  return trustRisk === "high" ? Math.min(capped, TRUST_RISK_CAP) : capped;
 }
 
 export function isRubricJson(x: unknown): x is RubricJson {
@@ -565,6 +602,12 @@ export function isRubricJson(x: unknown): x is RubricJson {
     return false;
   }
   if (r.trust_evidence !== undefined && typeof r.trust_evidence !== "string") {
+    return false;
+  }
+  if (
+    r.is_marketing_graphic !== undefined &&
+    typeof r.is_marketing_graphic !== "boolean"
+  ) {
     return false;
   }
   return true;

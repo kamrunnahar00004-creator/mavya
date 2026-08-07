@@ -50,6 +50,9 @@ Score four pillars from 0 to 10 using integers. The JSON keys stay the same; jud
 
 AI-looking / fake findings require VISIBLE EVIDENCE, and the governing test is OBVIOUS DETECTABILITY: would a typical shopper sense within a second that the image is AI-generated? An indistinguishable photoreal image scores like a photograph (trust_risk "none"); an obviously synthetic one is trust_risk "high". Evidence: garbled or melted template text (e.g. "CELEBRATING 250 YEARS" that makes no sense), warped anatomy or product detail, waxy plastic-smooth skin, impossible scale, hyper-detailed print impossible for a real product, uncanny cinematic gloss over the whole scene, a hard cutout edge or halo, or a floating product with no contact shadow — several together make the fake obvious even when each alone might pass. A clean studio look, plain background, or soft even lighting is NOT evidence — never use "AI-looking", "mockup", "pasted", or "fake" without naming the concrete evidence. WITH evidence that a synthetic render is passed off as the real product, or that the design is a cheap AI print-on-demand mashup, Accuracy scores low because the image no longer honestly shows what the buyer receives, and the priority names the evidence. An AI-styled scene AROUND a real product is acceptable; an AI-INVENTED product is not.
 
+MARKETING GRAPHIC (is_marketing_graphic): set true when the image is a composed listing/ADVERTISING graphic rather than a photograph or a clean file preview: a promotional banner with large sales/marketing text, a headline / price / discount / call-to-action overlay, or an ad-style collage assembled from product cut-outs plus text blocks, arrows, or diagrams. These are made to advertise the listing, not to show what the buyer receives. A clean product photo, or a clean digital page/mockup preview carrying only a small format label (e.g. "PDF", "Instant Download", "GoodNotes"), is NOT a marketing graphic. When is_marketing_graphic is true, score Accuracy (background) low, because the buyer does not receive this composed advertisement, and the honest evidence is what the actual product looks like; the priority_action tells the seller to show a plain photo/preview of the real item instead of the sales graphic. Set false for every ordinary product photo, packaging shot, spec sheet, size chart, or clean page preview.
+WORKED EXAMPLE (follow this exactly): an image with a colored HEADER BANNER of product/marketing text across the top (e.g. "3D PRINTED MAHJONG 20-inch DOUBLE RACK | STL FILE"), a product photo placed below it, and a separate line-drawing "Profile" diagram off to the side, all laid out as one composite. This is a COMPOSED LISTING GRAPHIC assembled to advertise the listing, not a photo of the item the buyer receives. Set is_marketing_graphic true, score Accuracy (background) 2-3, and make priority_action tell the seller to show a plain photo of the actual product with no added banner text or diagram. A single clean photo of that same product, with no header banner and no added diagram, would be is_marketing_graphic false and scored normally.
+
 buyer_question_answered: the ONE buyer question this photo answers, e.g. "How big is this in real life?", "What exactly comes in the box?", "Will this arrive gift-ready?", "What do the planner pages look like?", "What texture/material am I getting?". Empty only if it answers nothing.
 supporting_verdict: one short honest sentence, e.g. "Strong scale photo.", "Useful packaging photo, but the insert text is too small.", "Weak supporting photo — it repeats the main image."
 
@@ -140,7 +143,8 @@ Invalid-input JSON:
   "generation_risk": "unsupported",
   "generation_risk_reason": "No product photo is available to grade.",
   "trust_risk": "none",
-  "trust_evidence": ""
+  "trust_evidence": "",
+  "is_marketing_graphic": false
 }
 
 Valid JSON shape:
@@ -166,5 +170,6 @@ Valid JSON shape:
   "generation_risk": "standard" | "review_text" | "unsupported",
   "generation_risk_reason": string,
   "trust_risk": "none" | "moderate" | "high" ("none" without concrete visible evidence; "moderate" for one minor/ambiguous artifact; "high" for clear evidence per the evidence rule above. "high" means this listing cannot be trusted as shown; the backend caps the overall at 5.4),
-  "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none")
+  "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none"),
+  "is_marketing_graphic": boolean (true ONLY for a composed sales/advertising graphic: promo banner text, price/CTA overlay, or ad-style collage; false for a real product photo, packaging, spec sheet, size chart, or clean page/mockup preview. The backend caps the overall into the weak band when true)
 }`;
