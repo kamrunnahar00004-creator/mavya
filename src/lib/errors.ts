@@ -19,6 +19,7 @@ export type ApiErrorCode =
   | "invalid_upload"
   | "unsupported_media"
   | "unsupported_digital_generation"
+  | "unsupported_graphic_generation"
   | "unsupported_product"
   | "wrong_product"
   | "stale_audit"
@@ -53,6 +54,7 @@ const STATUS: Partial<Record<ApiErrorCode, number>> = {
   invalid_upload: 400,
   unsupported_media: 400,
   unsupported_digital_generation: 422,
+  unsupported_graphic_generation: 422,
   unsupported_product: 422,
   wrong_product: 422,
   stale_audit: 409,

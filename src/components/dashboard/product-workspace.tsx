@@ -278,14 +278,22 @@ function makePhoto(p: InitialPhoto): Photo {
       }
     } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
       if ((p.lastJob.attemptNumber ?? 1) > 1) {
-        // Background refinement runs quietly: keep the current version
-        // usable. The completed attempt-1 result must PRESENT even when the
-        // selection has not landed yet — pull it from the versions list so a
-        // refresh mid-refinement never hides an already-generated photo.
+        // Background refinement runs quietly: keep the current version usable.
+        // A completed attempt-1 result PRESENTS during refinement ONLY if it beat
+        // the original (same keep-better floor as migration 0021 and the
+        // completed-job path above). Otherwise the original stays the default
+        // view — a refresh mid-refinement must never resurface a rejected weaker
+        // attempt; it remains available in the version picker.
         if (!p.selectedJob && !userPickedOriginal) {
           const completedVersions = p.versions ?? [];
           const newest = completedVersions[completedVersions.length - 1];
-          if (newest) photo = applyCompletedJob(photo, newest);
+          const newestScore =
+            newest?.candidateRubric?.raw_overall_score ??
+            newest?.candidateRubric?.overall_score;
+          const origScore = p.rubric.raw_overall_score ?? p.rubric.overall_score;
+          if (newest && candidateBeatsKept(newestScore, origScore)) {
+            photo = applyCompletedJob(photo, newest);
+          }
         }
         photo = { ...photo, backgroundRefining: true, keepNote: REFINING_NOTE };
       } else {

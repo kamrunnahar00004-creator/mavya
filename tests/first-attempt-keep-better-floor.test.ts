@@ -63,4 +63,29 @@ describe("worse-first-improve never displays (client wiring)", () => {
   it("treats a detected marketing graphic as a graphic for gating + banner", () => {
     expect(workspace).toContain("active.isMarketingGraphic === true");
   });
+
+  it("applies the keep-better floor in the refinement path too (no rejected resurface)", () => {
+    // Regression guard for the mid-refinement refresh: the newest completed
+    // attempt must clear candidateBeatsKept before it becomes the shown view.
+    expect(workspace).toContain("candidateBeatsKept(newestScore, origScore)");
+  });
+});
+
+describe("server enforces generation gates (never trust the browser)", () => {
+  const route = readFileSync(
+    path.resolve("src/app/api/generate/route.ts"),
+    "utf8"
+  );
+
+  it("refuses one-click/retry generation on a marketing graphic, from the audit", () => {
+    expect(route).toContain(
+      "originalAudit.is_marketing_graphic === true"
+    );
+    expect(route).toContain('operation !== "edit" && auditIsGraphic');
+    expect(route).toContain("unsupported_graphic_generation");
+  });
+
+  it("refuses one-click/retry generation on a digital asset but still permits edit", () => {
+    expect(route).toContain('operation !== "edit" && auditIsDigital');
+  });
 });
