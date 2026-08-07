@@ -15,14 +15,17 @@ export const TAXONOMY_VERSION = 1;
 // results of the new scoring policy.
 // main-v4 / supporting-v3 were: canonical 25-category taxonomy + category
 // scoring notes + priority_pillar/priority_issue_family fields (2026-07-11).
-// supporting-v8: is_marketing_graphic detection (DETECTION ONLY, no score
-// penalty) — a composed listing graphic is scored honestly on usefulness/
-// clarity/truthfulness and can earn any honest score incl. 8+; weak AND strong
-// worked examples teach the boundary. The flag drives UI disclosure + generation
-// gating, not the score. Keeps the supporting-v7 Accuracy gate (background <= 3
-// caps at 4.9) as the only misleading-graphic safety net. (2026-08-07.)
+// supporting-v9: is_marketing_graphic is now actually EMITTABLE — the field was
+// added to the strict OpenAI response schema (openai.ts); under v8 the prompt
+// asked for it but the strict schema forbade it (additionalProperties:false), so
+// it never reached the parser/UI/server gate. Bumped to invalidate any v8 audits
+// cached without the field. Detection only (no score penalty); a composed
+// listing graphic is scored honestly on usefulness (can be 8+); weak+strong
+// worked examples teach the boundary; the flag drives UI disclosure + generation
+// gating. Keeps the supporting-v7 Accuracy gate (background <= 3 caps at 4.9) as
+// the only misleading-graphic safety net. (2026-08-07.)
 export const RUBRIC_VERSION = "main-v12";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v8";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v9";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

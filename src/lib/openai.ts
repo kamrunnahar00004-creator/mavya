@@ -11,7 +11,7 @@ import { ISSUE_FAMILIES, PILLAR_KEYS } from "@/lib/rubric";
 
 const OPENAI_BASE = "https://api.openai.com/v1";
 
-const RUBRIC_RESPONSE_SCHEMA = {
+export const RUBRIC_RESPONSE_SCHEMA = {
   name: "mavya_photo_audit",
   strict: true,
   schema: {
@@ -40,6 +40,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
       "generation_risk_reason",
       "trust_risk",
       "trust_evidence",
+      "is_marketing_graphic",
     ],
     properties: {
       upload_kind: {
@@ -188,6 +189,7 @@ const RUBRIC_RESPONSE_SCHEMA = {
         enum: ["standard", "review_text", "unsupported"],
       },
       generation_risk_reason: { type: "string" },
+      is_marketing_graphic: { type: "boolean" },
     },
   },
 } as const;

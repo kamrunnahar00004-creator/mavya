@@ -42,6 +42,7 @@ export type FixtureResult = {
   uploadKind: string;
   priorityPillar: string;
   priorityFamily: string;
+  isMarketingGraphic: boolean;
   latencyMs: number;
   error?: string;
 };
@@ -255,6 +256,7 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
       uploadKind: rubric.upload_kind,
       priorityPillar: priorityPillarOf(rubric),
       priorityFamily: priorityFamilyOf(rubric),
+      isMarketingGraphic: rubric.is_marketing_graphic === true,
       latencyMs,
     };
   } catch (err) {
@@ -276,6 +278,7 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
       uploadKind: "error",
       priorityPillar: "error",
       priorityFamily: "error",
+      isMarketingGraphic: false,
       latencyMs: Date.now() - started,
       error: err instanceof Error ? err.message : String(err),
     };

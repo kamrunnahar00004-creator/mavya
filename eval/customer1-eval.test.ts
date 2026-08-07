@@ -49,7 +49,7 @@ describe.skipIf(!LIVE)("live customer-1 scoring eval", () => {
       for (const r of run.results) {
         const soft = r.checks.filter((c) => c.level === "soft" && !c.pass);
         console.log(
-          `[customer1-eval] ${r.id.padEnd(30)} score=${r.score.toFixed(1)} band=${r.band.padEnd(6)} kind=${r.uploadKind} role=${r.priorityFamily}` +
+          `[customer1-eval] ${r.id.padEnd(30)} score=${r.score.toFixed(1)} band=${r.band.padEnd(6)} kind=${r.uploadKind} graphic=${r.isMarketingGraphic} role=${r.priorityFamily}` +
             (soft.length ? ` · WARN: ${soft.map((c) => `${c.name}(${c.detail})`).join("; ")}` : "")
         );
       }
