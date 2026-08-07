@@ -35,12 +35,12 @@ describe("score computation (server-owned)", () => {
     expect(capped).toBeLessThanOrEqual(4.9);
   });
 
-  it("Marketing-graphic gate: is_marketing_graphic caps into the weak band even with high pillars", () => {
+  it("a graphic is NOT capped for being a graphic: honest high pillars score high", () => {
+    // A useful, clear, honest marketing graphic (e.g. a well-made size chart or
+    // what's-included) earns its score. is_marketing_graphic is detection only,
+    // never a score penalty; only the Accuracy floor gates a misleading one.
     const pillars = { thumbnail: 8, lighting: 8, background: 7, click_appeal: 7 };
-    // Same pillars, not flagged -> strong/usable.
-    expect(computeSupportingOverall(pillars, undefined, false)).toBeGreaterThan(6);
-    // Flagged as a composed sales graphic -> weak regardless of pillar values.
-    expect(computeSupportingOverall(pillars, undefined, true)).toBeLessThanOrEqual(4.9);
+    expect(computeSupportingOverall(pillars)).toBeGreaterThan(6);
   });
 
   it("Accuracy gate leaves honest supporting photos untouched (background >= 4)", () => {

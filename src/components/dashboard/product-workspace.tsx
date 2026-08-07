@@ -20,6 +20,10 @@ import {
   type GenerationJobPayload,
   type GenerationJobStatus,
 } from "@/lib/generation-types";
+import {
+  candidateBeatsKept,
+  oneClickGenerationAllowed,
+} from "@/lib/selection-display";
 import { coveredShotIds } from "@/lib/checklist-coverage";
 import { mergeChecklist, parseSavedChecklist } from "@/lib/checklist-store";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
@@ -94,6 +98,9 @@ type Photo = {
   ratingJobId?: string;
   isDigital: boolean;
   supportingRole?: string;
+  /** Model flagged this as a composed listing graphic (banner/collage/diagram).
+   *  Detection only: score is honest; used to gate One-click generation + banner. */
+  isMarketingGraphic?: boolean;
   productSummary?: string;
   improveStatus: "idle" | "generating" | "error";
   improveStartedAt?: number;
@@ -211,6 +218,7 @@ function makePhoto(p: InitialPhoto): Photo {
     status: "graded",
     isDigital: p.rubric.upload_kind === "digital_product",
     supportingRole: p.rubric.supporting_photo_role,
+    isMarketingGraphic: p.rubric.is_marketing_graphic === true,
     productSummary: isMain ? p.rubric.product_summary : undefined,
     improveStatus: "idle",
     backgroundRefining: false,
@@ -256,7 +264,18 @@ function makePhoto(p: InitialPhoto): Photo {
     p.selectionSource === "user" && !p.selectedJob && !p.selectedJobId;
   if (p.lastJob) {
     if (p.lastJob.status === "completed" && !p.selectedJob && !userPickedOriginal) {
-      photo = applyCompletedJob(photo, p.lastJob);
+      // Nothing is selected, so the ORIGINAL is the recommended version. Only
+      // surface this completed job as the shown preview if it actually BEAT the
+      // original (mirrors the keep-better floor in migration 0021). A first
+      // attempt that scored at or below the original must NOT resurface as the
+      // default view on refresh; it stays available in the version picker.
+      const candScore =
+        p.lastJob.candidateRubric?.raw_overall_score ??
+        p.lastJob.candidateRubric?.overall_score;
+      const origScore = p.rubric.raw_overall_score ?? p.rubric.overall_score;
+      if (candidateBeatsKept(candScore, origScore)) {
+        photo = applyCompletedJob(photo, p.lastJob);
+      }
     } else if (ACTIVE_JOB_STATUSES.has(p.lastJob.status)) {
       if ((p.lastJob.attemptNumber ?? 1) > 1) {
         // Background refinement runs quietly: keep the current version
@@ -435,6 +454,7 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
               audit,
               supportingRole: body.rubric.supporting_photo_role,
               isDigital: body.rubric.upload_kind === "digital_product",
+              isMarketingGraphic: body.rubric.is_marketing_graphic === true,
               failedMsg: undefined,
               ratingJobId: undefined,
             });
@@ -530,7 +550,6 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       const cur = photosRef.current.find((p) => p.id === photoId);
       if (!cur) return;
       const isRefinement = (payload.attemptNumber ?? 1) > 1;
-      const operation = cur.pendingOp ?? "improve";
 
       // Background refinement is QUIET: no spinner, no blocking. A stronger
       // safe version swaps in with an honest note; anything else keeps the
@@ -630,10 +649,14 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
             ? rubricToSupportingAuditResult(payload.candidateRubric).overallScore
             : rubricToAuditResult(payload.candidateRubric).overallScore;
         const existingScore = cur.audit.improvedScore;
-        // Keep-better rule: a RETRY that produced a weaker result than the
-        // current preview keeps the current one and says so honestly. Edits
-        // always apply (the seller asked for that specific change).
-        if (operation === "retry" && payload.keptPrevious === true) {
+        // Keep-better rule: ANY non-edit attempt (first improve OR a retry) that
+        // scored at or below the currently kept version does NOT replace it. The
+        // server already refused to select it (keptPrevious === true); the UI
+        // must match, keep the current view (original or prior preview), and say
+        // so honestly. Edits always apply (the seller asked for that change) and
+        // never set keptPrevious. This is what stops a worse first improve from
+        // displaying as the result and resurfacing on refresh.
+        if (payload.keptPrevious === true) {
           patch(photoId, {
             improveStatus: "idle",
             improveStartedAt: undefined,
@@ -643,8 +666,8 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
             versions: withVersion(cur, payload),
             keepNote:
               typeof existingScore === "number"
-                ? `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the better one. You can try again.`
-                : "We generated another version, but your current version stayed stronger, so we kept it.",
+                ? `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the stronger one. You can try again.`
+                : `We generated a version, but it scored ${newScore.toFixed(1)} versus your original ${cur.audit.overallScore.toFixed(1)}, so we kept your original. You can try again.`,
           });
           return;
         }
@@ -1197,15 +1220,20 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
   }
 
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
-  // A marketing/listing graphic (sales text or collage, detected as the
-  // digital_preview supporting role) is scored on usefulness, not photography.
-  const graphic = active.supportingRole === "digital_preview";
+  // A composed listing graphic (banner/collage/diagram) detected by the model,
+  // or the legacy digital_preview role. Scored HONESTLY on usefulness (a good,
+  // clear, truthful graphic can still be an 8); the flag only drives the
+  // disclosure banner and One-click generation gating, never the score.
+  const graphic =
+    active.isMarketingGraphic === true ||
+    active.supportingRole === "digital_preview";
   // Any digital listing asset (planner, template, printable, or a graphic).
-  // One-click fix is not offered for digital because generation cannot yet
-  // guarantee exact text/layout; Edit stays so the seller can direct changes.
+  // One-click fix is not offered for digital/graphics because image generation
+  // cannot preserve exact text/layout; Edit stays so the seller can direct
+  // changes, and rating is always available.
   const digital = active.isDigital;
   const contextBanner = graphic
-    ? "This is a listing graphic, not a product photo. We rated it on how useful it is to buyers, not on photo quality."
+    ? "This is a listing graphic, not a plain product photo. We rated it on how clearly and honestly it helps a buyer, and one-click fix is off because generation cannot preserve its text and layout."
     : digital
     ? "Digital product detected. We scored how clearly the thumbnail shows what the buyer receives, not physical photography."
     : undefined;
@@ -1295,7 +1323,11 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         onChecklistRetry={handleChecklistRetry}
         onRemovePhoto={active.kind === "supporting" ? handleRemovePhoto : undefined}
         onCta={() => router.push("/dashboard")}
-        onImprove={wrongProduct || digital ? undefined : handleImprove}
+        onImprove={
+          oneClickGenerationAllowed({ wrongProduct, digital, graphic })
+            ? handleImprove
+            : undefined
+        }
         onEdit={wrongProduct ? undefined : handleEdit}
         versionOptions={versionOptions}
         onSelectVersion={handleSelectVersion}

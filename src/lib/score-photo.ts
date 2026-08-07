@@ -156,11 +156,7 @@ export async function scorePhoto(args: {
   parsed.overall_score = isInvalid
     ? 0
     : supporting
-    ? computeSupportingOverall(
-        parsed.pillars,
-        parsed.trust_risk,
-        parsed.is_marketing_graphic
-      )
+    ? computeSupportingOverall(parsed.pillars, parsed.trust_risk)
     : computeOverall(parsed.pillars, parsed.trust_risk);
 
   // Beta calibration LAST: computeOverall already applied the trust ceiling, so

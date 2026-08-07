@@ -72,11 +72,13 @@ begin
     ) into v_current_raw from generation_jobs
      where id = v_photo.selected_generation_job_id and user_id = p_user;
   else
+    -- Bind the source audit to THIS photo: defends against stale/malformed job
+    -- metadata pointing source_audit_id at another photo's audit.
     select coalesce(
       nullif(rubric->>'raw_overall_score', '')::numeric,
       overall_score
     ) into v_current_raw from audits
-     where id = v_candidate.source_audit_id;
+     where id = v_candidate.source_audit_id and photo_id = p_photo;
   end if;
   if v_current_raw is not null and v_candidate.raw_score <= v_current_raw then
     return false;

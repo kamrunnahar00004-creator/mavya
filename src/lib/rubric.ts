@@ -490,13 +490,14 @@ export const TRUST_RISK_CAP = 5.4;
 /**
  * Supporting Accuracy gate (background pillar = Accuracy & Specificity). At or
  * below this pillar value the photo does NOT honestly show what the buyer
- * receives — it is misleading, vague, or a marketing graphic that misrepresents
- * the product. A supporting photo that fails accuracy this hard cannot present
- * as usable no matter how clean or clear the other pillars are, so the overall
- * is pulled into the weak band. Legitimate informational photos (size charts,
- * packaging, honest digital previews) score Accuracy high and are unaffected.
- * (Founder decision 2026-08-07: a confusing listing graphic presenting as 6.0
- * is wrong; Accuracy must gate the ceiling, not average out.)
+ * receives — it is misleading, vague, or misrepresents the product. Such a photo
+ * cannot present as usable no matter how clean or clear the other pillars are,
+ * so the overall is pulled into the weak band. Legitimate informational photos
+ * (size charts, packaging, honest digital previews, USEFUL marketing graphics)
+ * score Accuracy high and are unaffected. This is the ONLY score gate related to
+ * graphics: a marketing graphic is NOT punished for being a graphic — a smart,
+ * clear, honest one earns a high score. Only a graphic that is genuinely
+ * inaccurate/misleading trips this floor. (Founder decision 2026-08-07.)
  */
 export const SUPPORTING_ACCURACY_FLOOR_PILLAR = 3;
 export const SUPPORTING_ACCURACY_FLOOR_CAP = 4.9;
@@ -506,12 +507,13 @@ export const SUPPORTING_ACCURACY_FLOOR_CAP = 4.9;
  * click_appeal cap here: for supporting photos click_appeal maps to Presentation
  * (only 15% weight), so a low value must not cap the whole score. Accuracy,
  * however, DOES gate: a photo that fails to honestly show what the buyer
- * receives is capped into the weak band.
+ * receives is capped into the weak band. There is deliberately NO cap based on
+ * is_marketing_graphic — graphics are scored honestly on their own merit; the
+ * flag drives UI disclosure and generation gating, not the score.
  */
 export function computeSupportingOverall(
   pillars: RubricJson["pillars"],
-  trustRisk?: RubricJson["trust_risk"],
-  isMarketingGraphic?: boolean
+  trustRisk?: RubricJson["trust_risk"]
 ): number {
   const raw =
     pillars.thumbnail * SUPPORTING_PILLAR_WEIGHTS.thumbnail +
@@ -520,13 +522,6 @@ export function computeSupportingOverall(
     pillars.click_appeal * SUPPORTING_PILLAR_WEIGHTS.click_appeal;
   const weighted = Math.round(raw * 10) / 10;
   let capped = weighted;
-  // Marketing-graphic gate: a composed sales/advertising graphic is not a photo
-  // of what the buyer receives. Cap into the weak band DETERMINISTICALLY, so the
-  // verdict does not depend on the model scoring the Accuracy pillar low (which
-  // it does inconsistently on collages with sales text).
-  if (isMarketingGraphic) {
-    capped = Math.min(capped, SUPPORTING_ACCURACY_FLOOR_CAP);
-  }
   // Accuracy gate: misleading/inaccurate supporting photos cannot present usable.
   if (pillars.background <= SUPPORTING_ACCURACY_FLOOR_PILLAR) {
     capped = Math.min(capped, SUPPORTING_ACCURACY_FLOOR_CAP);

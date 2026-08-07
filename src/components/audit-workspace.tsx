@@ -693,6 +693,15 @@ export function AuditWorkspace({
                 )}
               </div>
             )}
+            {/* Kept-original note: a first improve (or retry) that scored at or
+                below the current version keeps it and shows this honest note in
+                the non-preview state, where the preview-tab note above does not
+                render. */}
+            {keepNote && !previewActive && !improveLoading && !refiningVisible && (
+              <div className="mb-3 max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
+                {keepNote}
+              </div>
+            )}
             {improveLoading && !previewActive ? (
               // Generating with no preview yet (fresh improve OR an edit from
               // the original). A manual EDIT always shows the white Edit-style
