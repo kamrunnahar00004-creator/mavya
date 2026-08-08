@@ -803,8 +803,7 @@ export async function improvePhoto(args: {
       return {
         ok: false,
         code: "provider_refusal",
-        message:
-          "The AI provider's safety system blocked this result. This can happen even on ordinary product photos and is not something you did wrong. You were not charged for this attempt; you can try again.",
+        message: "The AI provider's safety system blocked this result.",
         unresolvedIssues: [],
         attempts,
       };

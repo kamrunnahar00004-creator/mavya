@@ -120,7 +120,7 @@ async function jobPayload(
           job.error_code === "subscription_past_due"
         ? "An active plan is needed to improve photos. Check Settings to update billing."
         : job.error_code === "provider_refusal"
-        ? "The AI provider's safety system blocked this result. This can happen even on ordinary product photos and is not something you did wrong. You were not charged for this attempt; you can try again."
+        ? "The AI provider's safety system blocked this result."
         : null,
     resultUrl:
       job.status === "completed"
