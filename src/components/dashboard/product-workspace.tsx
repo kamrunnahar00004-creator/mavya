@@ -47,6 +47,10 @@ export type InitialJob = {
   /** generation_jobs.workflow_id: null on the attempt-1 root, else the root id.
    *  Used to derive the feedback workflow root (see deriveWorkflowRootId). */
   workflowId?: string | null;
+  /** generation_jobs.operation, the AUTHORITATIVE job kind. Read this (not
+   *  transient client state like Photo.pendingOp, which does not survive a
+   *  refresh/navigation) to decide whether a completed job is an edit. */
+  operation?: "improve" | "edit" | "retry" | "refine";
   /** ISO timestamp of the version's completion (for picker labels). */
   createdAt?: string;
 };
@@ -648,24 +652,53 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
             : rubricToAuditResult(payload.candidateRubric).overallScore;
         const existingScore = cur.audit.improvedScore;
         // Keep-better rule: ANY non-edit attempt (first improve OR a retry) that
-        // scored at or below the currently kept version does NOT replace it. The
-        // server already refused to select it (keptPrevious === true); the UI
-        // must match, keep the current view (original or prior preview), and say
-        // so honestly. Edits always apply (the seller asked for that change) and
-        // never set keptPrevious. This is what stops a worse first improve from
-        // displaying as the result and resurfacing on refresh.
-        if (payload.keptPrevious === true) {
+        // scored at or below the currently kept version does NOT replace it.
+        // Applying the candidate requires EXPLICIT server confirmation
+        // (keptPrevious === false) that it actually won the selection — a
+        // transient lookup failure on the server leaves keptPrevious undefined
+        // (unknown), which must be treated the SAME as a loss: keep the
+        // current view and stay retryable, never display an unverified
+        // candidate as though it won. Edits are the one exception: they
+        // always apply unconditionally by design (the seller asked for that
+        // specific change) and never set keptPrevious at all.
+        //
+        // Edit detection prefers the AUTHORITATIVE server field
+        // (payload.operation, generation_jobs.operation) over the transient
+        // client flag (cur.pendingOp): pendingOp is React state set when the
+        // request started and does not survive a refresh or navigation, so a
+        // completed edit polled after remounting would otherwise fall through
+        // to the strict non-edit path and could wrongly preserve the previous
+        // image instead of applying the seller's explicit edit.
+        const isEditResult =
+          payload.operation === "edit" || cur.pendingOp === "edit";
+        if (!isEditResult && payload.keptPrevious !== false) {
+          // Trust ONLY the server's fresh comparison (re-derived on every poll
+          // from the exact source the keep-better floor reads) for anything
+          // quoted in the message. Client-cached state (existingScore) is used
+          // ONLY for the canRetry threshold below, never to guess a number the
+          // server did not confirm — if the server's own lookup failed, show
+          // honest neutral copy with no score rather than a possibly-stale one.
+          const kind = payload.keptKind ?? null;
+          const kept = typeof payload.keptScore === "number" ? payload.keptScore : null;
+          const canRetryFallback =
+            typeof existingScore !== "number" || existingScore < 8;
           patch(photoId, {
             improveStatus: "idle",
             improveStartedAt: undefined,
             improveStage: undefined,
             improveError: undefined,
-            canRetry: typeof existingScore !== "number" || existingScore < 8,
+            canRetry: kept === null ? canRetryFallback : kept < 8,
             versions: withVersion(cur, payload),
             keepNote:
-              typeof existingScore === "number"
-                ? `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${existingScore.toFixed(1)}, so we kept the stronger one. You can try again.`
-                : `We generated a version, but it scored ${newScore.toFixed(1)} versus your original ${cur.audit.overallScore.toFixed(1)}, so we kept your original. You can try again.`,
+              kept !== null && kind === "selected"
+                ? `We generated another version, but it scored ${newScore.toFixed(1)} versus your current ${kept.toFixed(1)}, so we kept the stronger one. You can try again.`
+                : kept !== null && kind === "original"
+                ? `We generated a version, but it scored ${newScore.toFixed(1)} versus your original ${kept.toFixed(1)}, so we kept your original. You can try again.`
+                : kind === "selected"
+                ? "We generated another version, but kept your current version. You can try again."
+                : kind === "original"
+                ? "We generated a version, but kept your original. You can try again."
+                : "We generated another version, but kept your existing one. You can try again.",
           });
           return;
         }

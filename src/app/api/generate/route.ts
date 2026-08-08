@@ -73,13 +73,77 @@ async function jobPayload(
   extra?: Partial<GenerationJobPayload>
 ): Promise<GenerationJobPayload> {
   let selectedByServer: boolean | undefined;
+  // Server-truth score of whatever the seller is CURRENTLY looking at when
+  // this job was NOT selected (never the client's possibly-stale local
+  // state), re-derived fresh from the exact same sources the keep-better
+  // floor compares against (0024): the selected generation job's raw score,
+  // or photos.current_audit_id's raw score when nothing is selected.
+  let keptScore: number | null = null;
+  let keptKind: "selected" | "original" | null = null;
   if (job.status === "completed" && job.photo_id) {
-    const { data: photo } = await supabase
+    const { data: photo, error: photoErr } = await supabase
       .from("photos")
-      .select("selected_generation_job_id")
+      .select("selected_generation_job_id, current_audit_id")
       .eq("id", job.photo_id)
       .maybeSingle();
-    selectedByServer = photo?.selected_generation_job_id === job.id;
+    if (photoErr) {
+      // A transient query failure must NEVER masquerade as "not selected":
+      // that would falsely claim keptPrevious and could hide a legitimately
+      // selected winner. Leave selectedByServer undefined (unknown) — the
+      // payload already renders keptPrevious as undefined in that case, not
+      // a false claim either way.
+      logEvent("generate.selection_lookup_failed", {
+        jobId: job.id,
+        photoId: job.photo_id,
+        error: photoErr.message,
+      });
+    } else {
+      selectedByServer = photo?.selected_generation_job_id === job.id;
+    }
+    if (photo && !photoErr && !selectedByServer) {
+      if (photo.selected_generation_job_id) {
+        keptKind = "selected";
+        const { data: sel, error: selErr } = await supabase
+          .from("generation_jobs")
+          .select("raw_score, candidate_rubric")
+          .eq("id", photo.selected_generation_job_id)
+          .maybeSingle();
+        if (selErr) {
+          // Log and leave keptScore null: the client shows neutral copy
+          // rather than a number it cannot verify against server truth.
+          logEvent("generate.kept_score_lookup_failed", {
+            jobId: job.id,
+            photoId: job.photo_id,
+            source: "selected_generation_job",
+            error: selErr.message,
+          });
+        } else {
+          const rubric = sel?.candidate_rubric as
+            | { raw_overall_score?: number; overall_score?: number }
+            | null;
+          keptScore =
+            sel?.raw_score ?? rubric?.raw_overall_score ?? rubric?.overall_score ?? null;
+        }
+      } else if (photo.current_audit_id) {
+        keptKind = "original";
+        const { data: aud, error: audErr } = await supabase
+          .from("audits")
+          .select("overall_score, rubric")
+          .eq("id", photo.current_audit_id)
+          .maybeSingle();
+        if (audErr) {
+          logEvent("generate.kept_score_lookup_failed", {
+            jobId: job.id,
+            photoId: job.photo_id,
+            source: "current_audit",
+            error: audErr.message,
+          });
+        } else {
+          const rubric = aud?.rubric as { raw_overall_score?: number } | null;
+          keptScore = rubric?.raw_overall_score ?? aud?.overall_score ?? null;
+        }
+      }
+    }
   }
   // Surface the workflow's follow-up background attempt (if any) so the client
   // can keep polling for a quietly-improved version.
@@ -110,6 +174,7 @@ async function jobPayload(
     status: job.status,
     stage: job.stage,
     outcome: job.outcome,
+    operation: job.operation,
     errorCode: (job.error_code as ApiErrorCode | null) ?? null,
     // The executor runs detached from any request, so billing failures are
     // surfaced through the polled payload instead of a synchronous response.
@@ -132,6 +197,8 @@ async function jobPayload(
     workflowId: job.workflow_id,
     keptPrevious:
       selectedByServer === undefined ? undefined : !selectedByServer,
+    keptScore,
+    keptKind,
     refinement,
     ...extra,
   };
@@ -302,21 +369,46 @@ export async function POST(req: NextRequest) {
   }
 
   // Ownership: RLS scopes photos to the owner; a foreign photoId returns null.
-  const { data: photo } = await supabase
+  // A genuine "no row" (photoErr absent, photo null) is a real not-found; a
+  // QUERY FAILURE must not be reported the same way — that would misreport a
+  // transient DB error as "Photo not found" instead of a retryable failure.
+  const { data: photo, error: photoErr } = await supabase
     .from("photos")
-    .select("id, role, storage_path, mime, product_id, selected_generation_job_id")
+    .select("id, role, storage_path, mime, product_id, selected_generation_job_id, current_audit_id")
     .eq("id", photoId)
     .maybeSingle();
+  if (photoErr) {
+    logEvent("generate.photo_lookup_failed", { userId: user.id, photoId, error: photoErr.message });
+    return apiError("internal_error", "Could not start generation. Try again.");
+  }
   if (!photo) return apiError("source_unavailable", "Photo not found.");
 
   // Baseline audit: the exact persisted audit the user saw. Never re-scored.
-  const { data: auditRow } = await supabase
-    .from("audits")
-    .select("id, rubric, created_at, score_cache_id")
-    .eq("photo_id", photo.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Read via current_audit_id (0024's single source of truth), not an
+  // independent order-by — the same pointer the keep-better floor and the
+  // product page both read, never a third place that could disagree.
+  let auditRow:
+    | { id: string; rubric: RubricJson; created_at: string; score_cache_id: string }
+    | null = null;
+  if (photo.current_audit_id) {
+    const { data, error: auditErr } = await supabase
+      .from("audits")
+      .select("id, rubric, created_at, score_cache_id")
+      .eq("id", photo.current_audit_id)
+      .maybeSingle();
+    if (auditErr) {
+      logEvent("generate.audit_lookup_failed", {
+        userId: user.id,
+        photoId,
+        error: auditErr.message,
+      });
+      return apiError("internal_error", "Could not start generation. Try again.");
+    }
+    auditRow = data;
+  }
+  // A genuine missing/stale audit (no current_audit_id, or a legacy row
+  // without rubric/score_cache_id) is distinct from the query failures above,
+  // already returned. This is the seller's real "score it first" state.
   if (!auditRow?.rubric || !auditRow.score_cache_id) {
     return apiError("stale_audit", "Score this photo before improving it.");
   }

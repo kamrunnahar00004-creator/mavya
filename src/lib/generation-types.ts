@@ -38,6 +38,11 @@ export type GenerationJobPayload = {
   status: GenerationJobStatus;
   stage: string | null;
   outcome: "publish_ready" | "useful_free_preview" | null;
+  /** Authoritative job kind (generation_jobs.operation). Determine edit
+   *  completion from THIS, never from transient client state (Photo.pendingOp
+   *  does not survive a refresh/navigation) — edits always apply
+   *  unconditionally regardless of the selection-lookup verdict. */
+  operation?: "improve" | "edit" | "retry" | "refine";
   errorCode: ApiErrorCode | null;
   message: string | null;
   /** Signed URL of the persisted result (completed jobs only). */
@@ -49,6 +54,16 @@ export type GenerationJobPayload = {
   creditsRemaining?: number;
   /** A completed result was persisted but did not replace the stronger selection. */
   keptPrevious?: boolean;
+  /** Server-truth raw score of whatever WAS kept (the selected generation, or
+   *  the current audit) when keptPrevious is true. Re-derived fresh on every
+   *  poll from the same source the selection floor compares against, so a
+   *  "kept X versus Y" message never quotes a client-cached number that could
+   *  have gone stale relative to what the server actually compared. */
+  keptScore?: number | null;
+  /** What keptScore refers to: an existing selected generation, or the
+   *  original (nothing selected). Drives the "current" vs "original" wording
+   *  without trusting client-cached state for that either. */
+  keptKind?: "selected" | "original" | null;
   /** Which bounded attempt this job is (1 = user-visible, 2-3 = background refinement). */
   attemptNumber?: number;
   /** Workflow grouping id (the root attempt's job id). */

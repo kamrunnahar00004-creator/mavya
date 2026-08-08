@@ -78,59 +78,39 @@ export async function POST(req: NextRequest) {
     return apiError("forbidden", "The score does not match the saved photo.");
   }
 
-  // Idempotent compatibility: all verification above (ownership + stored-image
-  // byte hash + score-cache match) has ALREADY completed. Only now, return an
-  // existing audit for the same (photo, score cache) rather than inserting a
-  // duplicate. Idempotency never shortcuts verification. A genuine re-rating
-  // uses a NEW score-cache row (score_cache uniqueness includes rubric_version),
-  // so a different rubric version still inserts a fresh audit.
-  const findExisting = () =>
-    admin
-      .from("audits")
-      .select("id")
-      .eq("photo_id", photo.id)
-      .eq("score_cache_id", cached.id)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-  const { data: existing } = await findExisting();
-  if (existing) {
-    return NextResponse.json({ ok: true, auditId: existing.id }, { status: 200 });
-  }
-
+  // All verification above (ownership + stored-image byte hash + score-cache
+  // match) has ALREADY completed. Persisting the audit AND advancing
+  // photos.current_audit_id happens atomically, under the same `for update`
+  // photos row lock select_generation_if_stronger takes (0024): the two can
+  // never interleave, so the keep-better floor can never compare against a
+  // stale audit a concurrent re-rating just replaced. Idempotent: a repeat
+  // call for the same (photo, score cache) returns the existing row rather
+  // than inserting a duplicate; a genuine re-rating uses a NEW score-cache row
+  // (score_cache uniqueness includes rubric_version), so a different rubric
+  // version still inserts a fresh audit and advances the pointer.
   const rubric = cached.rubric as { overall_score?: unknown };
   const overallScore =
     typeof rubric.overall_score === "number" ? rubric.overall_score : null;
-  const { data: audit, error } = await admin
-    .from("audits")
-    .insert({
-      photo_id: photo.id,
-      kind: expectedMode === "main" ? "main" : "supporting",
-      rubric: cached.rubric,
-      overall_score: overallScore,
-      rubric_version: cached.rubric_version,
-      image_hash: cached.image_hash,
-      score_cache_id: cached.id,
-    })
-    .select("id")
-    .single();
-  if (error) {
-    // A concurrent writer won the (photo_id, score_cache_id) unique index:
-    // adopt its audit instead of failing.
-    if ((error as { code?: string }).code === "23505") {
-      const { data: winner } = await findExisting();
-      if (winner) {
-        return NextResponse.json({ ok: true, auditId: winner.id }, { status: 200 });
-      }
+  const { data: auditId, error } = await admin.rpc(
+    "persist_audit_and_advance_current",
+    {
+      p_user: user.id,
+      p_photo: photo.id,
+      p_kind: expectedMode === "main" ? "main" : "supporting",
+      p_rubric: cached.rubric,
+      p_overall_score: overallScore,
+      p_rubric_version: cached.rubric_version,
+      p_image_hash: cached.image_hash,
+      p_score_cache_id: cached.id,
     }
-    logEvent("audit.persist_failed", { userId: user.id, photoId, error: error.message });
+  );
+  if (error || !auditId) {
+    logEvent("audit.persist_failed", {
+      userId: user.id,
+      photoId,
+      error: error?.message,
+    });
     return apiError("persistence_failed", "The audit could not be saved.");
   }
-  if (!audit) {
-    logEvent("audit.persist_failed", { userId: user.id, photoId });
-    return apiError("persistence_failed", "The audit could not be saved.");
-  }
-  return NextResponse.json({ ok: true, auditId: audit.id }, { status: 201 });
+  return NextResponse.json({ ok: true, auditId }, { status: 200 });
 }

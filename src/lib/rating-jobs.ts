@@ -267,47 +267,25 @@ export async function runQueuedRatingOnce(
       return job.id;
     }
 
-    const findExistingAudit = () =>
-      admin
-        .from("audits")
-        .select("id")
-        .eq("photo_id", photo.id)
-        .eq("score_cache_id", scoreCacheId)
-        .order("created_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-    const { data: existingAudit } = await findExistingAudit();
-    let audit = existingAudit;
-    let auditError: { message?: string } | null = null;
-    if (!audit) {
-      const inserted = await admin
-        .from("audits")
-        .insert({
-          photo_id: photo.id,
-          kind: mode === "main" ? "main" : "supporting",
-          rubric,
-          overall_score: rubric.overall_score,
-          rubric_version: rubricVersion,
-          image_hash: imageHash,
-          score_cache_id: scoreCacheId,
-        })
-        .select("id")
-        .single();
-      audit = inserted.data;
-      auditError = inserted.error;
-      // Concurrent writer won the (photo_id, score_cache_id) unique index:
-      // adopt the winning audit and complete this rating with it.
-      if (auditError && (auditError as { code?: string }).code === "23505") {
-        const { data: winner } = await findExistingAudit();
-        if (winner) {
-          audit = winner;
-          auditError = null;
-        }
+    // The ONLY audit writer (0024): persists the audit (idempotent on
+    // (photo_id, score_cache_id)) AND atomically advances
+    // photos.current_audit_id under the same row lock select_generation_if_
+    // stronger takes, so a rating completing here can never race a concurrent
+    // improve's keep-better floor into comparing against a stale audit.
+    const { data: auditId, error: auditError } = await admin.rpc(
+      "persist_audit_and_advance_current",
+      {
+        p_user: job.user_id,
+        p_photo: photo.id,
+        p_kind: mode === "main" ? "main" : "supporting",
+        p_rubric: rubric,
+        p_overall_score: rubric.overall_score,
+        p_rubric_version: rubricVersion,
+        p_image_hash: imageHash,
+        p_score_cache_id: scoreCacheId,
       }
-    }
-    if (auditError || !audit) {
+    );
+    if (auditError || !auditId) {
       await failJob(job, "persistence_failed", "The rating could not be saved.", true);
       return job.id;
     }
@@ -317,7 +295,7 @@ export async function runQueuedRatingOnce(
       .update({
         status: "completed",
         score_cache_id: scoreCacheId,
-        audit_id: audit.id,
+        audit_id: auditId,
         error_code: null,
         error_message: null,
         completed_at: new Date().toISOString(),

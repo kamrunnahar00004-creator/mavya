@@ -70,7 +70,11 @@ describe("durable rating jobs", () => {
   });
 
   it("makes cache and audit persistence idempotent across worker retries", () => {
-    expect(ratingJobs).toContain('.eq("score_cache_id", scoreCacheId)');
+    // score_cache idempotency (raw JS lookup) is unchanged.
+    expect(ratingJobs).toContain('.eq("context_hash", contextHash)');
+    // Audit persistence idempotency moved into the atomic RPC (0024): it is
+    // idempotent on (photo_id, score_cache_id) inside the SQL function itself.
+    expect(ratingJobs).toContain("persist_audit_and_advance_current");
     expect(ratingJobs).toContain("allowanceKey");
     expect(ratingJobs).toContain("refundAllowance(job.allowance_key)");
   });

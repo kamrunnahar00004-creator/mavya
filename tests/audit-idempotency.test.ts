@@ -81,61 +81,61 @@ describe("does not modify already-applied migrations", () => {
   });
 });
 
-describe("/api/audits is idempotent WITHOUT shortcutting verification", () => {
+describe("/api/audits is idempotent WITHOUT shortcutting verification (0024)", () => {
   const route = read("src/app/api/audits/route.ts");
 
-  it("verifies ownership + stored-image hash BEFORE the existing-audit lookup", () => {
+  it("verifies ownership + stored-image hash BEFORE persisting", () => {
     const download = route.indexOf(".download(photo.storage_path)");
     const hashCheck = route.indexOf("storedHash !== cached.image_hash");
-    const existingLookup = route.indexOf("findExisting");
+    const persistCall = route.indexOf("persist_audit_and_advance_current");
     expect(download).toBeGreaterThan(-1);
     expect(hashCheck).toBeGreaterThan(download);
-    // Idempotent return happens only after verification.
-    expect(existingLookup).toBeGreaterThan(hashCheck);
+    expect(persistCall).toBeGreaterThan(hashCheck);
   });
 
-  it("returns an existing audit instead of inserting a duplicate", () => {
-    expect(route).toContain('.eq("score_cache_id", cached.id)');
-    expect(route).toContain("status: 200");
-  });
-
-  it("adopts the winner on a 23505 unique-index race", () => {
-    expect(route).toContain('code === "23505"');
+  it("persists via the atomic RPC, not a raw insert (idempotency + pointer lives in SQL now)", () => {
+    expect(route).toContain('admin.rpc(\n    "persist_audit_and_advance_current"');
+    expect(route).not.toContain('.from("audits")\n    .insert(');
   });
 });
 
-describe("durable rating path handles the 23505 audit race", () => {
+describe("durable rating path persists via the same atomic RPC (0024)", () => {
   const ratingJobs = read("src/lib/rating-jobs.ts");
 
-  it("re-selects and completes the rating with the winning audit id", () => {
-    expect(ratingJobs).toContain('code === "23505"');
-    expect(ratingJobs).toContain("findExistingAudit");
-    expect(ratingJobs).toContain("audit_id: audit.id");
+  it("calls persist_audit_and_advance_current instead of a raw insert + 23505 race", () => {
+    expect(ratingJobs).toContain('admin.rpc(\n      "persist_audit_and_advance_current"');
+    expect(ratingJobs).not.toContain('.from("audits")\n        .insert(');
+    expect(ratingJobs).toContain("audit_id: auditId");
   });
 
-  it("looks up the deterministic latest audit (created_at DESC, id DESC)", () => {
+  it("fails the rating job (with refund) when the RPC returns no audit id", () => {
     const block = ratingJobs.slice(
-      ratingJobs.indexOf("findExistingAudit"),
-      ratingJobs.indexOf("findExistingAudit") + 400
+      ratingJobs.indexOf("persist_audit_and_advance_current"),
+      ratingJobs.indexOf("persist_audit_and_advance_current") + 700
     );
-    expect(block).toContain('.order("created_at", { ascending: false })');
-    expect(block).toContain('.order("id", { ascending: false })');
+    expect(block).toContain("if (auditError || !auditId)");
+    expect(block).toContain('failJob(job, "persistence_failed"');
   });
 });
 
-describe("product hydration fetches only the latest audit per photo", () => {
+describe("product hydration fetches the audit via current_audit_id (0024)", () => {
   const page = read("src/app/(app)/dashboard/product/[id]/page.tsx");
 
-  it("embeds an ordered, limit-1 audit resource (created_at DESC, id DESC)", () => {
-    expect(page).toContain("audits(id, rubric, created_at)");
-    expect(page).toContain('{ ascending: false, referencedTable: "audits" }');
-    expect(page).toContain('.limit(1, { referencedTable: "audits" })');
+  it("selects current_audit_id on photos instead of an embedded ordered audits relation", () => {
+    expect(page).toContain("current_audit_id");
+    // The old embed (its own order-by, a second place "latest" could disagree
+    // with the pointer) is gone.
+    expect(page).not.toContain("audits(id, rubric, created_at)");
+    expect(page).not.toContain('referencedTable: "audits"');
+  });
+
+  it("fetches the audit BY ID (current_audit_id), never re-derives 'latest' with its own order-by", () => {
+    expect(page).toContain('.from("audits")');
+    expect(page).toMatch(/\.in\("id", currentAuditIds\)/);
   });
 
   it("still carries the full rubric (incl. persisted checklist), not a trimmed subset", () => {
-    // The embed selects the whole rubric object, so the supporting checklist and
-    // every UI field remain available; only the NUMBER of audit rows is capped.
-    expect(page).toContain("rubric");
+    expect(page).toContain("id, rubric, created_at");
     expect(page).not.toContain("rubric->'priority_action'"); // no field trimming here
   });
 });

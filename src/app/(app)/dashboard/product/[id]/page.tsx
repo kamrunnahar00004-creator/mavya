@@ -22,7 +22,12 @@ type PhotoRow = {
   storage_path: string;
   position: number;
   created_at: string;
-  audits: AuditRow[] | null;
+  /** photos.current_audit_id (0024): the SINGLE source of truth for "the
+   *  audit the seller currently sees" — the same pointer the keep-better floor
+   *  reads, maintained exclusively by persist_audit_and_advance_current. Never
+   *  re-derive "latest audit" with an independent order-by here; that was
+   *  exactly the tie-break/race class of bug 0024 exists to close. */
+  current_audit_id: string | null;
   selected_generation_job_id: string | null;
   selection_source: "auto" | "user" | null;
   alternate_generation_job_id: string | null;
@@ -41,6 +46,9 @@ type JobRow = {
   fidelity: FidelityReport | null;
   attempt_number: number | null;
   workflow_id: string | null;
+  /** Authoritative job kind (never inferred from transient client state — see
+   *  InitialJob.operation / product-workspace.tsx's edit-detection). */
+  operation: "improve" | "edit" | "retry" | "refine";
   created_at: string;
 };
 
@@ -70,17 +78,11 @@ export default async function ProductPage({
     timed("product.photos", () =>
       supabase
         .from("photos")
-        .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, audits(id, rubric, created_at)")
+        .select("id, role, storage_path, position, created_at, selected_generation_job_id, selection_source, alternate_generation_job_id, has_alternate_generation, selection_is_reverted, current_audit_id")
         .eq("product_id", id)
         .order("role", { ascending: true })
         .order("position", { ascending: true })
         .order("created_at", { ascending: true })
-        // Exactly ONE latest audit per photo crosses the wire (full rubric,
-        // including the persisted supporting checklist), ordered created_at
-        // DESC, id DESC — never the whole audit history.
-        .order("created_at", { ascending: false, referencedTable: "audits" })
-        .order("id", { ascending: false, referencedTable: "audits" })
-        .limit(1, { referencedTable: "audits" })
     ),
   ]);
   if (!entitlement.active && entitlement.reason !== "past_due") {
@@ -95,6 +97,29 @@ export default async function ProductPage({
 
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);
+
+  // The audit each photo's current_audit_id points at — fetched by id, NOT
+  // re-derived with an independent order-by (that duplication is exactly what
+  // let the pointer and the display disagree before 0024). One row per photo,
+  // no cap needed: current_audit_id names exactly one id per photo.
+  const auditsById = new Map<string, AuditRow>();
+  const currentAuditIds = rows
+    .map((r) => r.current_audit_id)
+    .filter((id): id is string => Boolean(id));
+  if (currentAuditIds.length > 0) {
+    const auditRows = unwrapOrThrow(
+      await timed("product.current_audits", () =>
+        supabase
+          .from("audits")
+          .select("id, rubric, created_at")
+          .in("id", currentAuditIds)
+      ),
+      "product_hydration_failed"
+    );
+    for (const a of (auditRows as AuditRow[] | null) ?? []) {
+      auditsById.set(a.id, a);
+    }
+  }
 
   // Latest rating job per photo: a photo without an audit yet must still
   // render (analyzing while its durable rating runs, or a visible failed
@@ -128,7 +153,7 @@ export default async function ProductPage({
   // margin, and keeps the page fast for heavy generators. Per-photo queries
   // run concurrently (a product has at most one main + a few supporting).
   const JOB_SELECT =
-    "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, workflow_id, created_at";
+    "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, workflow_id, operation, created_at";
   const jobsByPhoto = new Map<string, JobRow>();
   const jobsByPhotoId = new Map<string, JobRow[]>();
   const jobsById = new Map<string, JobRow>();
@@ -184,10 +209,8 @@ export default async function ProductPage({
   const validPhotoIds = new Set<string>();
 
   for (const row of rows) {
-    // Determine if this photo is usable (has a valid latest rubric)
-    const latest = [...(row.audits ?? [])].sort((a, b) =>
-      b.created_at.localeCompare(a.created_at)
-    )[0];
+    // Determine if this photo is usable (has a valid current audit)
+    const latest = row.current_audit_id ? auditsById.get(row.current_audit_id) : undefined;
     if (!latest?.rubric) continue; // Skip unusable photos
 
     validPhotoIds.add(row.id);
@@ -287,10 +310,11 @@ export default async function ProductPage({
 
     const { selectedRow, alternateRow, completedRows } = metadata;
 
-    // Get the latest rubric (we know it exists because validPhotoIds includes this photo)
-    const latest = [...(row.audits ?? [])].sort((a, b) =>
-      b.created_at.localeCompare(a.created_at)
-    )[0];
+    // The current audit (we know it exists because validPhotoIds includes this photo).
+    // Guarded explicitly rather than asserted: the two loops share the
+    // invariant but not TypeScript's control-flow narrowing across them.
+    const latest = row.current_audit_id ? auditsById.get(row.current_audit_id) : undefined;
+    if (!latest) return null;
 
     const imageSrc = signedUrls.get(row.storage_path);
     if (!imageSrc) return null;
@@ -314,6 +338,7 @@ export default async function ProductPage({
         fidelity: v.fidelity,
         attemptNumber: v.attempt_number ?? 1,
         workflowId: v.workflow_id,
+        operation: v.operation,
         createdAt: v.created_at,
       });
     }
@@ -334,6 +359,7 @@ export default async function ProductPage({
         fidelity: jobRow.fidelity,
         attemptNumber: jobRow.attempt_number ?? 1,
         workflowId: jobRow.workflow_id,
+        operation: jobRow.operation,
         createdAt: jobRow.created_at,
       };
     }
@@ -350,6 +376,7 @@ export default async function ProductPage({
           resultUrl,
           candidateRubric: selectedRow.candidate_rubric,
           fidelity: selectedRow.fidelity,
+          operation: selectedRow.operation,
         };
       }
     }
@@ -367,6 +394,7 @@ export default async function ProductPage({
           candidateRubric: alternateRow.candidate_rubric,
           fidelity: alternateRow.fidelity,
           attemptNumber: alternateRow.attempt_number ?? 1,
+          operation: alternateRow.operation,
         };
       }
     }

@@ -51,3 +51,7 @@ _scaffold/
 # public repo (privacy). The golden-set entries + customer1-eval.test.ts
 # reference these paths, so they must be present locally to run that eval.
 eval/fixtures/customer1/
+
+# Scratch file used to pass long commit messages via `git commit -F`. Never
+# meant to be tracked; `git add -A` has picked it up by accident before.
+COMMIT_MSG.tmp

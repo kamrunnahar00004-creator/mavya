@@ -54,8 +54,10 @@ describe("worse-first-improve never displays (client wiring)", () => {
   it("keeps the current version for ANY kept attempt, not just retry", () => {
     // Regression guard: the branch used to be `operation === \"retry\" && ...`,
     // so a worse FIRST improve fell through and displayed. It must key only on
-    // the server's keptPrevious verdict.
-    expect(workspace).toContain("if (payload.keptPrevious === true)");
+    // the server's keptPrevious verdict (now: EXPLICIT === false required to
+    // apply a non-edit result; see current-audit-pointer.test.ts for the
+    // undefined/unknown-must-not-apply follow-up fix).
+    expect(workspace).toContain("if (!isEditResult && payload.keptPrevious !== false)");
     expect(workspace).not.toContain('operation === "retry" && payload.keptPrevious');
   });
 

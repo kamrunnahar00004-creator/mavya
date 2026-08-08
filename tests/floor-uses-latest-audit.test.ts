@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+// NOTE: 0023's inline `where photo_id = p_photo order by created_at desc
+// limit 1` query was itself superseded by 0024 (current-audit-pointer.test.ts)
+// — Codex found its tie-break (created_at desc only) could pick a different
+// row than the UI's created_at desc, id desc, and that a concurrent audit
+// insert could still race the read. 0024 replaces the ad hoc query with a
+// single always-correct pointer (photos.current_audit_id) maintained under the
+// same row lock. This file still accurately describes 0023's own text.
 /**
  * 0023 supersedes 0021's "nothing selected" floor source. Real bug: a photo
  * re-scored under a NEW rubric version after an improve was requested but
