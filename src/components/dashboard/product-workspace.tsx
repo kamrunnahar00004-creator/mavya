@@ -15,6 +15,7 @@ import {
 import type { AuditResult, DemoState } from "@/data/demo-states";
 import type { RubricJson, SupportingPhotoChecklistItem } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
+import { freePreviewMessage } from "@/lib/free-preview-message";
 import {
   ACTIVE_JOB_STATUSES,
   JOB_STAGE_LABELS,
@@ -140,35 +141,6 @@ type RevertSnap = {
   freePreviewMessage?: string;
 };
 
-const FREE_PREVIEW_PREFIX =
-  "This version is better, but Mavya still found things worth reviewing. We recommend ";
-
-// Default honest message when the fidelity check found nothing specific to
-// flag. Points the seller straight at AI Edit for a directed change instead of
-// a vague "worth reviewing" hedge. The general "Label text and small patterns
-// may differ..." disclaimer (shown above, unconditionally, for every improved
-// preview) already covers the verify-before-publish requirement, so this
-// message does not need to repeat it.
-const NEUTRAL_PREVIEW_MESSAGE =
-  "We kept your product exactly as uploaded. For a different result, use AI Edit and tell us what to change.";
-
-function freePreviewMessage(fidelity: FidelityReport | null): string {
-  if (!fidelity) return NEUTRAL_PREVIEW_MESSAGE;
-  // Founder decision 2026-08-08: removed. Redundant with the always-shown
-  // "Label text and small patterns may differ..." disclaimer, which already
-  // satisfies the verify-before-publish requirement for every AI-improved
-  // preview, drift or not.
-  if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
-    return "";
-  }
-  if (fidelity.ai_looking) {
-    return "This version may look AI-generated. Check it against your real product before using it.";
-  }
-  if (!fidelity.full_product_visible) {
-    return `${FREE_PREVIEW_PREFIX}uploading a photo that shows the complete product.`;
-  }
-  return NEUTRAL_PREVIEW_MESSAGE;
-}
 
 const REFINING_NOTE =
   "Mavya keeps refining this photo in the background. If a stronger faithful version is found, it will appear here automatically. Your current version stays available.";
