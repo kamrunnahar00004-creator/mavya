@@ -654,7 +654,7 @@ export function AuditWorkspace({
 
           {contextBanner && (
             <div
-              className="reveal-item rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]"
+              className="reveal-item rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]"
               data-reveal-order="2"
             >
               {contextBanner}
