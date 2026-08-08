@@ -31,6 +31,10 @@ const REFUNDABLE_CODES: ReadonlySet<string> = new Set([
   "provider_timeout",
   "persistence_failed",
   "internal_error",
+  // The PROVIDER's own safety system blocked the result. Not infrastructure,
+  // but also not something the seller caused or could have avoided — refund
+  // the same as any other failure outside their control.
+  "provider_refusal",
 ]);
 
 export function isRefundable(code: string): boolean {

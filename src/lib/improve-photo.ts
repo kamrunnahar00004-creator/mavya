@@ -28,7 +28,7 @@ import {
   SUPPORTING_FIDELITY_PROMPT,
   type FidelityReport,
 } from "@/lib/fidelity";
-import { imageEditCall } from "@/lib/openai";
+import { imageEditCall, ProviderModerationError } from "@/lib/openai";
 import { rawOverall } from "@/lib/calibration";
 import { ISSUE_FAMILIES, PILLAR_KEYS, type IssueFamily, type RubricJson } from "@/lib/rubric";
 import { generationGuidanceFor } from "@/lib/taxonomy";
@@ -545,7 +545,8 @@ export type ImproveFailure = {
   code:
     | "vision_failed"
     | "image_failed"
-    | "bad_ai_response";
+    | "bad_ai_response"
+    | "provider_refusal";
   message: string;
   /** Unresolved issues from the failed attempt, used to target a retry. */
   unresolvedIssues: string[];
@@ -792,6 +793,22 @@ export async function improvePhoto(args: {
       size,
     });
   } catch (err) {
+    if (err instanceof ProviderModerationError) {
+      // Distinct, expected failure: the PROVIDER's own safety system rejected
+      // the generated result. Not an infrastructure error and not something
+      // the seller did wrong (this can false-positive on ordinary product
+      // photos) — log the full provider detail (never truncated) and surface
+      // an honest, specific message instead of the generic one.
+      console.error("[improve-photo] provider moderation blocked:", err.providerError);
+      return {
+        ok: false,
+        code: "provider_refusal",
+        message:
+          "The AI provider's safety system blocked this result. This can happen even on ordinary product photos and is not something you did wrong. You were not charged for this attempt; you can try again.",
+        unresolvedIssues: [],
+        attempts,
+      };
+    }
     console.error("[improve-photo] image edit failed:", err);
     return {
       ok: false,

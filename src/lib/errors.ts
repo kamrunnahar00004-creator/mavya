@@ -64,6 +64,7 @@ const STATUS: Partial<Record<ApiErrorCode, number>> = {
   no_publishable_candidate: 422,
   unsafe_candidate: 422,
   incomplete_source: 422,
+  provider_refusal: 422,
 };
 
 export function apiError(

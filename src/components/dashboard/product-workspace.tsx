@@ -150,6 +150,7 @@ const RETRYABLE_CODES = new Set([
   "vision_failed",
   "provider_timeout",
   "internal_error",
+  "provider_refusal",
 ]);
 
 function applyCompletedJob(photo: Photo, job: InitialJob): Photo {

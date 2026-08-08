@@ -249,6 +249,23 @@ const CHECKLIST_RESPONSE_SCHEMA = {
   },
 } as const;
 
+/**
+ * OpenAI blocked the image edit/generation via its own safety system
+ * (error.code "moderation_blocked"). This is a distinct, expected failure mode
+ * — not an infrastructure error and not something the seller did wrong — so
+ * callers can surface an honest message instead of a generic "failed" one.
+ * Thrown with the full parsed provider error attached (never logged with a
+ * blind text slice, so the moderation category is never silently cut off).
+ */
+export class ProviderModerationError extends Error {
+  readonly providerError: unknown;
+  constructor(message: string, providerError: unknown) {
+    super(message);
+    this.name = "ProviderModerationError";
+    this.providerError = providerError;
+  }
+}
+
 function getOpenAIKey(): string {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
@@ -495,7 +512,22 @@ export async function imageEditCall(args: {
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`OpenAI image edit ${res.status}: ${text.slice(0, 400)}`);
+    // Parse the structured error FIRST (never a blind slice) so a moderation
+    // block's category detail is never silently truncated in logs, and so it
+    // can be distinguished from a generic provider failure.
+    let parsed: { error?: { code?: string; message?: string } } | null = null;
+    try {
+      parsed = JSON.parse(text) as { error?: { code?: string; message?: string } };
+    } catch {
+      // Not JSON: fall through to the generic error below.
+    }
+    if (parsed?.error?.code === "moderation_blocked") {
+      throw new ProviderModerationError(
+        parsed.error.message || "Blocked by the provider's safety system.",
+        parsed
+      );
+    }
+    throw new Error(`OpenAI image edit ${res.status}: ${text.slice(0, 2000)}`);
   }
   const data = (await res.json()) as {
     data?: Array<{ b64_json?: string }>;
