@@ -91,6 +91,15 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
+    // v17 = founder review of REAL generated output: framing advice worked
+    // (4.5->7.3, exact fix applied), but click_appeal/presentation advice was
+    // still hollow ("could be more appealing", "subtle prop") -- no worked
+    // example existed for that category. Added a PROP RULE (one item,
+    // functionally tied to product use, so it cannot contradict the rubric's
+    // own clutter penalty), mandatory named background colors, a 3rd-5th grade
+    // reading-level rule, and reframed vague-opener guidance: soft problem
+    // language is fine, PART 2 must always be concrete (not a banned-phrase
+    // list, which over-corrected).
     // v16 = fixed a self-contradictory sentence count in v15 (parts summed to
     // 3-4.5 sentences but the same rule capped the total at 2-3). Now one
     // consistent rule: 3-4 short sentences total (1 problem + 2-3 action).
@@ -104,14 +113,16 @@ describe("canonical taxonomy", () => {
     // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v16");
-    // supporting-v11 = same contradiction fix applied to the supporting prompt.
+    expect(RUBRIC_VERSION).toBe("main-v17");
+    // supporting-v12 = same click_appeal/presentation + reading-level fix
+    // applied to the supporting prompt.
+    // v11 = fixed the same self-contradictory sentence count.
     // v10 = advice-concreteness fix (physical, digital preview, and
     // listing-graphic roles alike).
     // v9 = is_marketing_graphic added to the strict response schema so it is
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v11");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v12");
   });
 });
 

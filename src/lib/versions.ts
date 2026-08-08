@@ -52,8 +52,22 @@ export const TAXONOMY_VERSION = 1;
 // match. Concreteness is still prompt-only (probabilistic, not a hard
 // guarantee) — a deterministic backend validator/retry is a real option but a
 // separate founder decision, not built here.
-export const RUBRIC_VERSION = "main-v16";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v11";
+// main-v17 / supporting-v12 (2026-08-08, founder review of real generated
+// output): the framing worked example proved the lever (4.5->7.3, thumbnail
+// 3->8, exact fix applied) but click_appeal/presentation advice was still
+// hollow ("could be more appealing", "more engaging setup", "subtle prop") --
+// no worked example existed for that category, so the model had nothing to
+// match. Founder corrections applied: (1) do not ban vague openers -- a soft
+// problem sentence is fine, PART 2 must always be concrete, reframed the rule
+// around that instead of a banned-phrase list; (2) added a PROP RULE requiring
+// any suggested prop be ONE item functionally tied to product use (not
+// decorative filler), explicitly to avoid the app suggesting a prop that its
+// OWN clutter-penalty rule would then dock on a re-score; (3) background-color
+// advice must name an actual plain color word; (4) added an explicit 3rd-5th
+// grade reading-level rule and simplified existing worked examples
+// ("indirect ambient light" -> "soft daylight near a window").
+export const RUBRIC_VERSION = "main-v17";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v12";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
