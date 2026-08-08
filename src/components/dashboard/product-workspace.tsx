@@ -143,20 +143,31 @@ type RevertSnap = {
 const FREE_PREVIEW_PREFIX =
   "This version is better, but Mavya still found things worth reviewing. We recommend ";
 
+// Default honest message when the fidelity check found nothing specific to
+// flag. Points the seller straight at AI Edit for a directed change instead of
+// a vague "worth reviewing" hedge. The general "Label text and small patterns
+// may differ..." disclaimer (shown above, unconditionally, for every improved
+// preview) already covers the verify-before-publish requirement, so this
+// message does not need to repeat it.
+const NEUTRAL_PREVIEW_MESSAGE =
+  "We kept your product exactly as uploaded. For a different result, use AI Edit and tell us what to change.";
+
 function freePreviewMessage(fidelity: FidelityReport | null): string {
-  if (!fidelity) return `${FREE_PREVIEW_PREFIX}reviewing it before using it.`;
+  if (!fidelity) return NEUTRAL_PREVIEW_MESSAGE;
+  // Founder decision 2026-08-08: removed. Redundant with the always-shown
+  // "Label text and small patterns may differ..." disclaimer, which already
+  // satisfies the verify-before-publish requirement for every AI-improved
+  // preview, drift or not.
   if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
-    return "This version may have changed product details. Review it carefully before using it, or generate another version.";
+    return "";
   }
   if (fidelity.ai_looking) {
     return "This version may look AI-generated. Check it against your real product before using it.";
   }
-  let tail =
-    "trying a cleaner, sharper source photo, or generating another version for a different result.";
   if (!fidelity.full_product_visible) {
-    tail = "uploading a photo that shows the complete product.";
+    return `${FREE_PREVIEW_PREFIX}uploading a photo that shows the complete product.`;
   }
-  return `${FREE_PREVIEW_PREFIX}${tail}`;
+  return NEUTRAL_PREVIEW_MESSAGE;
 }
 
 const REFINING_NOTE =

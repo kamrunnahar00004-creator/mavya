@@ -47,6 +47,16 @@ const SUPPORTING_ANALYZING_STATUSES = [
   "Preparing the supporting photo grade…",
 ];
 
+/**
+ * Bold every "AI Edit" substring in a plain-text message (the button's name),
+ * so the copy can point at it without threading ReactNode through props.
+ */
+function boldAIEdit(text: string): React.ReactNode {
+  return text.split(/(AI Edit)/g).map((part, i) =>
+    part === "AI Edit" ? <strong key={i}>{part}</strong> : part
+  );
+}
+
 type Props = {
   state: DemoState;
   uploadedSrc?: string;
@@ -76,7 +86,7 @@ type Props = {
   keepNote?: string;
   /** Checklist shot ids already covered by uploaded supporting photos. */
   coveredShotIds?: string[];
-  /** Plain-language edit. When provided, an "Edit photo" button opens the edit modal. Physical products only. */
+  /** Plain-language edit. When provided, an "AI Edit" button opens the edit modal. Physical products only. */
   onEdit?: (
     instruction: string,
     source: "original" | "preview"
@@ -234,12 +244,12 @@ export function AuditWorkspace({
     <button
       type="button"
       onClick={() => setEditModalOpen(true)}
-      aria-label="Edit photo"
-      title="Edit however you like."
+      aria-label="AI Edit"
+      title="Type what you want changed and AI redraws it."
       className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
     >
       <Wrench className="h-4 w-4" aria-hidden="true" />
-      Edit photo
+      AI Edit
     </button>
   ) : null;
 
@@ -740,8 +750,8 @@ export function AuditWorkspace({
                     photo" advice is contradictory — the refining status below
                     is the only message until the workflow settles. */}
                 {freePreview && freePreviewMessage && !backgroundRefining && (
-                  <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-mid)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
-                    {freePreviewMessage}
+                  <div className="max-w-[620px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] leading-relaxed text-[var(--color-ink-muted)]">
+                    {boldAIEdit(freePreviewMessage)}
                   </div>
                 )}
                 {/* Background refinement stays SUBTLE: the white countdown

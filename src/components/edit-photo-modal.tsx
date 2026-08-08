@@ -58,11 +58,11 @@ export function EditPhotoModal({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Edit photo"
+      aria-label="AI Edit"
       className="fixed inset-0 z-50 flex flex-col bg-[rgba(15,13,11,0.72)] backdrop-blur-sm"
     >
       <div className="flex items-center justify-between px-5 py-4 text-white">
-        <span className="text-[15px] font-semibold">Edit photo</span>
+        <span className="text-[15px] font-semibold">AI Edit</span>
         <button
           type="button"
           onClick={onClose}
