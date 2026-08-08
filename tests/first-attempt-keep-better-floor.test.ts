@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+// NOTE: the "nothing selected" floor SOURCE (source_audit_id vs latest audit)
+// described below was superseded by 0023 (floor-uses-latest-audit.test.ts) —
+// source_audit_id was a frozen snapshot that could go stale after a rubric
+// version bump re-scored the photo. This file still accurately describes what
+// 0021's own migration text says; it is not the live function definition.
 describe("0021 first-attempt keep-better floor (SQL)", () => {
   const sql = readFileSync(
     path.resolve(
