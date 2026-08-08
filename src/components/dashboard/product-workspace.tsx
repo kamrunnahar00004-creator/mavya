@@ -669,8 +669,16 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         // completed edit polled after remounting would otherwise fall through
         // to the strict non-edit path and could wrongly preserve the previous
         // image instead of applying the seller's explicit edit.
+        // pendingOp is ONLY a fallback for a MISSING payload.operation, never
+        // an override when the server explicitly said something else: an
+        // edit's automatic background refinement (attempt 2, operation
+        // "refine") polls under the SAME photoId without ever touching
+        // pendingOp, so a stale "edit" from the original request would
+        // otherwise outrank the refinement's own authoritative "refine" and
+        // apply an unverified candidate unconditionally.
         const isEditResult =
-          payload.operation === "edit" || cur.pendingOp === "edit";
+          payload.operation === "edit" ||
+          (payload.operation == null && cur.pendingOp === "edit");
         if (!isEditResult && payload.keptPrevious !== false) {
           // Trust ONLY the server's fresh comparison (re-derived on every poll
           // from the exact source the keep-better floor reads) for anything

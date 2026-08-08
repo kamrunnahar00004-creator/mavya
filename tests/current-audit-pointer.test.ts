@@ -249,7 +249,7 @@ describe("0024 (4th Codex pass): unknown selection verdict never displays an unv
 
   it("edits are exempt (they always apply unconditionally, by design, and never set keptPrevious)", () => {
     expect(workspace).toContain(
-      'const isEditResult =\n          payload.operation === "edit" || cur.pendingOp === "edit";'
+      'const isEditResult =\n          payload.operation === "edit" ||\n          (payload.operation == null && cur.pendingOp === "edit");'
     );
   });
 });
@@ -300,10 +300,58 @@ describe("0024 (5th Codex pass): edit detection uses the AUTHORITATIVE server op
     expect(route).toContain("operation: job.operation,");
   });
 
-  it("isEditResult checks payload.operation FIRST, falling back to pendingOp only as a defensive second source", () => {
-    expect(workspace).toMatch(
-      /payload\.operation === "edit" \|\| cur\.pendingOp === "edit"/
+  it("isEditResult falls back to pendingOp ONLY when payload.operation is missing, never when it says something else", () => {
+    // Bug: `payload.operation === "edit" || cur.pendingOp === "edit"` let a
+    // stale "edit" from an earlier request outrank an EXPLICIT "refine" from
+    // the server -- exactly what happens when an edit's automatic background
+    // refinement (attempt 2, operation "refine") completes: it polls under
+    // the same photoId without ever touching pendingOp, so the leftover
+    // "edit" would wrongly apply an unverified refinement candidate
+    // unconditionally. The fallback must require payload.operation == null.
+    expect(workspace).toContain(
+      'payload.operation === "edit" ||\n          (payload.operation == null && cur.pendingOp === "edit")'
     );
+    expect(workspace).not.toMatch(
+      /payload\.operation === "edit" \|\| cur\.pendingOp === "edit"[^)]/
+    );
+  });
+});
+
+describe("0024 (6th Codex pass): isEditResult precedence, in behavioral terms", () => {
+  // Pure re-implementation of the exact expression in product-workspace.tsx,
+  // so the three cases Codex asked for are locked in as real assertions (not
+  // just a string match on the source).
+  function isEditResult(
+    payloadOperation: "improve" | "edit" | "retry" | "refine" | null | undefined,
+    pendingOp: "improve" | "edit" | "retry" | undefined
+  ): boolean {
+    return (
+      payloadOperation === "edit" ||
+      (payloadOperation == null && pendingOp === "edit")
+    );
+  }
+
+  it('payload "edit" -> edit, regardless of pendingOp', () => {
+    expect(isEditResult("edit", undefined)).toBe(true);
+    expect(isEditResult("edit", "retry")).toBe(true);
+  });
+
+  it('payload "refine" + stale pendingOp "edit" -> NOT edit (the bug case)', () => {
+    expect(isEditResult("refine", "edit")).toBe(false);
+  });
+
+  it('payload "improve" or "retry" + stale pendingOp "edit" -> NOT edit', () => {
+    expect(isEditResult("improve", "edit")).toBe(false);
+    expect(isEditResult("retry", "edit")).toBe(false);
+  });
+
+  it('missing payload.operation + pendingOp "edit" -> edit (the intended fallback)', () => {
+    expect(isEditResult(null, "edit")).toBe(true);
+    expect(isEditResult(undefined, "edit")).toBe(true);
+  });
+
+  it("missing payload.operation + no pendingOp -> not edit", () => {
+    expect(isEditResult(null, undefined)).toBe(false);
   });
 });
 
