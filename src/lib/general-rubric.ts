@@ -105,10 +105,9 @@ Output rules:
 - priority_pillar: the ONE pillar key ("thumbnail", "lighting", "background", "click_appeal") the priority_action addresses (supporting meanings: thumbnail=Buyer Confidence, lighting=Clarity, background=Accuracy, click_appeal=Presentation). Normally the weakest pillar.
 - priority_issue_family: the family of the priority_action: "identity" (unclear/wrong product), "lighting", "background", "framing", "trust", "clarity", or "other".
 - detected_category: the same canonical category ids used for main photos (jewelry, candles, soap, mugs, crochet_plush, apparel, wall_art, home_decor, vintage, bags, personalized, stickers, stationery, art_supplies, or a digital id such as digital_planner, printables, spreadsheet), or "other".
-- priority_explanation and every next_steps[].observation (weak/mid bands only; strong bands stay praise-only per the Strong next_steps rule above) follow the SAME two-part structure, always:
-  PART 1 - PROBLEM (1-1.5 sentences): name the specific visible issue in plain language a beginner instantly understands. No jargon.
+- priority_explanation and every next_steps[].observation (weak/mid bands only; strong bands stay praise-only per the Strong next_steps rule above) follow the SAME two-part structure, always, 3-4 short sentences TOTAL, never an essay:
+  PART 1 - PROBLEM (1 sentence): name the specific visible issue in plain language a beginner instantly understands. No jargon.
   PART 2 - ACTION (2-3 sentences): the exact, physically executable step. It MUST include at least one of: a specific number/amount (a percentage, a distance, a size, a degree), a named tool or setting (e.g. "your phone's Contrast slider", "a desk lamp", "Canva's text tool"), or a named surface/material (e.g. "white poster board", "a wood table", "dark slate"). A bare verb with no target is FORBIDDEN as the whole action: "use a cleaner background", "move to softer light", "reduce harsh glare", "make the text readable" are ALL too vague on their own, none names a level, a tool, or a surface, so a seller cannot execute it without guessing. Fold the missing specific into the sentence every time.
-  priority_explanation is 2-3 short sentences total (problem + the specific change); observation is 2-3 short sentences, MAX, never an essay.
   WORKED EXAMPLES (write a NEW instance for the actual visible issue every time; match this level of specificity, never copy these verbatim):
   - Lighting/glare: "Harsh direct light creates a bright hotspot that hides the surface texture." + "Move the piece next to a window in indirect daylight, or diffuse a lamp through a white sheet of paper about a foot away."
   - Background/clutter: "The wrinkled fabric behind the item looks messy and distracts from it." + "Lay a plain white or light gray poster board flat behind and under the product, and smooth out any folds before shooting."
@@ -174,8 +173,8 @@ Valid JSON shape:
   "priority_issue_family": "identity" | "lighting" | "background" | "framing" | "trust" | "clarity" | "other",
   "detected_category": one of the canonical category ids, or "other",
   "priority_action": string (imperative, <=12 words),
-  "priority_explanation": string (2-3 short sentences),
-  "next_steps": array of exactly 3 items, each { "observation": string (2-3 short sentences), "action": string (imperative, <=12 words) },
+  "priority_explanation": string (3-4 short sentences for weak/mid; 2-3 for strong-band praise, see band rules above),
+  "next_steps": array of exactly 3 items, each { "observation": string (3-4 short sentences for weak/mid; 2-3 for strong-band praise), "action": string (imperative, <=12 words) },
   "share_headline": string (<=12 words),
   "crop_suggestion": null OR { "x": 0..1, "y": 0..1, "w": 0..1, "h": 0..1 },
   "light_adjustment": null OR { "exposure": number -1..1, "warmth": number -1..1 },

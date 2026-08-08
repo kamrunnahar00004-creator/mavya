@@ -91,8 +91,10 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
-    // v15 = advice concreteness: mandatory two-part structure (1-1.5 sentence
-    // problem, 2-3 sentence action naming a number/tool/surface) + worked
+    // v16 = fixed a self-contradictory sentence count in v15 (parts summed to
+    // 3-4.5 sentences but the same rule capped the total at 2-3). Now one
+    // consistent rule: 3-4 short sentences total (1 problem + 2-3 action).
+    // v15 = advice concreteness: mandatory two-part structure + worked
     // examples, so priority_explanation and next_steps observations stop
     // producing bare-verb advice ("Increase contrast.", "Adjust lighting.")
     // that a seller cannot execute without guessing.
@@ -102,13 +104,14 @@ describe("canonical taxonomy", () => {
     // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v15");
-    // supporting-v10 = same advice-concreteness fix applied to the supporting
-    // prompt (physical, digital preview, and listing-graphic roles alike).
+    expect(RUBRIC_VERSION).toBe("main-v16");
+    // supporting-v11 = same contradiction fix applied to the supporting prompt.
+    // v10 = advice-concreteness fix (physical, digital preview, and
+    // listing-graphic roles alike).
     // v9 = is_marketing_graphic added to the strict response schema so it is
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v10");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v11");
   });
 });
 

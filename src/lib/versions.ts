@@ -44,8 +44,16 @@ export const TAXONOMY_VERSION = 1;
 // covers every case per founder instruction). Digital-advice examples that were
 // themselves vague ("Make the label readable.") were replaced with concrete
 // ones too.
-export const RUBRIC_VERSION = "main-v15";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v10";
+// main-v16 / supporting-v11 (2026-08-08, Codex review of v15): v15's rule was
+// internally contradictory — PART 1 (1-1.5 sentences) + PART 2 (2-3 sentences)
+// sums to 3-4.5, but the same rule then capped the total at "2-3 short
+// sentences". Fixed to one consistent rule: 3-4 short sentences TOTAL (1
+// problem sentence + 2-3 action sentences); updated the JSON-shape hints to
+// match. Concreteness is still prompt-only (probabilistic, not a hard
+// guarantee) — a deterministic backend validator/retry is a real option but a
+// separate founder decision, not built here.
+export const RUBRIC_VERSION = "main-v16";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v11";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

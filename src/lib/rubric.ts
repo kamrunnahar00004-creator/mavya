@@ -354,10 +354,9 @@ Output rules:
 - priority_action: imperative, max 12 words. Make it a scannable command.
 - priority_pillar: the ONE pillar key ("thumbnail", "lighting", "background", "click_appeal") that priority_action addresses. It should normally be the weakest pillar; if two tie, pick the one the priority_action targets.
 - priority_issue_family: the ONE family the priority_action belongs to: "identity" (buyer cannot tell what the product is), "lighting", "background", "framing" (crop/composition/product size in frame), "trust" (AI-looking/mockup/cutout/cheap presentation), "clarity" (blur/focus/readability), or "other".
-- priority_explanation and every next_steps[].observation follow the SAME two-part structure, always:
-  PART 1 - PROBLEM (1-1.5 sentences): name the specific visible issue in plain language a beginner instantly understands. No jargon.
+- priority_explanation and every next_steps[].observation follow the SAME two-part structure, always, 3-4 short sentences TOTAL, never an essay:
+  PART 1 - PROBLEM (1 sentence): name the specific visible issue in plain language a beginner instantly understands. No jargon.
   PART 2 - ACTION (2-3 sentences): the exact, physically executable step. It MUST include at least one of: a specific number/amount (a percentage, a distance, a size, a degree), a named tool or setting (e.g. "your phone's Contrast slider", "a desk lamp", "Canva's text tool", "Etsy's crop tool"), or a named surface/material (e.g. "white poster board", "a wood table", "dark slate"). A bare verb with no target is FORBIDDEN as the whole action: "increase contrast", "adjust the lighting", "add shadow for depth", "use a more supportive background", "make the text readable" are ALL too vague on their own, none names a level, a tool, or a surface, so a seller cannot execute it without guessing. Fold the missing specific into the sentence every time.
-  priority_explanation is 2-3 short sentences total (problem + the specific change); observation is 2-3 short sentences, MAX, never an essay.
   WORKED EXAMPLES (write a NEW instance for the actual visible issue every time; match this level of specificity, never copy these verbatim):
   - Focus/blur: "The pendant is blurry because the camera focused behind it." + "Rest it on dark slate, tap the screen on the prongs to lock focus, and shoot in bright window light."
   - Lighting/contrast: "The carved details are washed out because the light is too flat and even." + "Move the piece beside a window in indirect daylight, about 2 feet back, so one side is slightly brighter than the other. On your phone, open Edit and raise Contrast until the carved lines show a visible dark edge, roughly +20 to +30."
@@ -427,8 +426,8 @@ Valid JSON shape:
   },
   "detected_category": one of the canonical category ids listed above, or "other",
   "priority_action": string (imperative, <=12 words),
-  "priority_explanation": string (2-3 short sentences),
-  "next_steps": array of exactly 3 items, each { "observation": string (2-3 short sentences), "action": string (imperative, <=12 words) },
+  "priority_explanation": string (3-4 short sentences for weak/mid; 2-3 for strong-band praise, see band rules above),
+  "next_steps": array of exactly 3 items, each { "observation": string (3-4 short sentences for weak/mid; 2-3 for strong-band praise), "action": string (imperative, <=12 words) },
   "share_headline": string (<=12 words),
   "crop_suggestion": null OR { "x": 0..1, "y": 0..1, "w": 0..1, "h": 0..1 },
   "light_adjustment": null OR { "exposure": number -1..1, "warmth": number -1..1 },
