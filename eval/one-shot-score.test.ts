@@ -36,6 +36,11 @@ describe.skipIf(!RUN)("one-shot score variance", () => {
           `thumb=${p.thumbnail} light=${p.lighting} bg=${p.background} click=${p.click_appeal} ` +
           `trust=${r.trust_risk} priority="${r.priority_action}"`
       );
+      console.log(`  priority_explanation: ${r.priority_explanation}`);
+      const steps = (r.next_steps ?? []) as Array<{ action: string; observation: string }>;
+      steps.forEach((s, idx) =>
+        console.log(`  next_step[${idx}] action="${s.action}"\n    observation: ${s.observation}`)
+      );
       await new Promise((res) => setTimeout(res, 21_000));
     }
   });

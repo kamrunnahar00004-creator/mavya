@@ -30,8 +30,22 @@ export const TAXONOMY_VERSION = 1;
 // positive case (composed graphic-as-main flagged false, leaving one-click
 // permitted); the worked example is the lever that moves gpt-4o. Detection only.
 // v13: is_marketing_graphic first added to the MAIN prompt + JSON shapes.
-export const RUBRIC_VERSION = "main-v14";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v9";
+// main-v15 / supporting-v10 (2026-08-08, founder decision): advice concreteness.
+// Live outputs were failing the rubric's own stated bar ("Increase contrast for
+// better detail.", "Add subtle shadows for depth.", "Adjust lighting for more
+// appeal." — none names a level, a tool, or a surface, so a seller cannot
+// execute it). The rule already existed but the model ignored it with only one
+// worked example (jewelry blur). Fixed with a mandatory two-part structure
+// (1-1.5 sentence problem, then 2-3 sentence action naming a number/tool/
+// surface) plus 5-6 worked examples spanning lighting, background, framing,
+// digital text, and listing graphics, applied to BOTH priority_explanation and
+// every next_steps observation, in BOTH the main and supporting prompts (main
+// physical + main digital + supporting physical + supporting digital/graphic —
+// covers every case per founder instruction). Digital-advice examples that were
+// themselves vague ("Make the label readable.") were replaced with concrete
+// ones too.
+export const RUBRIC_VERSION = "main-v15";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v10";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
