@@ -91,6 +91,13 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
+    // v18 = fixed the PROP RULE's own example contradicting itself (a spoon
+    // "near a candle" is decoration, not a functional prop -- replaced with
+    // matches, used to light it) and removed remaining jargon still present in
+    // worked examples ("surface texture", "resolution", "high-contrast",
+    // "diffused") despite the reading-level rule banning them. Added
+    // eval/advice-quality.ts heuristic checks (unit-tested + wired into the
+    // live golden-set harness) so these rules are verified, not just eyeballed.
     // v17 = founder review of REAL generated output: framing advice worked
     // (4.5->7.3, exact fix applied), but click_appeal/presentation advice was
     // still hollow ("could be more appealing", "subtle prop") -- no worked
@@ -113,16 +120,16 @@ describe("canonical taxonomy", () => {
     // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v17");
-    // supporting-v12 = same click_appeal/presentation + reading-level fix
-    // applied to the supporting prompt.
+    expect(RUBRIC_VERSION).toBe("main-v18");
+    // supporting-v13 = same spoon/jargon fix applied to the supporting prompt.
+    // v12 = same click_appeal/presentation + reading-level fix.
     // v11 = fixed the same self-contradictory sentence count.
     // v10 = advice-concreteness fix (physical, digital preview, and
     // listing-graphic roles alike).
     // v9 = is_marketing_graphic added to the strict response schema so it is
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v12");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v13");
   });
 });
 

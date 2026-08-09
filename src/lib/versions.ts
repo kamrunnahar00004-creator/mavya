@@ -66,8 +66,22 @@ export const TAXONOMY_VERSION = 1;
 // advice must name an actual plain color word; (4) added an explicit 3rd-5th
 // grade reading-level rule and simplified existing worked examples
 // ("indirect ambient light" -> "soft daylight near a window").
-export const RUBRIC_VERSION = "main-v17";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v12";
+// main-v18 / supporting-v13 (2026-08-08, Codex review of v17): the PROP RULE's
+// own parenthetical example ("a spoon near a candle in a jar") contradicted
+// the rule itself -- a spoon is not used WITH a candle, it is decoration, and
+// the live-tested model output even called it "decorative". Fixed: replaced
+// with a genuinely functional example (matches, used to light the candle) and
+// added an explicit test ("could a buyer picture themselves USING the prop
+// together with the product?"). Also removed remaining jargon the reading-
+// level rule banned but its own worked examples still used ("surface
+// texture", "preview image resolution", "high-contrast", "diffused"). Added
+// eval/advice-quality.ts (pure, unit-tested heuristics: concrete-specific
+// check, jargon ban, decorative-prop ban) wired into the live golden-set
+// harness as new checks (advice_no_jargon hard, advice_concrete/
+// advice_no_decorative_prop soft) for every weak/mid-band result, so these
+// rules are verified by the test suite going forward, not just eyeballed.
+export const RUBRIC_VERSION = "main-v18";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v13";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

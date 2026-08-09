@@ -23,6 +23,7 @@ import {
   type GoldenFixture,
   type GoldenSet,
 } from "./fixture-schema";
+import { findDecorativeProp, findJargon, hasConcreteSpecific } from "./advice-quality";
 
 const ROOT = path.resolve(__dirname, "..");
 export const REPORTS_DIR = path.join(ROOT, "eval", "reports");
@@ -251,6 +252,51 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
         level: strict,
         pass: got === e.is_marketing_graphic,
         detail: `expected ${e.is_marketing_graphic}, got ${got}`,
+      });
+    }
+
+    // Advice-quality heuristics (main-v17/supporting-v12): applies to every
+    // weak/mid-band result (score < 7.5), unconditional on fixture-declared
+    // expectations, since the concreteness/reading-level/prop rules are
+    // supposed to apply universally to weak/mid advice. Deliberately
+    // approximate keyword heuristics (see eval/advice-quality.ts) — soft
+    // except the jargon ban, which is unambiguous.
+    if (rubric.upload_kind !== "invalid" && score < 7.5) {
+      const adviceFields: Array<[string, string]> = [
+        ["priority_explanation", rubric.priority_explanation],
+        ...rubric.next_steps.map(
+          (s, i): [string, string] => [`next_steps[${i}].observation`, s.observation]
+        ),
+      ];
+      const jargonHits: string[] = [];
+      const vagueFields: string[] = [];
+      const decorativeHits: string[] = [];
+      for (const [field, text] of adviceFields) {
+        const jargon = findJargon(text);
+        if (jargon.length) jargonHits.push(`${field}: ${jargon.join(", ")}`);
+        if (!hasConcreteSpecific(text)) vagueFields.push(field);
+        const decorative = findDecorativeProp(text);
+        if (decorative.length) decorativeHits.push(`${field}: ${decorative.join(", ")}`);
+      }
+      checks.push({
+        name: "advice_no_jargon",
+        level: "hard",
+        pass: jargonHits.length === 0,
+        detail: jargonHits.length ? jargonHits.join("; ") : "clean",
+      });
+      checks.push({
+        name: "advice_concrete",
+        level: "soft",
+        pass: vagueFields.length === 0,
+        detail: vagueFields.length
+          ? `no number/tool/surface/color found in: ${vagueFields.join(", ")}`
+          : "every field names a specific",
+      });
+      checks.push({
+        name: "advice_no_decorative_prop",
+        level: "soft",
+        pass: decorativeHits.length === 0,
+        detail: decorativeHits.length ? decorativeHits.join("; ") : "clean",
       });
     }
 
