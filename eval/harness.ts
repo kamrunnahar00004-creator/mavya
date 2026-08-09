@@ -23,7 +23,12 @@ import {
   type GoldenFixture,
   type GoldenSet,
 } from "./fixture-schema";
-import { findDecorativeProp, findJargon, hasConcreteSpecific } from "./advice-quality";
+import {
+  findAmbiguousProp,
+  findDecorativeProp,
+  findJargon,
+  hasConcreteSpecific,
+} from "./advice-quality";
 
 const ROOT = path.resolve(__dirname, "..");
 export const REPORTS_DIR = path.join(ROOT, "eval", "reports");
@@ -271,19 +276,25 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
       const jargonHits: string[] = [];
       const vagueFields: string[] = [];
       const decorativeHits: string[] = [];
+      const ambiguousHits: string[] = [];
       for (const [field, text] of adviceFields) {
         const jargon = findJargon(text);
         if (jargon.length) jargonHits.push(`${field}: ${jargon.join(", ")}`);
         if (!hasConcreteSpecific(text)) vagueFields.push(field);
         const decorative = findDecorativeProp(text);
         if (decorative.length) decorativeHits.push(`${field}: ${decorative.join(", ")}`);
+        const ambiguous = findAmbiguousProp(text);
+        if (ambiguous.length) ambiguousHits.push(`${field}: ${ambiguous.join(", ")}`);
       }
+      // Hard: exact banned-word contract, unambiguous.
       checks.push({
         name: "advice_no_jargon",
         level: "hard",
         pass: jargonHits.length === 0,
         detail: jargonHits.length ? jargonHits.join("; ") : "clean",
       });
+      // Soft: keyword-heuristic proxy for "names a specific" — approximate by
+      // design, never a release gate on its own. See eval/advice-quality.ts.
       checks.push({
         name: "advice_concrete",
         level: "soft",
@@ -292,12 +303,24 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
           ? `no number/tool/surface/color found in: ${vagueFields.join(", ")}`
           : "every field names a specific",
       });
+      // Soft: keyword-heuristic proxy for "no decorative prop" — approximate
+      // by design, never a release gate on its own.
       checks.push({
         name: "advice_no_decorative_prop",
         level: "soft",
         pass: decorativeHits.length === 0,
         detail: decorativeHits.length ? decorativeHits.join("; ") : "clean",
       });
+      // Informational only: category-ambiguous props (e.g. "spoon") that this
+      // heuristic cannot resolve without knowing the product. Never fails.
+      if (ambiguousHits.length) {
+        checks.push({
+          name: "advice_ambiguous_prop",
+          level: "soft",
+          pass: true,
+          detail: `for review, not a failure: ${ambiguousHits.join("; ")}`,
+        });
+      }
     }
 
     return {

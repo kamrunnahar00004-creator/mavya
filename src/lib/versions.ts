@@ -80,8 +80,40 @@ export const TAXONOMY_VERSION = 1;
 // harness as new checks (advice_no_jargon hard, advice_concrete/
 // advice_no_decorative_prop soft) for every weak/mid-band result, so these
 // rules are verified by the test suite going forward, not just eyeballed.
-export const RUBRIC_VERSION = "main-v18";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v13";
+// main-v19 / supporting-v14 (2026-08-09, Codex review of v18): the golden-set
+// rerun with the new eval/advice-quality.ts checks (added in v18) surfaced two
+// real, low-frequency issues no prior check ever measured: "diffuse"/
+// "diffused" still appearing in LIVE model output on 2/20 fixtures despite
+// clean prompt source (the model draws the word from its own training, not
+// from copying prompt text -- the ban existed but was a passive "don't do
+// this" list, not forceful enough), and a "flower" prop the model invented
+// on its own. Also: the evaluator itself had real precision bugs (Codex
+// review) -- "table" substring-matched inside "suitable", "bow" substring-
+// matched inside "bowl", bare vague sentences ("Increase contrast.") passed
+// concreteness because the mere word was present with nothing concrete
+// attached, a bare digit anywhere in the text counted regardless of whether
+// it was tied to an actual instruction, and "spoon" was wrongly treated as
+// always-decorative (it's functionally normal next to tea/coffee/sugar/soup
+// products; a spoon near a candle isn't the same case, but this checker has
+// no product-category context to tell them apart). Fixed: eval/advice-
+// quality.ts now uses word-boundary matching throughout, drops "etsy"/
+// "contrast"/"crop"/"table"/"background" as standalone concrete-proof
+// keywords, requires a number to carry an actual unit (%, inches, cm...)
+// before it counts, checks the ACTION portion of the text (not the whole
+// observation) against the concreteness keywords, and splits decorative-prop
+// detection into an unambiguous list (flowers/ribbon/confetti/glitter/
+// balloon) plus a separate category-ambiguous list (spoon) that is logged
+// for review but never counted as a failure. advice_concrete and
+// advice_no_decorative_prop stay SOFT (heuristic semantic proxies, not a
+// deterministic contract -- a real guarantee needs a backend structured-
+// output validator/retry, separately scoped, not built here);
+// advice_no_jargon stays HARD (exact banned-word list, unambiguous). The
+// prompt's jargon ban itself was also strengthened: an explicit "if you
+// catch yourself about to write X, stop and write Y instead" substitution
+// pair for "diffuse"/"diffused" specifically, since a passive ban list
+// alone wasn't sufficient to stop the live model from reaching for it.
+export const RUBRIC_VERSION = "main-v19";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v14";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

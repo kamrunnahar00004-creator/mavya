@@ -2,13 +2,50 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  findAmbiguousProp,
   findDecorativeProp,
   findJargon,
   hasConcreteSpecific,
 } from "../eval/advice-quality";
 
-describe("hasConcreteSpecific (Codex: verify the concreteness rule, not just assert it)", () => {
-  it("flags a real generated failure case: problem-only text with zero specifics", () => {
+describe("hasConcreteSpecific (Codex review: word-boundary + action-portion + unit-aware numbers)", () => {
+  it("fails bare vague instructions with no real specific (Codex's exact must-fail list)", () => {
+    expect(hasConcreteSpecific("Increase contrast.")).toBe(false);
+    expect(hasConcreteSpecific("Use a cleaner background.")).toBe(false);
+    expect(hasConcreteSpecific("Crop the image.")).toBe(false);
+    expect(hasConcreteSpecific("Make it more suitable for buyers.")).toBe(false);
+    expect(hasConcreteSpecific("Improve the lighting.")).toBe(false);
+  });
+
+  it("fails a problem sentence followed by a vague action sentence", () => {
+    expect(hasConcreteSpecific("The background looks weak. Make it better.")).toBe(false);
+  });
+
+  it("fails a vague action even when an earlier, unrelated sentence has a number", () => {
+    // The "3" belongs to the problem sentence, not the action -- it must not
+    // launder the vague action sentence that follows it.
+    expect(
+      hasConcreteSpecific("The photo currently scores a 3. The presentation could be more appealing.")
+    ).toBe(false);
+  });
+
+  it("passes concrete instructions naming a number+unit or a real tool/surface/color (Codex's exact must-pass list)", () => {
+    expect(hasConcreteSpecific("Place the candle on a plain white poster board.")).toBe(true);
+    expect(hasConcreteSpecific("Move the camera back 12 inches.")).toBe(true);
+    expect(hasConcreteSpecific("Use one desk lamp above and slightly left of the product.")).toBe(true);
+    expect(hasConcreteSpecific("Crop to a square with 10% empty space around the product.")).toBe(true);
+  });
+
+  it("passes real generated examples from earlier review rounds", () => {
+    expect(
+      hasConcreteSpecific("Move the camera about a foot closer so the product fills 70% of the frame.")
+    ).toBe(true);
+    expect(hasConcreteSpecific("Photograph on a plain white poster board instead.")).toBe(true);
+    expect(hasConcreteSpecific("Position a desk lamp about a foot away.")).toBe(true);
+    expect(hasConcreteSpecific("Switch to a plain light gray background.")).toBe(true);
+  });
+
+  it("fails real problem-only text with zero specifics (unchanged from before)", () => {
     expect(
       hasConcreteSpecific("The overall presentation could be more appealing to buyers.")
     ).toBe(false);
@@ -17,13 +54,15 @@ describe("hasConcreteSpecific (Codex: verify the concreteness rule, not just ass
     ).toBe(false);
   });
 
-  it("passes text naming a number, tool, surface, or color", () => {
-    expect(
-      hasConcreteSpecific("Move the camera about a foot closer so the product fills 70% of the frame.")
-    ).toBe(true);
-    expect(hasConcreteSpecific("Photograph on a plain white poster board instead.")).toBe(true);
-    expect(hasConcreteSpecific("Position a desk lamp about a foot away.")).toBe(true);
-    expect(hasConcreteSpecific("Switch to a plain light gray background.")).toBe(true);
+  it("boundary: 'suitable' does not trigger the removed 'table' word", () => {
+    // Regression guard for the exact bug Codex found: "table" is no longer a
+    // concrete-keyword at all, but this proves the substring collision is gone
+    // even if a surface keyword is ever reintroduced.
+    expect(hasConcreteSpecific("Make it more suitable for buyers.")).toBe(false);
+  });
+
+  it("boundary: a bare unrelated digit does not count without a unit", () => {
+    expect(hasConcreteSpecific("This is the 3rd photo but it still looks off.")).toBe(false);
   });
 });
 
@@ -43,14 +82,8 @@ describe("findJargon (Codex: the reading-level rule must not contradict its own 
   });
 });
 
-describe("findDecorativeProp (Codex: the spoon example contradicted its own functional-prop rule)", () => {
-  it("flags the exact bad example Codex caught", () => {
-    expect(
-      findDecorativeProp("Add one small decorative element, like a spoon, beside the teacup.")
-    ).toContain("spoon");
-  });
-
-  it("flags other purely-decorative props", () => {
+describe("findDecorativeProp (Codex review: word-boundary matching, spoon is not universally decorative)", () => {
+  it("flags unambiguous decorative props", () => {
     expect(findDecorativeProp("Add a few flowers and a ribbon nearby.")).toEqual(
       expect.arrayContaining(["flowers", "ribbon"])
     );
@@ -63,6 +96,29 @@ describe("findDecorativeProp (Codex: the spoon example contradicted its own func
     expect(
       findDecorativeProp("Add a small box of matches near the candle, since you use them to light it.")
     ).toEqual([]);
+  });
+
+  it("no longer treats spoon as always-decorative (Codex: a spoon can be functionally normal for tea/coffee/sugar/soup)", () => {
+    expect(
+      findDecorativeProp("Add one small decorative element, like a spoon, beside the teacup.")
+    ).toEqual([]);
+    expect(findDecorativeProp("Set a small spoon beside the sugar bowl.")).toEqual([]);
+  });
+
+  it("boundary: 'bowl' does not trigger the banned word 'bow'", () => {
+    expect(findDecorativeProp("Set a small sugar bowl next to the teacup.")).toEqual([]);
+  });
+});
+
+describe("findAmbiguousProp (category-dependent props, informational only, never a failure)", () => {
+  it("flags spoon as ambiguous rather than silently dropping it", () => {
+    expect(findAmbiguousProp("Add a small spoon beside the teacup.")).toContain("spoon");
+    expect(findAmbiguousProp("Set a small spoon beside the sugar bowl.")).toContain("spoon");
+  });
+
+  it("stays empty for props with no ambiguity either way", () => {
+    expect(findAmbiguousProp("Add a folded washcloth next to the bars.")).toEqual([]);
+    expect(findAmbiguousProp("Add a few flowers nearby.")).toEqual([]);
   });
 });
 

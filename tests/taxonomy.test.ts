@@ -91,6 +91,18 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
+    // v19 = Codex review of the v18 golden-set rerun (15/20): two real,
+    // low-frequency issues surfaced ("diffuse"/"diffused" still in live
+    // output despite the ban; a self-invented "flower" prop), plus real
+    // precision bugs in the evaluator itself ("table" matched inside
+    // "suitable", "bow" matched inside "bowl", bare vague sentences passed
+    // concreteness on a bare keyword, spoon was wrongly always-decorative).
+    // Fixed eval/advice-quality.ts (word-boundary matching, unit-aware
+    // numbers, action-portion-only concreteness check, spoon moved to a
+    // separate ambiguous/informational list) and strengthened the prompt's
+    // jargon ban with an explicit "if you catch yourself writing X, use Y"
+    // substitution pair for diffuse/diffused. See src/lib/versions.ts for
+    // the full writeup.
     // v18 = fixed the PROP RULE's own example contradicting itself (a spoon
     // "near a candle" is decoration, not a functional prop -- replaced with
     // matches, used to light it) and removed remaining jargon still present in
@@ -120,7 +132,7 @@ describe("canonical taxonomy", () => {
     // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v18");
+    expect(RUBRIC_VERSION).toBe("main-v19");
     // supporting-v13 = same spoon/jargon fix applied to the supporting prompt.
     // v12 = same click_appeal/presentation + reading-level fix.
     // v11 = fixed the same self-contradictory sentence count.
@@ -129,7 +141,7 @@ describe("canonical taxonomy", () => {
     // v9 = is_marketing_graphic added to the strict response schema so it is
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v13");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v14");
   });
 });
 
