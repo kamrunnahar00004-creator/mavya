@@ -77,11 +77,26 @@ describe.skipIf(!LIVE)("live golden-set scoring eval", () => {
         console.log(`[eval] FAIL ${r.id}: ${r.checks.filter((c) => !c.pass).map((c) => `${c.name} (${c.detail})`).join("; ")}`);
       }
 
-      if (comparison && process.env.EVAL_ALLOW_REGRESSIONS !== "true") {
-        const hardRegressions = comparison.regressions.filter((r) =>
-          r.includes("[hard]")
+      // Two separate gates (Codex review: a baseline-regression-only check can
+      // pass green while the CURRENT run still has a real hard failure, as
+      // long as that exact failure also existed in the baseline -- that's not
+      // a release-safe state). Both are skippable via EVAL_ALLOW_REGRESSIONS
+      // for named diagnostic runs, but final release verification must run
+      // without it so both are enforced.
+      if (process.env.EVAL_ALLOW_REGRESSIONS !== "true") {
+        const currentHardFailures = run.results.flatMap((r) =>
+          r.checks
+            .filter((c) => c.level === "hard" && !c.pass)
+            .map((c) => `${r.id} :: ${c.name} — ${c.detail}`)
         );
-        expect(hardRegressions, "hard regressions vs baseline").toEqual([]);
+        expect(currentHardFailures, "current run must have zero hard failures").toEqual([]);
+
+        if (comparison) {
+          const hardRegressions = comparison.regressions.filter((r) =>
+            r.includes("[hard]")
+          );
+          expect(hardRegressions, "hard regressions vs baseline").toEqual([]);
+        }
       }
     },
     30 * 60_000

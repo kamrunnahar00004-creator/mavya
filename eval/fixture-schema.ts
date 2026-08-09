@@ -51,6 +51,14 @@ export type GoldenFixture = {
   strictness: "hard" | "soft";
   /** Include in the repeat-run consistency subset. */
   consistency?: boolean;
+  /**
+   * Explicit opt-in to persist this fixture's generated advice text into
+   * committed eval reports (see isReportSafe in harness.ts). Not needed for
+   * fixtures already under public/assets/ (safe by path); use this only to
+   * override a non-public-assets path you've deliberately confirmed is safe
+   * to commit. Never set this for a real customer's fixture.
+   */
+  reportSafe?: boolean;
   /** Human explanation of the expected judgment + provenance. */
   notes: string;
 };
@@ -142,6 +150,8 @@ export function validateFixture(f: unknown, index: number): string[] {
   }
   if (fx.role === "supporting" && !fx.main_product_context)
     errs.push(`${where}: supporting fixtures need main_product_context`);
+  if (fx.reportSafe !== undefined && typeof fx.reportSafe !== "boolean")
+    errs.push(`${where}: bad reportSafe (must be boolean)`);
   return errs;
 }
 

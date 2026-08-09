@@ -147,6 +147,21 @@ async function preprocess(buffer: Buffer): Promise<{ buffer: Buffer; mime: strin
   return { buffer: out, mime: "image/jpeg" };
 }
 
+/**
+ * Whether a fixture's generated advice text may be persisted into a
+ * committed eval report (Codex review, 2026-08-09: real customer fixtures
+ * live under eval/fixtures/customer1/, and nothing previously stopped their
+ * advice text from being written into a committed report if that path ever
+ * got exercised through persistRun — it hadn't happened yet only because of
+ * fixture ordering + the default MAX_LIVE_EVAL_FIXTURES budget, not because
+ * of any actual guardrail). Safe by default only for fixtures shipped in
+ * this repo under public/assets/ (our own test images, not anyone's
+ * account), or a fixture explicitly opted in via reportSafe: true.
+ */
+export function isReportSafe(fixture: GoldenFixture): boolean {
+  return fixture.reportSafe === true || fixture.image.startsWith("public/assets/");
+}
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult> {
@@ -356,7 +371,7 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
       isMarketingGraphic: rubric.is_marketing_graphic === true,
       latencyMs,
       adviceSnapshot:
-        rubric.upload_kind === "invalid"
+        rubric.upload_kind === "invalid" || !isReportSafe(fixture)
           ? undefined
           : {
               priorityExplanation: rubric.priority_explanation,
@@ -421,17 +436,67 @@ export async function runConsistency(
 }
 
 /**
+ * Checks whose value is a direct function of THIS run's own score, so it's
+ * correct (and required) for them to follow the median run specifically —
+ * evaluating them against a union of all 3 runs would be incoherent (e.g.
+ * "band" mismatches would fire just because a differently-scored run landed
+ * in a different band, not because of any real defect). Every OTHER check
+ * name is independent of score and must be unioned across all 3 runs — see
+ * pickMedianResult below.
+ */
+const SCORE_DERIVED_CHECK_NAMES = new Set(["score_range", "band"]);
+
+/**
  * Deterministic median-of-3 aggregation, pure (no I/O) so it's unit-testable
- * without a live call. Score ties are handled by the sort being stable —
- * with an even split (e.g. [7.3, 7.3, 8.1]) the middle element after sorting
- * is one of the tied values, which is the correct median either way.
+ * without a live call.
+ *
+ * Codex review, 2026-08-09 (real bug, not hypothetical): the first version
+ * of this function returned `{ ...median }` wholesale, which discarded the
+ * OTHER two runs' checks entirely. A model draw is a full independent
+ * generation each time — if run A (say, the lowest-scoring of the 3) had a
+ * genuine hard failure unrelated to score (wrong category, wrong
+ * upload_kind, a jargon word slipping back in, a busted schema), and the
+ * MEDIAN run happened to be clean, the whole gate would silently report
+ * "pass" and that real failure would vanish. Fixed: score-derived checks
+ * (score_range, band) still come from the median run specifically — that's
+ * the whole point of gating on the median instead of one draw. Every other
+ * check name is unioned: if ANY of the 3 runs has a failing check (hard OR
+ * soft) that the median run's own check list doesn't already flag under the
+ * same name, it's appended so it can't be silently lost. `ok` and
+ * `warnings` are recomputed from the resulting aggregated check list, not
+ * copied from the median run alone.
  */
 export function pickMedianResult(
   runs: [FixtureResult, FixtureResult, FixtureResult]
 ): FixtureResult {
   const sorted = [...runs].sort((a, b) => a.score - b.score);
   const median = sorted[1];
-  return { ...median, medianOf3: { scores: runs.map((r) => r.score), chosen: median.score } };
+
+  const aggregatedChecks: Check[] = [...median.checks];
+  for (const run of runs) {
+    for (const check of run.checks) {
+      if (SCORE_DERIVED_CHECK_NAMES.has(check.name)) continue;
+      if (check.pass) continue;
+      const alreadyFlagged = aggregatedChecks.some(
+        (c) => c.name === check.name && !c.pass
+      );
+      if (alreadyFlagged) continue;
+      const fromOtherRun = run !== median;
+      aggregatedChecks.push(
+        fromOtherRun
+          ? { ...check, detail: `[from a non-median run, score=${run.score}] ${check.detail}` }
+          : check
+      );
+    }
+  }
+
+  return {
+    ...median,
+    checks: aggregatedChecks,
+    ok: aggregatedChecks.every((c) => c.level !== "hard" || c.pass),
+    warnings: aggregatedChecks.filter((c) => c.level === "soft" && !c.pass).length,
+    medianOf3: { scores: runs.map((r) => r.score), chosen: median.score },
+  };
 }
 
 /**
