@@ -91,6 +91,11 @@ describe("canonical taxonomy", () => {
 
   it("rubric versions were bumped with the taxonomy", () => {
     expect(TAXONOMY_VERSION).toBe(1);
+    // v20 = unified the sentence-count contract to 2-3 total (1 problem +
+    // 1-2 action) everywhere, matching what every worked example already
+    // modeled (the stated rule allowed up to 3-4; no example violated it,
+    // but the rule was looser than the pattern being taught). See
+    // src/lib/versions.ts for the full writeup.
     // v19 = Codex review of the v18 golden-set rerun (15/20): two real,
     // low-frequency issues surfaced ("diffuse"/"diffused" still in live
     // output despite the ban; a self-invented "flower" prop), plus real
@@ -132,7 +137,7 @@ describe("canonical taxonomy", () => {
     // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v19");
+    expect(RUBRIC_VERSION).toBe("main-v20");
     // supporting-v13 = same spoon/jargon fix applied to the supporting prompt.
     // v12 = same click_appeal/presentation + reading-level fix.
     // v11 = fixed the same self-contradictory sentence count.
@@ -141,7 +146,7 @@ describe("canonical taxonomy", () => {
     // v9 = is_marketing_graphic added to the strict response schema so it is
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v14");
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v15");
   });
 });
 

@@ -37,6 +37,18 @@ const BASELINE_PATH = path.join(REPORTS_DIR, "baseline.json");
 export type CheckLevel = "hard" | "soft";
 export type Check = { name: string; level: CheckLevel; pass: boolean; detail: string };
 
+/**
+ * The actual generated advice text for a fixture — golden-set fixtures are
+ * our own test assets (public/assets/*.png), never a real customer's photo
+ * or account, so this text is safe to persist. Lets a reviewer see WHY a
+ * checker passed or failed directly from the report instead of trusting a
+ * paraphrase. Never populate this from anything but golden-set fixtures.
+ */
+export type AdviceSnapshot = {
+  priorityExplanation: string;
+  nextSteps: { observation: string; action: string }[];
+};
+
 export type FixtureResult = {
   id: string;
   ok: boolean; // no hard failures
@@ -50,6 +62,13 @@ export type FixtureResult = {
   priorityFamily: string;
   isMarketingGraphic: boolean;
   latencyMs: number;
+  adviceSnapshot?: AdviceSnapshot;
+  /**
+   * Present when this result was chosen by pickMedianResult() instead of a
+   * single live draw — the score_range gate (and every other check on this
+   * result) reflects the MEDIAN of 3 fresh repeats, not one stochastic call.
+   */
+  medianOf3?: { scores: number[]; chosen: number };
   error?: string;
 };
 
@@ -336,6 +355,16 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
       priorityFamily: priorityFamilyOf(rubric),
       isMarketingGraphic: rubric.is_marketing_graphic === true,
       latencyMs,
+      adviceSnapshot:
+        rubric.upload_kind === "invalid"
+          ? undefined
+          : {
+              priorityExplanation: rubric.priority_explanation,
+              nextSteps: rubric.next_steps.map((s) => ({
+                observation: s.observation,
+                action: s.action,
+              })),
+            },
     };
   } catch (err) {
     return {
@@ -389,6 +418,43 @@ export async function runConsistency(
     });
   }
   return out;
+}
+
+/**
+ * Deterministic median-of-3 aggregation, pure (no I/O) so it's unit-testable
+ * without a live call. Score ties are handled by the sort being stable —
+ * with an even split (e.g. [7.3, 7.3, 8.1]) the middle element after sorting
+ * is one of the tied values, which is the correct median either way.
+ */
+export function pickMedianResult(
+  runs: [FixtureResult, FixtureResult, FixtureResult]
+): FixtureResult {
+  const sorted = [...runs].sort((a, b) => a.score - b.score);
+  const median = sorted[1];
+  return { ...median, medianOf3: { scores: runs.map((r) => r.score), chosen: median.score } };
+}
+
+/**
+ * The release gate for a fixture. Score-range checks are evaluated against a
+ * SINGLE live draw by default, which produces exactly the "hard gate that
+ * gets manually waived on a bad draw" problem Codex flagged (candle-pink-
+ * improved-01 at 7.3 vs a 7.5 threshold, when the fixture's own history
+ * swings 7.1-8.4). Fixtures the golden set already flags as stochastic
+ * (`consistency: true` — the same flag `runConsistency` above uses for its
+ * separate reporting pass) run 3 fresh times here and gate on the MEDIAN
+ * score instead of one draw, so a single unlucky call can no longer flip a
+ * hard pass/fail on its own. Stable fixtures (no known variance) stay a
+ * single call — tripling cost on fixtures with no evidence of wobble buys
+ * nothing.
+ */
+export async function runFixtureForGate(fixture: GoldenFixture): Promise<FixtureResult> {
+  if (!fixture.consistency) return runFixture(fixture);
+  const runs = [await runFixture(fixture)];
+  await sleep(3000);
+  runs.push(await runFixture(fixture));
+  await sleep(3000);
+  runs.push(await runFixture(fixture));
+  return pickMedianResult(runs as [FixtureResult, FixtureResult, FixtureResult]);
 }
 
 // ---------------------------------------------------------------------------
@@ -451,6 +517,37 @@ export function buildReportMd(run: EvalRun, comparison: Comparison | null): stri
       for (const c of r.checks.filter((c) => !c.pass)) {
         lines.push(`- ${r.id} :: ${c.name} [${c.level}] — ${c.detail}`);
       }
+    }
+    lines.push("");
+  }
+  // Auditability: the actual generated text for every fixture with any
+  // failing/warning check, so a reviewer can see exactly why a checker
+  // passed or failed instead of trusting a paraphrase. Golden-set fixtures
+  // only — never real customer photos or accounts — so this is safe to
+  // persist in the report.
+  const failingWithAdvice = failing.filter((r) => r.adviceSnapshot);
+  if (failingWithAdvice.length) {
+    lines.push("## Advice text (for review — golden-set fixtures only, no customer data)");
+    for (const r of failingWithAdvice) {
+      const snap = r.adviceSnapshot!;
+      lines.push(`### ${r.id}`);
+      lines.push(`priority_explanation: ${JSON.stringify(snap.priorityExplanation)}`);
+      snap.nextSteps.forEach((s, i) => {
+        lines.push(`next_steps[${i}].observation: ${JSON.stringify(s.observation)}`);
+        lines.push(`next_steps[${i}].action: ${JSON.stringify(s.action)}`);
+      });
+      lines.push("");
+    }
+  }
+  const medianGated = run.results.filter((r) => r.medianOf3);
+  if (medianGated.length) {
+    lines.push("## Median-of-3 gated fixtures (score_range evaluated on the median, not one draw)");
+    lines.push("| Fixture | 3 scores | Median (used for the gate) |");
+    lines.push("|---|---|---|");
+    for (const r of medianGated) {
+      lines.push(
+        `| ${r.id} | ${r.medianOf3!.scores.map((s) => s.toFixed(1)).join(", ")} | ${r.medianOf3!.chosen.toFixed(1)} |`
+      );
     }
     lines.push("");
   }

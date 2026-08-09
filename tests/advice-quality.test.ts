@@ -64,6 +64,23 @@ describe("hasConcreteSpecific (Codex review: word-boundary + action-portion + un
   it("boundary: a bare unrelated digit does not count without a unit", () => {
     expect(hasConcreteSpecific("This is the 3rd photo but it still looks off.")).toBe(false);
   });
+
+  it("recognizes degrees/pixels/points as measurement units (Codex review round 2: prompts already allow these)", () => {
+    expect(hasConcreteSpecific("Turn the product 45 degrees.")).toBe(true);
+    expect(hasConcreteSpecific("Crop to 1200 pixels wide.")).toBe(true);
+    expect(hasConcreteSpecific("Use 24pt text.")).toBe(true);
+  });
+
+  it("recognizes the PROP RULE's own approved functional props as concrete on their own", () => {
+    expect(hasConcreteSpecific("Place one folded washcloth beside the soap.")).toBe(true);
+    expect(hasConcreteSpecific("Add one small box of matches beside the candle.")).toBe(true);
+    expect(hasConcreteSpecific("Place one bookmark beside the journal.")).toBe(true);
+  });
+
+  it("a bare color alone is not concrete -- it must be attached to a surface", () => {
+    expect(hasConcreteSpecific("Use white.")).toBe(false);
+    expect(hasConcreteSpecific("Use a plain white background.")).toBe(true);
+  });
 });
 
 describe("findJargon (Codex: the reading-level rule must not contradict its own examples)", () => {

@@ -1,5 +1,5 @@
 /**
- * Heuristic checks for the advice-concreteness rules (main-v17/supporting-v12):
+ * Heuristic checks for the advice-concreteness rules (main-v20/supporting-v15):
  * every weak/mid-band priority_explanation and next_steps observation should
  * name a specific number, tool, surface, or color (never a bare vague verb),
  * avoid banned jargon, and never suggest a purely decorative prop.
@@ -41,6 +41,17 @@
  *   prop suggestion would actually appear, per the PROP RULE's own PART 2
  *   placement) fixes it without losing the real "Add a few flowers nearby"
  *   case, which still fails because that whole sentence IS the action.
+ * - Aligned with what the prompts themselves already explicitly allow
+ *   (Codex review, round 2): degrees/pixels/points as measurement units (the
+ *   PART 2 rule already lists "a degree" as a valid specific, and the
+ *   digital-text worked example already uses "24pt"), and the three named
+ *   functional props the PROP RULE itself gives as worked examples
+ *   (washcloth, matches, bookmark) — these are approved by the prompt, so
+ *   the checker should not need a color/number next to them to count as
+ *   concrete. Also: a bare color word alone ("Use white.") is not concrete
+ *   on its own — the PART 2 rule requires naming an actual surface/color
+ *   TOGETHER ("white poster board", "a light gray background"), so a color
+ *   only counts here when it's attached to a surface noun.
  */
 
 function wordBoundaryIncludes(lowerText: string, phrase: string): boolean {
@@ -77,7 +88,7 @@ function actionPortionOf(text: string): string {
  * a following word (e.g. "12 inched" should not count as "inches").
  */
 const UNIT_NUMBER_PATTERN =
-  /\b\d+(?:\.\d+)?\s*(?:%|(?:percent|inch|inches|cm|centimeters?|mm|millimeters?|ft|feet|foot)\b)/i;
+  /\b\d+(?:\.\d+)?\s*(?:%|(?:percent|inch|inches|cm|centimeters?|mm|millimeters?|ft|feet|foot|degrees?|deg|pixels?|px|pt|points?)\b)/i;
 
 const CONCRETE_KEYWORDS = [
   // tools / apps
@@ -92,24 +103,51 @@ const CONCRETE_KEYWORDS = [
   "cloth",
   "slate",
   "foam board",
-  // plain colors
-  "white",
-  "gray",
-  "grey",
-  "black",
-  "beige",
+  // approved functional props (named as worked examples by the PROP RULE
+  // itself — washcloth for soap, matches for a candle, bookmark for a
+  // journal — so these count as concrete on their own, no color/number
+  // required alongside them)
+  "washcloth",
+  "matches",
+  "bookmark",
 ];
 // Removed vs. the original list: "etsy", "contrast", "crop", "table",
 // "background" — each let a bare vague sentence pass on its own ("Increase
 // contrast.", "Crop the image.", "Use a cleaner background.") without
 // naming anything a seller could actually go do. "table" specifically also
-// substring-collided with "suitable". Color/surface/tool words are still
-// enough to catch a genuinely concrete sentence that happens to mention a
-// background ("switch to a plain white background" still passes via "white").
+// substring-collided with "suitable". Bare colors ("white", "gray"...) were
+// also removed from this list — see hasColorAttachedToSurface below, they
+// only count when attached to an actual surface noun.
+
+// A color only counts as concrete when it's naming an actual surface, not
+// floating alone ("Use white." names nothing a seller can act on; "Use a
+// plain white background." does). Checked as color-and-noun within a short
+// word window in either order, so "white background", "a plain white
+// poster board", and "the background is white" all count.
+const COLOR_WORDS = ["white", "gray", "grey", "black", "beige"];
+const SURFACE_NOUNS = ["background", "backdrop", "poster board", "board", "surface", "cloth", "paper", "table", "wall", "sheet"];
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function hasColorAttachedToSurface(lowerText: string): boolean {
+  for (const color of COLOR_WORDS) {
+    for (const noun of SURFACE_NOUNS) {
+      const c = escapeRegExp(color);
+      const n = escapeRegExp(noun);
+      const colorThenNoun = new RegExp(`\\b${c}\\b(?:\\s+\\S+){0,3}?\\s+\\b${n}\\b`, "i");
+      const nounThenColor = new RegExp(`\\b${n}\\b(?:\\s+\\S+){0,3}?\\s+\\b${c}\\b`, "i");
+      if (colorThenNoun.test(lowerText) || nounThenColor.test(lowerText)) return true;
+    }
+  }
+  return false;
+}
 
 function hasConcreteSignal(text: string): boolean {
   if (UNIT_NUMBER_PATTERN.test(text)) return true;
   const lower = text.toLowerCase();
+  if (hasColorAttachedToSurface(lower)) return true;
   return CONCRETE_KEYWORDS.some((k) => wordBoundaryIncludes(lower, k));
 }
 

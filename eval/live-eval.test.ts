@@ -18,7 +18,7 @@ import {
   loadGoldenSet,
   persistRun,
   runConsistency,
-  runFixture,
+  runFixtureForGate,
   runMeta,
   type EvalRun,
 } from "./harness";
@@ -49,7 +49,12 @@ describe.skipIf(!LIVE)("live golden-set scoring eval", () => {
       const run: EvalRun = { ...runMeta(), results: [] };
       for (const f of fixtures) {
         // Sequential + paced on purpose: predictable rate-limit + cost behavior.
-        run.results.push(await runFixture(f));
+        // Fixtures flagged consistency:true (known stochastic wobble) run 3x
+        // and gate on the median score instead of one draw — see
+        // runFixtureForGate in harness.ts. This roughly doubles total run
+        // cost/time (13/20 golden fixtures are flagged), traded for a hard
+        // gate that no longer flips on a single unlucky call.
+        run.results.push(await runFixtureForGate(f));
         await new Promise((r) => setTimeout(r, 3000));
       }
 

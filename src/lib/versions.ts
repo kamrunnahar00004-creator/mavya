@@ -112,8 +112,19 @@ export const TAXONOMY_VERSION = 1;
 // catch yourself about to write X, stop and write Y instead" substitution
 // pair for "diffuse"/"diffused" specifically, since a passive ban list
 // alone wasn't sufficient to stop the live model from reaching for it.
-export const RUBRIC_VERSION = "main-v19";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v14";
+// main-v20 / supporting-v15 (2026-08-09, Codex review of v19): unified the
+// sentence-count contract. The stated rule allowed up to 3-4 sentences total
+// (1 problem + 2-3 action) while every worked example already modeled 2-3
+// total (1 problem + 1-2 action) -- not a case where any example VIOLATED
+// the stated rule, but the rule was looser than the pattern actually being
+// taught, leaving room for the model to drift toward longer, less
+// disciplined action text. Tightened PART 2 to 1-2 sentences and the total
+// to 2-3 everywhere (rule text + JSON-shape hints, both files) so the
+// stated contract exactly matches what every worked example already shows.
+// No worked example or RIGHT/WRONG example needed editing -- all of them
+// already fit 2-3 total on recount.
+export const RUBRIC_VERSION = "main-v20";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v15";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
