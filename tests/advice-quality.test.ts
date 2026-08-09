@@ -108,6 +108,20 @@ describe("findDecorativeProp (Codex review: word-boundary matching, spoon is not
   it("boundary: 'bowl' does not trigger the banned word 'bow'", () => {
     expect(findDecorativeProp("Set a small sugar bowl next to the teacup.")).toEqual([]);
   });
+
+  it("does not flag a prop word that names an EXISTING problem to remove, not a suggestion to add (real golden-set case, candle-02-main)", () => {
+    expect(
+      findDecorativeProp(
+        "The background is a bit cluttered with leaves and flowers. Simplify the setup by using a plain white or light gray background to keep the focus on the candle."
+      )
+    ).toEqual([]);
+  });
+
+  it("still flags a real add-a-prop suggestion across two sentences", () => {
+    expect(
+      findDecorativeProp("The setup looks plain. Add a few flowers nearby for visual interest.")
+    ).toContain("flowers");
+  });
 });
 
 describe("findAmbiguousProp (category-dependent props, informational only, never a failure)", () => {

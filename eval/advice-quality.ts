@@ -30,6 +30,17 @@
  *   always-decorative list. Moved to a separate ambiguous list that is
  *   reported for visibility but never counted as a failure — this function
  *   cannot see the product category, so it cannot resolve the ambiguity.
+ * - Decorative-prop detection also only looks at the ACTION portion of the
+ *   text, same as concreteness. Live case caught by the golden set:
+ *   "The background is a bit cluttered with leaves and flowers. Simplify
+ *   the setup by using a plain white or light gray background..." — that's
+ *   the model correctly telling the seller to REMOVE the flowers already in
+ *   frame, named in the PROBLEM sentence, not proposing them as a prop.
+ *   Checking the whole observation flagged this as if it were "add
+ *   flowers", which it is not. Scoping to the action portion (where a real
+ *   prop suggestion would actually appear, per the PROP RULE's own PART 2
+ *   placement) fixes it without losing the real "Add a few flowers nearby"
+ *   case, which still fails because that whole sentence IS the action.
  */
 
 function wordBoundaryIncludes(lowerText: string, phrase: string): boolean {
@@ -42,6 +53,18 @@ function splitSentences(text: string): string[] {
     .split(/(?<=[.!?])\s+/)
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+/**
+ * The rubric's own two-part structure puts the problem in sentence 1 and the
+ * actionable step in sentence 2+ — a word naming an existing problem (a
+ * jargon term, a decorative object being described as clutter) should not be
+ * judged as if it were the ACTION. Single-sentence text has no separate
+ * clause to isolate, so it's checked as-is.
+ */
+function actionPortionOf(text: string): string {
+  const sentences = splitSentences(text);
+  return sentences.length > 1 ? sentences.slice(1).join(" ") : text;
 }
 
 /**
@@ -96,9 +119,7 @@ function hasConcreteSignal(text: string): boolean {
  * is no separate problem/action split to isolate).
  */
 export function hasConcreteSpecific(text: string): boolean {
-  const sentences = splitSentences(text);
-  const actionPortion = sentences.length > 1 ? sentences.slice(1).join(" ") : text;
-  return hasConcreteSignal(actionPortion);
+  return hasConcreteSignal(actionPortionOf(text));
 }
 
 const BANNED_JARGON = [
@@ -141,14 +162,14 @@ const DEFINITE_DECORATIVE_PROPS = [
 // a failure.
 const AMBIGUOUS_PROPS = ["spoon"];
 
-/** Returns any known-decorative (non-functional, category-independent) prop words found (empty = clean). */
+/** Returns any known-decorative (non-functional, category-independent) prop words found (empty = clean). Checks the action portion only — see module docs. */
 export function findDecorativeProp(text: string): string[] {
-  const lower = text.toLowerCase();
+  const lower = actionPortionOf(text).toLowerCase();
   return DEFINITE_DECORATIVE_PROPS.filter((w) => wordBoundaryIncludes(lower, w));
 }
 
-/** Returns props that MAY be decorative depending on product category — informational only, never a failure. */
+/** Returns props that MAY be decorative depending on product category — informational only, never a failure. Checks the action portion only — see module docs. */
 export function findAmbiguousProp(text: string): string[] {
-  const lower = text.toLowerCase();
+  const lower = actionPortionOf(text).toLowerCase();
   return AMBIGUOUS_PROPS.filter((w) => wordBoundaryIncludes(lower, w));
 }
