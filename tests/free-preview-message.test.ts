@@ -19,12 +19,12 @@ const base: FidelityReport = {
   reason: "",
 };
 
-describe("freePreviewMessage (severity-ordered, flags can coexist)", () => {
+describe("freePreviewMessage (incomplete-product warning always shows; every other flag is redundant with the always-on disclaimer and stays silent)", () => {
   it("no fidelity report at all -> the neutral honest message", () => {
     expect(freePreviewMessage(null)).toBe(NEUTRAL_PREVIEW_MESSAGE);
   });
 
-  it("drift ONLY -> removed (empty string), per founder decision", () => {
+  it("drift ONLY -> removed (empty string), per founder decision 2026-08-08", () => {
     expect(
       freePreviewMessage({ ...base, text_or_pattern_drift: true })
     ).toBe("");
@@ -33,10 +33,13 @@ describe("freePreviewMessage (severity-ordered, flags can coexist)", () => {
     ).toBe("");
   });
 
-  it("ai_looking ONLY -> the AI-looking warning", () => {
-    expect(freePreviewMessage({ ...base, ai_looking: true })).toBe(
-      "This version may look AI-generated. Check it against your real product before using it."
-    );
+  it("ai_looking ONLY -> removed (empty string), per founder decision this session", () => {
+    // The dedicated "may look AI-generated" warning was removed: it's
+    // redundant with the always-shown "Label text and small patterns may
+    // differ..." disclaimer, and it was also the source of a real bug
+    // (lingering next to a "we kept your current photo" note when the
+    // AI-looking candidate LOST and was never actually shown).
+    expect(freePreviewMessage({ ...base, ai_looking: true })).toBe("");
   });
 
   it("incomplete product ONLY -> the incomplete-product warning", () => {
@@ -49,21 +52,17 @@ describe("freePreviewMessage (severity-ordered, flags can coexist)", () => {
     expect(freePreviewMessage(base)).toBe(NEUTRAL_PREVIEW_MESSAGE);
   });
 
-  // Regression coverage for the ordering bug: drift/invented-details must
-  // NEVER suppress a more severe warning it happens to coexist with.
-  it("drift + ai_looking -> ai_looking wins (not silently empty)", () => {
+  it("drift + ai_looking together -> still empty (both silenced, no conflict)", () => {
     expect(
       freePreviewMessage({
         ...base,
         text_or_pattern_drift: true,
         ai_looking: true,
       })
-    ).toBe(
-      "This version may look AI-generated. Check it against your real product before using it."
-    );
+    ).toBe("");
   });
 
-  it("invented details + incomplete product -> incomplete-product wins (not silently empty)", () => {
+  it("invented details + incomplete product -> incomplete-product still shows (only non-silenced flag)", () => {
     expect(
       freePreviewMessage({
         ...base,
@@ -73,19 +72,17 @@ describe("freePreviewMessage (severity-ordered, flags can coexist)", () => {
     ).toContain("uploading a photo that shows the complete product.");
   });
 
-  it("ai_looking + incomplete product -> ai_looking still takes priority", () => {
+  it("ai_looking + incomplete product -> incomplete-product still shows (ai_looking is silent, not suppressive)", () => {
     expect(
       freePreviewMessage({
         ...base,
         ai_looking: true,
         full_product_visible: false,
       })
-    ).toBe(
-      "This version may look AI-generated. Check it against your real product before using it."
-    );
+    ).toContain("uploading a photo that shows the complete product.");
   });
 
-  it("all three flags at once -> ai_looking (most severe) wins", () => {
+  it("all flags at once, including incomplete product -> the one non-silenced warning still shows", () => {
     expect(
       freePreviewMessage({
         ...base,
@@ -94,8 +91,6 @@ describe("freePreviewMessage (severity-ordered, flags can coexist)", () => {
         ai_looking: true,
         full_product_visible: false,
       })
-    ).toBe(
-      "This version may look AI-generated. Check it against your real product before using it."
-    );
+    ).toContain("uploading a photo that shows the complete product.");
   });
 });

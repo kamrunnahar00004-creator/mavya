@@ -603,9 +603,15 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
               )
             );
           } else {
+            // The candidate lost, so what's on screen is still the previously
+            // kept version, not this rejected candidate — any fidelity-check
+            // warning ("may look AI-generated") belongs to the LOSING
+            // candidate and must not linger next to the "we kept it" note.
             patch(photoId, {
               backgroundRefining: nextRefinementActive,
               versions: withVersion(cur, payload),
+              freePreview: false,
+              freePreviewMsg: undefined,
               keepNote:
                 "We finished checking another version. Your current photo stayed the strongest, so we kept it.",
             });

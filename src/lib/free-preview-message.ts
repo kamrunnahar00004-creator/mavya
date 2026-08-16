@@ -24,17 +24,20 @@ export function freePreviewMessage(fidelity: FidelityReport | null): string {
   // text_or_pattern_drift). Check the more severe/actionable warnings FIRST so
   // the removed drift message (below) never silently suppresses a real
   // AI-looking or incomplete-product warning that also applies.
-  if (fidelity.ai_looking) {
-    return "This version may look AI-generated. Check it against your real product before using it.";
-  }
   if (!fidelity.full_product_visible) {
     return `${FREE_PREVIEW_PREFIX}uploading a photo that shows the complete product.`;
   }
-  // Founder decision 2026-08-08: removed WHEN drift/invented-details is the
-  // only flag raised. Redundant with the always-shown "Label text and small
+  // Founder decision 2026-08-08: removed the text_or_pattern_drift /
+  // invented_or_missing_details message when that's the only flag raised.
+  // Founder decision (this session): ai_looking removed for the same reason
+  // -- both are redundant with the always-shown "Label text and small
   // patterns may differ..." disclaimer, which already satisfies the
-  // verify-before-publish requirement for every AI-improved preview.
-  if (fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
+  // verify-before-publish requirement for every AI-improved preview. This
+  // also fixes a real bug: when a background-refinement candidate lost to
+  // the kept version, the ai_looking warning from that LOSING candidate
+  // could linger next to the "we kept your current photo" note, describing
+  // a version that was never actually shown.
+  if (fidelity.ai_looking || fidelity.text_or_pattern_drift || fidelity.invented_or_missing_details) {
     return "";
   }
   return NEUTRAL_PREVIEW_MESSAGE;
