@@ -98,3 +98,144 @@ export function losingRefinementPatch<V>(
       "We finished checking another version. Your current photo stayed the strongest, so we kept it.",
   };
 }
+
+/**
+ * Which image + which audit the edit modal should act on. Extracted as a
+ * pure function (Codex review, 2026-08-16) specifically so this pairing is
+ * unit-testable: the bug it exists to prevent was activeAudit's condition
+ * (previewActive, which also requires canShowImprovement + previewUnlocked)
+ * being STRICTER than editSource's own condition, so editImageSrc could
+ * point at the preview while the paired audit still described the original
+ * photo. editSource is the single source of truth here; editImageSrc and
+ * editAudit both derive from IT, never from previewActive/activeAudit.
+ */
+// The only shape deriveEditContext's callers actually need from either
+// audit type (DemoState for the original, the narrower AuditResult for an
+// improved candidate) -- lets the two sides of the ternary be structurally
+// different types, which they really are in product-workspace/audit-
+// workspace, without losing type safety on the fields that matter here.
+type NextStepsAndScore = { nextSteps: readonly EditableNextStep[]; overallScore: number };
+
+export function deriveEditContext<S extends NextStepsAndScore, A extends NextStepsAndScore>(args: {
+  activeTab: "original" | "preview";
+  hasImprovement: boolean;
+  improvedSrc: string | null | undefined;
+  uploadedSrc: string | null | undefined;
+  stateImageSrc: string;
+  stateAudit: S;
+  improvedAudit: A | null | undefined;
+}): { editSource: "preview" | "original"; editImageSrc: string; editAudit: S | A } {
+  const editSource: "preview" | "original" =
+    args.activeTab === "preview" && args.hasImprovement && args.improvedSrc
+      ? "preview"
+      : "original";
+  const editImageSrc =
+    editSource === "preview" && args.improvedSrc
+      ? args.improvedSrc
+      : args.uploadedSrc ?? args.stateImageSrc;
+  const editAudit: S | A =
+    editSource === "preview" && args.improvedAudit ? args.improvedAudit : args.stateAudit;
+  return { editSource, editImageSrc, editAudit };
+}
+
+/**
+ * Filters rubric next_steps down to ones that are SAFE to offer as one-tap
+ * AI-editor instructions in the edit modal.
+ *
+ * Codex review, 2026-08-16: rubric.next_steps[].action is written as "the
+ * exact, physically executable step" for a SELLER doing a reshoot -- it
+ * regularly includes things an image editor cannot do to existing pixels:
+ * reshoot/capture advice ("photograph on a plain white poster board"),
+ * physical prop suggestions ("add one washcloth beside the soap" -- adding a
+ * real object is fabrication, not an edit, and violates the app's own
+ * restrained-improve principle), separate-photo suggestions (not an edit to
+ * THIS photo at all), and strong-band praise text (nothing to fix). Passing
+ * any of those straight through as a literal edit instruction would be a
+ * real product bug, not just a UX rough edge -- confirmed by re-reading the
+ * actual worked examples the rubric prompt teaches (rubric.ts, general-
+ * rubric.ts): "Add one folded washcloth...", "Rest it on a dark cloth, tap
+ * the phone screen...", "Angle a soft lamp...".
+ *
+ * This is a deliberately approximate keyword heuristic, same caveat as
+ * eval/advice-quality.ts: REJECT patterns are checked first and win outright
+ * (a reshoot/prop phrase must never slip through just because it also
+ * contains an allowed word like "light"), then an ALLOW keyword must be
+ * present for what's left to confirm it's actually a lighting/background/
+ * framing/sharpness-type edit, not just "not obviously unsafe."
+ */
+export type EditableNextStep = { readonly observation: string; readonly action: string };
+
+const EDIT_CHIP_REJECT_PATTERNS: RegExp[] = [
+  // Reshoot / physical capture instructions -- tell the SELLER to redo the
+  // shot; an image editor cannot re-light or re-position the physical scene.
+  /\b(photograph|re-?shoot|re-?take|shoot in|hold it|rest it|tap the|lock focus|move (it|the)|angle (a|the)|place it (on|against|next to)|position (it|the)|lamp|window)\b/i,
+  // Separate/additional photo suggestions -- not an edit to THIS photo.
+  /\b(separate photo|additional photo|second photo|another photo)\b/i,
+  // Physical prop/setup instructions -- adding a real object is fabrication,
+  // not a pixel edit; this is the exact PROP RULE boundary from rubric.ts.
+  /\b(add (a|an|one|some)|prop|washcloth|matches|bookmark|ruler|coin)\b/i,
+  // Strong-band praise language -- positive-only, nothing to fix.
+  /\b(keep this|is strong|clearly visible|reads at a glance|clean,? trustworthy)\b/i,
+];
+
+const EDIT_CHIP_ALLOW_KEYWORDS: string[] = [
+  "light",
+  "lighting",
+  "bright",
+  "shadow",
+  "glare",
+  "expos",
+  "background",
+  "backdrop",
+  "clutter",
+  "surface",
+  "crop",
+  "frame",
+  "framing",
+  "center",
+  "centre",
+  "straighten",
+  "level",
+  "tilt",
+  "perspective",
+  "sharp",
+  "blur",
+  "focus",
+  "resolution",
+  "contrast",
+  "color",
+  "colour",
+];
+
+const EDIT_CHIP_MAX_LENGTH = 70;
+const EDIT_CHIP_MAX_COUNT = 3;
+/** Strong band per bandOf()/rubric scoring bands: next_steps are praise-only here, never edit-safe. */
+const STRONG_BAND_SCORE = 8;
+
+/**
+ * `overallScore` gates strong-band photos out entirely (their next_steps are
+ * praise, not fixes, regardless of keyword content). `fallback` is the
+ * static chip set, returned whenever nothing in `nextSteps` passes the
+ * filter (including the photo being strong, or the array being empty).
+ */
+export function buildEditSuggestionChips(
+  nextSteps: readonly EditableNextStep[],
+  overallScore: number,
+  fallback: readonly string[]
+): string[] {
+  if (overallScore >= STRONG_BAND_SCORE) return [...fallback];
+  const seen = new Set<string>();
+  const safe: string[] = [];
+  for (const step of nextSteps) {
+    const text = step.action?.trim();
+    if (!text || text.length > EDIT_CHIP_MAX_LENGTH) continue;
+    if (EDIT_CHIP_REJECT_PATTERNS.some((re) => re.test(text))) continue;
+    const lower = text.toLowerCase();
+    if (!EDIT_CHIP_ALLOW_KEYWORDS.some((kw) => lower.includes(kw))) continue;
+    if (seen.has(lower)) continue;
+    seen.add(lower);
+    safe.push(text);
+    if (safe.length >= EDIT_CHIP_MAX_COUNT) break;
+  }
+  return safe.length > 0 ? safe : [...fallback];
+}

@@ -31,6 +31,7 @@ import { NextSteps } from "./next-steps";
 import { EditPhotoModal } from "./edit-photo-modal";
 import { PhotoChecklistPanel } from "./photo-checklist-panel";
 import { SUPPORTING_ROLE_LABELS } from "@/lib/audit-mapping";
+import { buildEditSuggestionChips, deriveEditContext } from "@/lib/selection-display";
 
 const IMPROVE_STATUSES = [
   "Analyzing fixes…",
@@ -195,16 +196,25 @@ export function AuditWorkspace({
     hasImprovement &&
     previewUnlocked &&
     activeTab === "preview";
-  const editSource =
-    activeTab === "preview" && hasImprovement && improvedSrc
-      ? "preview"
-      : "original";
-  const editImageSrc =
-    editSource === "preview" && improvedSrc
-      ? improvedSrc
-      : uploadedSrc ?? state.imageSrc;
   const activeAudit =
     previewActive && state.improvedAudit ? state.improvedAudit : state;
+  const { editSource, editImageSrc, editAudit } = deriveEditContext({
+    activeTab,
+    hasImprovement,
+    improvedSrc,
+    uploadedSrc,
+    stateImageSrc: state.imageSrc,
+    stateAudit: state,
+    improvedAudit: state.improvedAudit,
+  });
+  // fallback is [] here on purpose -- EditPhotoModal owns the actual static
+  // chip set and falls back to it itself when suggestedChips is empty, so
+  // the fallback list isn't duplicated in two places.
+  const editSuggestedChips = buildEditSuggestionChips(
+    editAudit.nextSteps,
+    editAudit.overallScore,
+    []
+  );
 
   const scoreDeltaLabel =
     previewActive
@@ -880,6 +890,7 @@ export function AuditWorkspace({
           imageSrc={editImageSrc}
           loading={improveLoading}
           mode={isExtra ? "extra" : "main"}
+          suggestedChips={editSuggestedChips}
           onClose={() => setEditModalOpen(false)}
           onSubmit={(instruction) => {
             setEditModalOpen(false);

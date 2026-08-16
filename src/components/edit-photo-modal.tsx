@@ -6,22 +6,25 @@ import { cn } from "@/lib/utils";
 
 const MAX_EDIT_LEN = 300;
 
+// Codex review, 2026-08-16: "Fix the lighting" / "Fill the frame" (an
+// earlier draft of this list) don't meet the same concreteness bar the
+// rubric's own advice is held to (a number, tool, surface, or color).
+// Rewritten to name the actual surface/attribute, matching that bar.
 const MAIN_CHIPS = [
-  "Cleaner background",
-  "Make it brighter",
-  "Remove the clutter",
-  "Show more of the product",
-  "Make it look less AI",
+  "Brighten the product evenly",
+  "Use a plain white background",
+  "Remove background clutter",
+  "Center the full product",
 ];
 
 // Supporting chips avoid hero-conversion language; they target readability and
 // presentation of the supporting photo's existing content.
 const SUPPORTING_CHIPS = [
-  "Make it brighter",
-  "Sharper and clearer",
-  "Cleaner background",
+  "Brighten the product evenly",
+  "Sharpen the image",
+  "Use a plain white background",
   "Make the text easier to read",
-  "Straighten it",
+  "Straighten the photo",
 ];
 
 type Props = {
@@ -31,6 +34,13 @@ type Props = {
   loading?: boolean;
   /** "extra" swaps in supporting-photo example chips. */
   mode?: "main" | "extra";
+  /**
+   * Per-photo suggestions from buildEditSuggestionChips() (already filtered
+   * to edit-safe operations). When present and non-empty, shown instead of
+   * the static MAIN_CHIPS/SUPPORTING_CHIPS. Falls back to the static set
+   * otherwise -- never renders an empty chip row.
+   */
+  suggestedChips?: string[];
 };
 
 /**
@@ -43,9 +53,12 @@ export function EditPhotoModal({
   onClose,
   loading = false,
   mode = "main",
+  suggestedChips,
 }: Props) {
   const [text, setText] = useState("");
-  const exampleChips = mode === "extra" ? SUPPORTING_CHIPS : MAIN_CHIPS;
+  const staticChips = mode === "extra" ? SUPPORTING_CHIPS : MAIN_CHIPS;
+  const exampleChips =
+    suggestedChips && suggestedChips.length > 0 ? suggestedChips : staticChips;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -94,7 +107,7 @@ export function EditPhotoModal({
               type="button"
               onClick={() => setText(chip)}
               disabled={loading}
-              className="rounded-full border border-white/25 px-3 py-1 text-[12.5px] text-white/85 hover:bg-white/10 disabled:opacity-50"
+              className="max-w-full whitespace-normal rounded-full border border-white/25 px-3 py-1 text-left text-[12.5px] text-white/85 hover:bg-white/10 disabled:opacity-50"
             >
               {chip}
             </button>
@@ -132,7 +145,8 @@ export function EditPhotoModal({
           </button>
         </div>
         <p className="mt-1.5 px-1 text-[12px] text-white/70">
-          Mavya keeps your product exactly the same and re-scores the result honestly.
+          Mavya aims to preserve your product while applying your edit. Review labels,
+          patterns, colors, and details before using the result.
         </p>
       </form>
     </div>
