@@ -68,3 +68,33 @@ export function deriveWorkflowRootId(
   });
   return latest.workflowId ?? ((latest.attemptNumber ?? 1) === 1 ? latest.id : null);
 }
+
+/**
+ * Patch payload for a background-refinement candidate that LOST (did not
+ * beat the currently kept version). The displayed photo does not change --
+ * it's the same previously-kept version, unchanged.
+ *
+ * Codex review caught a real bug here: an earlier version of this patch
+ * blindly included `freePreview: false, freePreviewMsg: undefined`, which
+ * erased a legitimate, still-accurate fidelity warning belonging to the
+ * still-displayed photo (set when IT won an earlier round) — e.g. a real
+ * "upload a photo showing the complete product" flag would silently
+ * disappear even though the same incomplete photo was still on screen.
+ *
+ * `patch()` in product-workspace.tsx does a shallow merge (`{ ...p, ...next
+ * }`), so the contract this function must uphold is simple and mechanically
+ * checkable: the returned object must NEVER include `freePreview` or
+ * `freePreviewMsg` keys at all. Omitting a key from the patch is what
+ * preserves the existing value; that's the whole fix.
+ */
+export function losingRefinementPatch<V>(
+  backgroundRefining: boolean,
+  versions: V
+): { backgroundRefining: boolean; versions: V; keepNote: string } {
+  return {
+    backgroundRefining,
+    versions,
+    keepNote:
+      "We finished checking another version. Your current photo stayed the strongest, so we kept it.",
+  };
+}

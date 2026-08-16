@@ -25,6 +25,7 @@ import {
 import {
   candidateBeatsKept,
   deriveWorkflowRootId,
+  losingRefinementPatch,
   oneClickGenerationAllowed,
 } from "@/lib/selection-display";
 import { coveredShotIds } from "@/lib/checklist-coverage";
@@ -603,18 +604,12 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
               )
             );
           } else {
-            // The candidate lost, so what's on screen is still the previously
-            // kept version, not this rejected candidate — any fidelity-check
-            // warning ("may look AI-generated") belongs to the LOSING
-            // candidate and must not linger next to the "we kept it" note.
-            patch(photoId, {
-              backgroundRefining: nextRefinementActive,
-              versions: withVersion(cur, payload),
-              freePreview: false,
-              freePreviewMsg: undefined,
-              keepNote:
-                "We finished checking another version. Your current photo stayed the strongest, so we kept it.",
-            });
+            // The candidate lost -- see losingRefinementPatch's own comment
+            // for why this must never touch freePreview/freePreviewMsg.
+            patch(
+              photoId,
+              losingRefinementPatch(nextRefinementActive, withVersion(cur, payload))
+            );
           }
         } else {
           // Refinement ended without a usable result: ALWAYS clear the
