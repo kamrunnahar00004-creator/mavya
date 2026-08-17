@@ -6,110 +6,87 @@ import {
 } from "../src/lib/selection-display";
 
 /**
- * Codex review (2026-08-16): rubric.next_steps[].action is written as "the
- * exact, physically executable step" for a SELLER reshoot -- it regularly
- * includes reshoot advice, prop suggestions, separate-photo suggestions, and
- * strong-band praise, none of which is a valid instruction for the AI
- * editor to apply to existing pixels. These tests use the exact wording
- * patterns the rubric's own worked examples produce (verified against
- * rubric.ts/general-rubric.ts earlier this session), not invented text.
+ * Codex review (2026-08-16), round 3: buildEditSuggestionChips used to
+ * filter next_steps[].action text through a blacklist and pass the
+ * SURVIVING TEXT THROUGH VERBATIM. That failed repeatedly to unlimited
+ * synonyms for "reposition the physical object" (round 2 caught "place it
+ * on...", round 3 caught "Put the soap on a clean white surface." -- an
+ * unlisted verb that still passed the allow-check on "surface"). Redesigned
+ * as a whitelist: detect which of 5 FIXED, hand-written categories applies,
+ * return that category's fixed label, never the model's own free text.
+ * Every possible output is now one of exactly 5 known-safe strings.
  */
 describe("buildEditSuggestionChips", () => {
   const weakScore = 6.5;
+  const LIGHTING = "Brighten the product evenly";
+  const BACKGROUND = "Use a plain white background";
+  const CLUTTER = "Remove background clutter";
+  const FRAMING = "Center the full product";
+  const SHARPNESS = "Sharpen product details";
 
   function step(action: string, observation = ""): EditableNextStep {
     return { observation, action };
   }
 
-  it("keeps genuinely edit-safe actions (lighting, background, framing, sharpness)", () => {
-    const steps = [
-      step("Soften the lighting on the candle."),
-      step("Use a plain white or gray background."),
-      step("Crop to fill the frame."),
-    ];
+  it("detects the lighting category and returns the fixed label, never the model's own wording", () => {
+    const steps = [step("Soften the lighting on the candle, it looks harsh.")];
+    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
+      LIGHTING,
+    ]);
+  });
+
+  it("detects background/clutter/framing/sharpness the same way", () => {
+    expect(
+      buildEditSuggestionChips([step("Use a plain white background instead.")], weakScore, [])
+    ).toEqual([BACKGROUND]);
+    expect(
+      buildEditSuggestionChips([step("The busy, cluttered surroundings distract from the product.")], weakScore, [])
+    ).toEqual([CLUTTER]);
+    expect(
+      buildEditSuggestionChips([step("Crop so the product fills more of the frame.")], weakScore, [])
+    ).toEqual([FRAMING]);
+    expect(
+      buildEditSuggestionChips([step("The focus is soft and the details are blurry.")], weakScore, [])
+    ).toEqual([SHARPNESS]);
+  });
+
+  it("regression (Codex review round 3): a synonym no blacklist round caught ('Put... on a surface') can no longer produce anything unsafe, because output is never free text at all", () => {
+    // Under the old design this was the exact bypass Codex found: "put"
+    // wasn't in the verb blacklist, and the sentence then passed on
+    // "surface". Under the new design there IS no verbatim passthrough to
+    // bypass -- the worst this sentence can do is correctly match the
+    // BACKGROUND category (it genuinely is about the background/surface)
+    // and return the fixed, pre-vetted label, never the seller's literal
+    // physical-restaging phrasing.
+    const steps = [step("Put the soap on a clean white surface.")];
     const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
-    expect(result).toEqual([
-      "Soften the lighting on the candle.",
-      "Use a plain white or gray background.",
-      "Crop to fill the frame.",
-    ]);
+    expect(result).toEqual([BACKGROUND]);
+    expect(result).not.toContain("Put the soap on a clean white surface.");
   });
 
-  it("rejects reshoot/capture instructions (rubric's own worked-example wording)", () => {
+  it("reshoot/prop/separate-photo/praise text that matches NO category falls back, and never leaks through as free text either way", () => {
     const steps = [
-      step("Rest it on a dark cloth, tap the phone screen on the prongs to lock focus."),
-      step("Angle a soft lamp for detail."),
-      step("Photograph on a plain white poster board instead."),
-    ];
-    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
-  });
-
-  it("regression (Codex review round 2): rejects general physical-placement phrasing, not just the literal 'place it' string", () => {
-    // "Place the candle on a plain white surface." previously slipped
-    // through: the old reject pattern only matched "place it (on|against|
-    // next to)", and this sentence then PASSED the allow-check on
-    // "surface" -- exactly the physical restaging the filter exists to
-    // block, confirmed real by Codex.
-    const steps = [
-      step("Place the candle on a plain white surface."),
-      step("Position the mug against a light gray backdrop."),
-      step("Set the item on a wood table."),
-      step("Lay the necklace on a clean cloth."),
-    ];
-    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
-  });
-
-  it("regression (Codex review round 2): allow-keyword check no longer matches a keyword as a substring of an unrelated word", () => {
-    // "slightly" contains "light" as a raw substring -- the old .includes()
-    // check would have wrongly treated this as a lighting-related action.
-    const steps = [step("The product looks slightly off center in the frame.")];
-    // Passes now for a real reason (contains "center"/"frame" as actual
-    // words), not because "slightly" accidentally matched "light".
-    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
-    expect(result).toEqual(["The product looks slightly off center in the frame."]);
-
-    // Isolate the substring risk directly: a sentence whose ONLY brush with
-    // "light" is inside "slightly" must NOT pass on that basis alone.
-    const isolated = [step("The item sits slightly to one side of the packaging.")];
-    expect(buildEditSuggestionChips(isolated, weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
-  });
-
-  it("rejects physical prop suggestions (the exact PROP RULE boundary)", () => {
-    const steps = [
-      step("Add one folded washcloth next to the bars, off to the side."),
-      step("Add a small box of matches beside the candle."),
-      step("Add one bookmark beside the journal."),
-    ];
-    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
-  });
-
-  it("rejects separate/additional-photo suggestions", () => {
-    const steps = [
+      step("Add one folded washcloth next to the soap, off to the side."),
       step("Add a separate in-hand photo showing scale."),
-      step("Add an additional photo of the packaging."),
+      step("Keep this as your main photo, it is strong."),
     ];
-    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
+    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
+    expect(result).toEqual(["fallback"]);
   });
 
-  it("rejects strong-band praise language even if it slips into a weak-band array", () => {
-    const steps = [step("Keep this as your main photo, it is strong.")];
-    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
+  it("honest note: keyword detection can false-positive on unrelated senses of a word (e.g. 'light' the candle, not photo lighting) -- always safe regardless, since output is still just a fixed template", () => {
+    const steps = [step("Add matches beside the candle, since you use them to light it.")];
+    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
+    // Matches LIGHTING on the verb "light", not the photography sense --
+    // a real, known limitation of pure keyword detection. Documented here
+    // rather than hidden: the outcome is still always one of the 5 safe
+    // labels, never anything unsafe, which is the actual guarantee that
+    // matters.
+    expect(result).toEqual([LIGHTING]);
   });
 
   it("strong-band photos (score >= 8) always use the fallback, regardless of content", () => {
-    const steps = [step("Use a plain white background.")]; // would otherwise pass
+    const steps = [step("Use a plain white background.")]; // would otherwise match
     expect(buildEditSuggestionChips(steps, 8.4, ["fallback"])).toEqual([
       "fallback",
     ]);
@@ -118,35 +95,19 @@ describe("buildEditSuggestionChips", () => {
     ]);
   });
 
-  it("deduplicates case-insensitively", () => {
+  it("never returns the same category label twice, even when multiple next_steps touch on it", () => {
     const steps = [
-      step("Use a plain white background."),
-      step("use a plain white background."),
-      step("Soften the lighting."),
+      step("Soften the harsh lighting."),
+      step("The lighting also creates glare on the metal."),
     ];
-    expect(buildEditSuggestionChips(steps, weakScore, [])).toEqual([
-      "Use a plain white background.",
-      "Soften the lighting.",
-    ]);
+    expect(buildEditSuggestionChips(steps, weakScore, [])).toEqual([LIGHTING]);
   });
 
-  it("rejects overlong actions instead of truncating them", () => {
-    const long = "Use a plain white background " + "with extra padding words ".repeat(5);
-    expect(long.length).toBeGreaterThan(70);
-    const steps = [step(long), step("Soften the lighting.")];
-    const result = buildEditSuggestionChips(steps, weakScore, []);
-    expect(result).toEqual(["Soften the lighting."]);
-    expect(result).not.toContain(long);
-    expect(result.some((r) => long.startsWith(r) && r !== long)).toBe(false);
-  });
-
-  it("caps at 3 chips even when more are safe", () => {
+  it("caps at 3 categories even when all 5 are touched on", () => {
     const steps = [
-      step("Soften the lighting."),
-      step("Use a plain white background."),
-      step("Remove the background clutter."),
-      step("Straighten the frame."),
-      step("Sharpen the focus."),
+      step(
+        "The lighting is harsh, the background is cluttered, the crop cuts off the frame, the focus is blurry, and the surface is messy."
+      ),
     ];
     expect(buildEditSuggestionChips(steps, weakScore, [])).toHaveLength(3);
   });
@@ -157,8 +118,8 @@ describe("buildEditSuggestionChips", () => {
     ]);
   });
 
-  it("all-rejected next_steps -> fallback, not an empty array", () => {
-    const steps = [step("Photograph on a plain white poster board.")];
+  it("no category matches -> fallback, not an empty array", () => {
+    const steps = [step("Photograph the item again in better conditions.")];
     expect(buildEditSuggestionChips(steps, weakScore, ["a", "b"])).toEqual([
       "a",
       "b",

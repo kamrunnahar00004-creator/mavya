@@ -155,115 +155,69 @@ export function deriveEditContext<S extends NextStepsAndScore, A extends NextSte
 }
 
 /**
- * Filters rubric next_steps down to ones that are SAFE to offer as one-tap
- * AI-editor instructions in the edit modal.
+ * Suggests edit-safe AI-editor chips for a photo, based on which known-safe
+ * CATEGORY its next_steps touch on.
  *
- * Codex review, 2026-08-16: rubric.next_steps[].action is written as "the
- * exact, physically executable step" for a SELLER doing a reshoot -- it
- * regularly includes things an image editor cannot do to existing pixels:
- * reshoot/capture advice ("photograph on a plain white poster board"),
- * physical prop suggestions ("add one washcloth beside the soap" -- adding a
- * real object is fabrication, not an edit, and violates the app's own
- * restrained-improve principle), separate-photo suggestions (not an edit to
- * THIS photo at all), and strong-band praise text (nothing to fix). Passing
- * any of those straight through as a literal edit instruction would be a
- * real product bug, not just a UX rough edge -- confirmed by re-reading the
- * actual worked examples the rubric prompt teaches (rubric.ts, general-
- * rubric.ts): "Add one folded washcloth...", "Rest it on a dark cloth, tap
- * the phone screen...", "Angle a soft lamp...".
+ * Codex review, 2026-08-16, round 3: this used to filter next_steps[].action
+ * text through a blacklist (reject reshoot/prop/praise phrasing, then
+ * require an allow-keyword) and pass the SURVIVING TEXT THROUGH VERBATIM as
+ * the chip label / edit instruction. That approach cannot converge -- round
+ * 1 caught "add a prop", round 2 caught "place it on...", round 3 caught
+ * "Put the soap on a clean white surface." (an unlisted synonym) still
+ * slipping through and passing the allow-check on "surface". There are
+ * effectively unlimited synonyms for "reposition the physical object"
+ * (put, arrange, rest, stand, situate, display, mount, prop, balance...) --
+ * no blacklist of verbs closes that gap for good.
  *
- * This is a deliberately approximate keyword heuristic, same caveat as
- * eval/advice-quality.ts: REJECT patterns are checked first and win outright
- * (a reshoot/prop phrase must never slip through just because it also
- * contains an allowed word like "light"), then an ALLOW keyword must be
- * present for what's left to confirm it's actually a lighting/background/
- * framing/sharpness-type edit, not just "not obviously unsafe."
+ * Redesigned as a whitelist instead: detect which of a FIXED, hand-written,
+ * pre-vetted set of edit-safe categories applies to this photo (lighting,
+ * background, clutter, framing, sharpness), then return that category's
+ * FIXED template label -- never the model's own free text. Detection can
+ * still misfire (an irrelevant category might get suggested, or a relevant
+ * one might get missed) but that's now a UX quality issue, not a safety
+ * issue -- the worst outcome is an occasionally-irrelevant chip, never an
+ * unsafe instruction, because every possible output is one of these 5
+ * strings, full stop.
  */
 export type EditableNextStep = { readonly observation: string; readonly action: string };
 
-const EDIT_CHIP_REJECT_PATTERNS: RegExp[] = [
-  // Reshoot / physical capture instructions -- tell the SELLER to redo the
-  // shot; an image editor cannot re-light or re-position the physical scene.
-  /\b(photograph|re-?shoot|re-?take|shoot in|hold it|rest it|tap the|lock focus|angle (a|the)|lamp|window)\b/i,
-  // Physical-placement verbs applied to the product -- "place the candle
-  // on...", "move it next to...", "set the item on...". Codex review round
-  // 2 caught that the previous version only matched the literal phrase
-  // "place it (on|against|next to)", which "Place the candle on a plain
-  // white surface." doesn't match -- it slipped through and then passed
-  // the allow-check on "surface". These verbs are physical restaging
-  // regardless of which noun follows them, so match the verb generally.
-  /\b(place|position|move|set|lay|hold)\b/i,
-  // Separate/additional photo suggestions -- not an edit to THIS photo.
-  /\b(separate photo|additional photo|second photo|another photo)\b/i,
-  // Physical prop/setup instructions -- adding a real object is fabrication,
-  // not a pixel edit; this is the exact PROP RULE boundary from rubric.ts.
-  /\b(add (a|an|one|some)|prop|washcloth|matches|bookmark|ruler|coin)\b/i,
-  // Strong-band praise language -- positive-only, nothing to fix.
-  /\b(keep this|is strong|clearly visible|reads at a glance|clean,? trustworthy)\b/i,
+type EditChipCategory = {
+  readonly label: string;
+  readonly keywords: readonly string[];
+};
+
+// Same 5 categories/labels Codex specified directly. Also doubles as (most
+// of) edit-photo-modal.tsx's static fallback set, so the "dynamic" behavior
+// is really just "which subset of this same known-safe list applies to THIS
+// photo" -- a closed set of 5 possible strings, not open-ended free text.
+const EDIT_CHIP_CATEGORIES: readonly EditChipCategory[] = [
+  {
+    label: "Brighten the product evenly",
+    keywords: ["light", "lighting", "bright", "shadow", "glare", "exposure", "dark", "dim"],
+  },
+  {
+    label: "Use a plain white background",
+    keywords: ["background", "backdrop", "surface"],
+  },
+  {
+    label: "Remove background clutter",
+    keywords: ["clutter", "cluttered", "messy", "busy", "distracting"],
+  },
+  {
+    label: "Center the full product",
+    keywords: ["crop", "frame", "framing", "center", "centre", "off-center", "off-centre", "edge"],
+  },
+  {
+    label: "Sharpen product details",
+    keywords: ["sharp", "blur", "blurry", "focus", "resolution", "detail"],
+  },
 ];
 
-// Word-boundary matching (fixed above) means "bright" no longer matches
-// "brighten" -- including my OWN fallback chip text ("Brighten the product
-// evenly"). Common real inflections are listed explicitly rather than
-// relying on substring matching to catch them for free; this is not
-// exhaustive stemming, just the forms actually likely to appear in real
-// rubric text or this file's own static chips.
-const EDIT_CHIP_ALLOW_KEYWORDS: string[] = [
-  "light",
-  "lighting",
-  "bright",
-  "brighten",
-  "brighter",
-  "brightness",
-  "shadow",
-  "shadows",
-  "glare",
-  "exposure",
-  "exposed",
-  "background",
-  "backdrop",
-  "clutter",
-  "surface",
-  "surfaces",
-  "crop",
-  "cropping",
-  "frame",
-  "framing",
-  "center",
-  "centre",
-  "centered",
-  "centred",
-  "straighten",
-  "level",
-  "tilt",
-  "perspective",
-  "sharp",
-  "sharpen",
-  "sharper",
-  "sharpness",
-  "blur",
-  "blurry",
-  "blurred",
-  "focus",
-  "focused",
-  "resolution",
-  "contrast",
-  "color",
-  "colour",
-  "colors",
-  "colours",
-];
-
-// Codex review round 2: the allow check used plain string .includes(),
-// so "slightly" silently matched the "light" keyword -- the exact class of
-// substring bug already fixed in eval/advice-quality.ts hours earlier
-// tonight, missed here. Word-boundary matching, same technique.
 function wordBoundaryIncludes(lowerText: string, phrase: string): boolean {
   const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`\\b${escaped}\\b`, "i").test(lowerText);
 }
 
-const EDIT_CHIP_MAX_LENGTH = 70;
 const EDIT_CHIP_MAX_COUNT = 3;
 /** Strong band per bandOf()/rubric scoring bands: next_steps are praise-only here, never edit-safe. */
 const STRONG_BAND_SCORE = 8;
@@ -271,8 +225,8 @@ const STRONG_BAND_SCORE = 8;
 /**
  * `overallScore` gates strong-band photos out entirely (their next_steps are
  * praise, not fixes, regardless of keyword content). `fallback` is the
- * static chip set, returned whenever nothing in `nextSteps` passes the
- * filter (including the photo being strong, or the array being empty).
+ * static chip set, returned whenever no category matches (including the
+ * photo being strong, or next_steps being empty).
  */
 export function buildEditSuggestionChips(
   nextSteps: readonly EditableNextStep[],
@@ -280,18 +234,16 @@ export function buildEditSuggestionChips(
   fallback: readonly string[]
 ): string[] {
   if (overallScore >= STRONG_BAND_SCORE) return [...fallback];
-  const seen = new Set<string>();
-  const safe: string[] = [];
-  for (const step of nextSteps) {
-    const text = step.action?.trim();
-    if (!text || text.length > EDIT_CHIP_MAX_LENGTH) continue;
-    if (EDIT_CHIP_REJECT_PATTERNS.some((re) => re.test(text))) continue;
-    const lower = text.toLowerCase();
-    if (!EDIT_CHIP_ALLOW_KEYWORDS.some((kw) => wordBoundaryIncludes(lower, kw))) continue;
-    if (seen.has(lower)) continue;
-    seen.add(lower);
-    safe.push(text);
-    if (safe.length >= EDIT_CHIP_MAX_COUNT) break;
+  const combinedText = nextSteps
+    .map((s) => `${s.observation} ${s.action}`)
+    .join(" ")
+    .toLowerCase();
+  const matched: string[] = [];
+  for (const category of EDIT_CHIP_CATEGORIES) {
+    if (category.keywords.some((kw) => wordBoundaryIncludes(combinedText, kw))) {
+      matched.push(category.label);
+      if (matched.length >= EDIT_CHIP_MAX_COUNT) break;
+    }
   }
-  return safe.length > 0 ? safe : [...fallback];
+  return matched.length > 0 ? matched : [...fallback];
 }
