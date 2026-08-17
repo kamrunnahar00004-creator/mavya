@@ -125,17 +125,33 @@ export function deriveEditContext<S extends NextStepsAndScore, A extends NextSte
   stateAudit: S;
   improvedAudit: A | null | undefined;
 }): { editSource: "preview" | "original"; editImageSrc: string; editAudit: S | A } {
-  const editSource: "preview" | "original" =
-    args.activeTab === "preview" && args.hasImprovement && args.improvedSrc
-      ? "preview"
-      : "original";
-  const editImageSrc =
-    editSource === "preview" && args.improvedSrc
-      ? args.improvedSrc
-      : args.uploadedSrc ?? args.stateImageSrc;
-  const editAudit: S | A =
-    editSource === "preview" && args.improvedAudit ? args.improvedAudit : args.stateAudit;
-  return { editSource, editImageSrc, editAudit };
+  // Codex review round 2: the previous version picked editImageSrc off
+  // improvedSrc alone and editAudit off improvedAudit alone as two
+  // INDEPENDENT checks -- they could disagree if one was present without
+  // the other (editImageSrc says preview, editAudit silently falls back to
+  // original). A unit test even asserted that split as acceptable, which
+  // was wrong -- it's exactly the mismatch this function exists to prevent.
+  // Fixed structurally: ONE boolean decides both together, so the function
+  // cannot produce a preview image paired with an original audit (or vice
+  // versa) no matter what the caller passes.
+  const previewReady =
+    args.activeTab === "preview" &&
+    args.hasImprovement &&
+    Boolean(args.improvedSrc) &&
+    Boolean(args.improvedAudit);
+
+  if (previewReady) {
+    return {
+      editSource: "preview",
+      editImageSrc: args.improvedSrc as string,
+      editAudit: args.improvedAudit as A,
+    };
+  }
+  return {
+    editSource: "original",
+    editImageSrc: args.uploadedSrc ?? args.stateImageSrc,
+    editAudit: args.stateAudit,
+  };
 }
 
 /**
@@ -168,7 +184,15 @@ export type EditableNextStep = { readonly observation: string; readonly action: 
 const EDIT_CHIP_REJECT_PATTERNS: RegExp[] = [
   // Reshoot / physical capture instructions -- tell the SELLER to redo the
   // shot; an image editor cannot re-light or re-position the physical scene.
-  /\b(photograph|re-?shoot|re-?take|shoot in|hold it|rest it|tap the|lock focus|move (it|the)|angle (a|the)|place it (on|against|next to)|position (it|the)|lamp|window)\b/i,
+  /\b(photograph|re-?shoot|re-?take|shoot in|hold it|rest it|tap the|lock focus|angle (a|the)|lamp|window)\b/i,
+  // Physical-placement verbs applied to the product -- "place the candle
+  // on...", "move it next to...", "set the item on...". Codex review round
+  // 2 caught that the previous version only matched the literal phrase
+  // "place it (on|against|next to)", which "Place the candle on a plain
+  // white surface." doesn't match -- it slipped through and then passed
+  // the allow-check on "surface". These verbs are physical restaging
+  // regardless of which noun follows them, so match the verb generally.
+  /\b(place|position|move|set|lay|hold)\b/i,
   // Separate/additional photo suggestions -- not an edit to THIS photo.
   /\b(separate photo|additional photo|second photo|another photo)\b/i,
   // Physical prop/setup instructions -- adding a real object is fabrication,
@@ -178,34 +202,66 @@ const EDIT_CHIP_REJECT_PATTERNS: RegExp[] = [
   /\b(keep this|is strong|clearly visible|reads at a glance|clean,? trustworthy)\b/i,
 ];
 
+// Word-boundary matching (fixed above) means "bright" no longer matches
+// "brighten" -- including my OWN fallback chip text ("Brighten the product
+// evenly"). Common real inflections are listed explicitly rather than
+// relying on substring matching to catch them for free; this is not
+// exhaustive stemming, just the forms actually likely to appear in real
+// rubric text or this file's own static chips.
 const EDIT_CHIP_ALLOW_KEYWORDS: string[] = [
   "light",
   "lighting",
   "bright",
+  "brighten",
+  "brighter",
+  "brightness",
   "shadow",
+  "shadows",
   "glare",
-  "expos",
+  "exposure",
+  "exposed",
   "background",
   "backdrop",
   "clutter",
   "surface",
+  "surfaces",
   "crop",
+  "cropping",
   "frame",
   "framing",
   "center",
   "centre",
+  "centered",
+  "centred",
   "straighten",
   "level",
   "tilt",
   "perspective",
   "sharp",
+  "sharpen",
+  "sharper",
+  "sharpness",
   "blur",
+  "blurry",
+  "blurred",
   "focus",
+  "focused",
   "resolution",
   "contrast",
   "color",
   "colour",
+  "colors",
+  "colours",
 ];
+
+// Codex review round 2: the allow check used plain string .includes(),
+// so "slightly" silently matched the "light" keyword -- the exact class of
+// substring bug already fixed in eval/advice-quality.ts hours earlier
+// tonight, missed here. Word-boundary matching, same technique.
+function wordBoundaryIncludes(lowerText: string, phrase: string): boolean {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b${escaped}\\b`, "i").test(lowerText);
+}
 
 const EDIT_CHIP_MAX_LENGTH = 70;
 const EDIT_CHIP_MAX_COUNT = 3;
@@ -231,7 +287,7 @@ export function buildEditSuggestionChips(
     if (!text || text.length > EDIT_CHIP_MAX_LENGTH) continue;
     if (EDIT_CHIP_REJECT_PATTERNS.some((re) => re.test(text))) continue;
     const lower = text.toLowerCase();
-    if (!EDIT_CHIP_ALLOW_KEYWORDS.some((kw) => lower.includes(kw))) continue;
+    if (!EDIT_CHIP_ALLOW_KEYWORDS.some((kw) => wordBoundaryIncludes(lower, kw))) continue;
     if (seen.has(lower)) continue;
     seen.add(lower);
     safe.push(text);

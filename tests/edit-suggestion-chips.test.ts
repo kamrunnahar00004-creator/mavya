@@ -46,6 +46,40 @@ describe("buildEditSuggestionChips", () => {
     ]);
   });
 
+  it("regression (Codex review round 2): rejects general physical-placement phrasing, not just the literal 'place it' string", () => {
+    // "Place the candle on a plain white surface." previously slipped
+    // through: the old reject pattern only matched "place it (on|against|
+    // next to)", and this sentence then PASSED the allow-check on
+    // "surface" -- exactly the physical restaging the filter exists to
+    // block, confirmed real by Codex.
+    const steps = [
+      step("Place the candle on a plain white surface."),
+      step("Position the mug against a light gray backdrop."),
+      step("Set the item on a wood table."),
+      step("Lay the necklace on a clean cloth."),
+    ];
+    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
+      "fallback",
+    ]);
+  });
+
+  it("regression (Codex review round 2): allow-keyword check no longer matches a keyword as a substring of an unrelated word", () => {
+    // "slightly" contains "light" as a raw substring -- the old .includes()
+    // check would have wrongly treated this as a lighting-related action.
+    const steps = [step("The product looks slightly off center in the frame.")];
+    // Passes now for a real reason (contains "center"/"frame" as actual
+    // words), not because "slightly" accidentally matched "light".
+    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
+    expect(result).toEqual(["The product looks slightly off center in the frame."]);
+
+    // Isolate the substring risk directly: a sentence whose ONLY brush with
+    // "light" is inside "slightly" must NOT pass on that basis alone.
+    const isolated = [step("The item sits slightly to one side of the packaging.")];
+    expect(buildEditSuggestionChips(isolated, weakScore, ["fallback"])).toEqual([
+      "fallback",
+    ]);
+  });
+
   it("rejects physical prop suggestions (the exact PROP RULE boundary)", () => {
     const steps = [
       step("Add one folded washcloth next to the bars, off to the side."),
@@ -167,13 +201,15 @@ describe("deriveEditContext (Codex review: editImageSrc and editAudit must alway
     expect(result.editAudit).toBe(improved);
   });
 
-  it("defensive case: improvedAudit missing while improvedSrc exists -> editAudit falls back safely instead of using an undefined audit", () => {
-    // In practice improvedSrc and improvedAudit are set together (same
-    // applyCompletedJob call), so this exact combination shouldn't occur --
-    // but the function must not crash or silently pass `undefined` as an
-    // audit if it ever does. It falls back to the original's audit, a safe
-    // default (never worse than the pre-fix behavior, which could point at
-    // an actively wrong audit rather than just a stale-but-valid one).
+  it("regression (Codex review round 2): improvedAudit missing while improvedSrc exists -> BOTH fall back to original together, never a split", () => {
+    // The round-1 fix picked editImageSrc off improvedSrc and editAudit off
+    // improvedAudit as two INDEPENDENT checks -- they could disagree if one
+    // was present without the other. A prior version of this exact test
+    // asserted editSource: "preview" paired with editAudit: original, which
+    // Codex correctly called out as still being the mismatch this function
+    // exists to prevent (editImageSrc would say "preview"/improved.jpg while
+    // editAudit described the original -- exactly the bug). Fixed
+    // structurally: a single boolean now decides image AND audit together.
     const result = deriveEditContext({
       activeTab: "preview",
       hasImprovement: true,
@@ -183,12 +219,12 @@ describe("deriveEditContext (Codex review: editImageSrc and editAudit must alway
       stateAudit: original,
       improvedAudit: undefined, // not ready yet
     });
-    expect(result.editSource).toBe("preview");
+    expect(result.editSource).toBe("original");
+    expect(result.editImageSrc).toBe("original.jpg");
     expect(result.editAudit).toBe(original);
-    expect(result.editAudit).not.toBeUndefined();
   });
 
-  it("preview tab but no improvedSrc -> both fall back to original together", () => {
+  it("regression: improvedSrc missing while improvedAudit exists -> BOTH fall back to original together", () => {
     const result = deriveEditContext({
       activeTab: "preview",
       hasImprovement: true,
@@ -196,10 +232,11 @@ describe("deriveEditContext (Codex review: editImageSrc and editAudit must alway
       uploadedSrc: "original.jpg",
       stateImageSrc: "state.jpg",
       stateAudit: original,
-      improvedAudit: improved,
+      improvedAudit: improved, // ready, but no image to pair it with
     });
     expect(result.editSource).toBe("original");
     expect(result.editImageSrc).toBe("original.jpg");
     expect(result.editAudit).toBe(original);
   });
+
 });
