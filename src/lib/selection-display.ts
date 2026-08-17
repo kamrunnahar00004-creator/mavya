@@ -181,11 +181,6 @@ export function deriveEditContext<S extends NextStepsAndScore, A extends NextSte
  */
 export type EditableNextStep = { readonly observation: string; readonly action: string };
 
-type EditChipCategory = {
-  readonly label: string;
-  readonly keywords: readonly string[];
-};
-
 // Same 5 categories/labels Codex specified directly. IS edit-photo-modal.tsx's
 // static fallback set (via EDIT_CHIP_SAFE_LABELS below), not just similar to
 // it -- Codex review round 4 caught that the fallback used to be a SEPARATE,
@@ -197,7 +192,7 @@ type EditChipCategory = {
 // both the dynamic detector and the static fallback, so the "every possible
 // output is one of 5 known-safe strings" guarantee is actually enforced by
 // the type system/module structure, not just true by current convention.
-const EDIT_CHIP_CATEGORIES: readonly EditChipCategory[] = [
+const EDIT_CHIP_CATEGORIES = [
   {
     label: "Brighten the product evenly",
     keywords: ["light", "lighting", "bright", "shadow", "glare", "exposure", "dark", "dim"],
@@ -218,7 +213,12 @@ const EDIT_CHIP_CATEGORIES: readonly EditChipCategory[] = [
     label: "Sharpen product details",
     keywords: ["sharp", "blur", "blurry", "focus", "resolution", "detail"],
   },
-];
+] as const satisfies readonly {
+  label: string;
+  keywords: readonly string[];
+}[];
+
+export type EditChipSafeLabel = (typeof EDIT_CHIP_CATEGORIES)[number]["label"];
 
 /**
  * The complete, canonical set of edit-safe chip labels -- the ONLY strings
@@ -229,9 +229,15 @@ const EDIT_CHIP_CATEGORIES: readonly EditChipCategory[] = [
  * text easier to read" and "Straighten the photo" ended up in the
  * supporting-photo fallback despite being outside this set.
  */
-export const EDIT_CHIP_SAFE_LABELS: readonly string[] = EDIT_CHIP_CATEGORIES.map(
-  (c) => c.label
+export const EDIT_CHIP_SAFE_LABELS: readonly EditChipSafeLabel[] = Object.freeze(
+  EDIT_CHIP_CATEGORIES.map((category) => category.label)
 );
+
+const EDIT_CHIP_SAFE_LABEL_SET: ReadonlySet<string> = new Set(EDIT_CHIP_SAFE_LABELS);
+
+export function isEditChipSafeLabel(value: string): value is EditChipSafeLabel {
+  return EDIT_CHIP_SAFE_LABEL_SET.has(value);
+}
 
 function wordBoundaryIncludes(lowerText: string, phrase: string): boolean {
   const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -244,26 +250,24 @@ const STRONG_BAND_SCORE = 8;
 
 /**
  * `overallScore` gates strong-band photos out entirely (their next_steps are
- * praise, not fixes, regardless of keyword content). `fallback` is the
- * static chip set, returned whenever no category matches (including the
- * photo being strong, or next_steps being empty).
+ * praise, not fixes, regardless of keyword content). An empty result tells
+ * the modal to show the canonical static set.
  */
 export function buildEditSuggestionChips(
   nextSteps: readonly EditableNextStep[],
-  overallScore: number,
-  fallback: readonly string[]
-): string[] {
-  if (overallScore >= STRONG_BAND_SCORE) return [...fallback];
+  overallScore: number
+): EditChipSafeLabel[] {
+  if (overallScore >= STRONG_BAND_SCORE) return [];
   const combinedText = nextSteps
     .map((s) => `${s.observation} ${s.action}`)
     .join(" ")
     .toLowerCase();
-  const matched: string[] = [];
+  const matched: EditChipSafeLabel[] = [];
   for (const category of EDIT_CHIP_CATEGORIES) {
     if (category.keywords.some((kw) => wordBoundaryIncludes(combinedText, kw))) {
       matched.push(category.label);
       if (matched.length >= EDIT_CHIP_MAX_COUNT) break;
     }
   }
-  return matched.length > 0 ? matched : [...fallback];
+  return matched;
 }

@@ -3,7 +3,11 @@
 import { useState, type FormEvent } from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { EDIT_CHIP_SAFE_LABELS } from "@/lib/selection-display";
+import {
+  EDIT_CHIP_SAFE_LABELS,
+  isEditChipSafeLabel,
+  type EditChipSafeLabel,
+} from "@/lib/selection-display";
 
 const MAX_EDIT_LEN = 300;
 
@@ -32,7 +36,7 @@ type Props = {
    * instead of the full EDIT_CHIP_SAFE_LABELS fallback. Falls back to the
    * static set otherwise -- never renders an empty chip row.
    */
-  suggestedChips?: string[];
+  suggestedChips?: readonly EditChipSafeLabel[];
 };
 
 /**
@@ -47,8 +51,11 @@ export function EditPhotoModal({
   suggestedChips,
 }: Props) {
   const [text, setText] = useState("");
+  const safeSuggestedChips = suggestedChips?.filter(isEditChipSafeLabel);
   const exampleChips =
-    suggestedChips && suggestedChips.length > 0 ? suggestedChips : EDIT_CHIP_SAFE_LABELS;
+    safeSuggestedChips && safeSuggestedChips.length > 0
+      ? safeSuggestedChips
+      : EDIT_CHIP_SAFE_LABELS;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();

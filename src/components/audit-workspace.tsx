@@ -207,13 +207,9 @@ export function AuditWorkspace({
     stateAudit: state,
     improvedAudit: state.improvedAudit,
   });
-  // fallback is [] here on purpose -- EditPhotoModal owns the actual static
-  // chip set and falls back to it itself when suggestedChips is empty, so
-  // the fallback list isn't duplicated in two places.
   const editSuggestedChips = buildEditSuggestionChips(
     editAudit.nextSteps,
-    editAudit.overallScore,
-    []
+    editAudit.overallScore
   );
 
   const scoreDeltaLabel =

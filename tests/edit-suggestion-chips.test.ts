@@ -3,6 +3,7 @@ import {
   buildEditSuggestionChips,
   deriveEditContext,
   EDIT_CHIP_SAFE_LABELS,
+  isEditChipSafeLabel,
   type EditableNextStep,
 } from "../src/lib/selection-display";
 
@@ -37,11 +38,17 @@ describe("EDIT_CHIP_SAFE_LABELS (Codex review round 4: one canonical safe set, n
       [{ observation: "", action: "Make the label text sharper and easier to read." }],
     ];
     for (const steps of cases) {
-      const result = buildEditSuggestionChips(steps, 6.5, [...EDIT_CHIP_SAFE_LABELS]);
+      const result = buildEditSuggestionChips(steps, 6.5);
       for (const chip of result) {
         expect(EDIT_CHIP_SAFE_LABELS).toContain(chip);
       }
     }
+  });
+
+  it("rejects arbitrary strings at the runtime boundary", () => {
+    expect(isEditChipSafeLabel("Brighten the product evenly")).toBe(true);
+    expect(isEditChipSafeLabel("Make the text easier to read")).toBe(false);
+    expect(isEditChipSafeLabel("Unsafe instruction")).toBe(false);
   });
 });
 
@@ -70,23 +77,23 @@ describe("buildEditSuggestionChips", () => {
 
   it("detects the lighting category and returns the fixed label, never the model's own wording", () => {
     const steps = [step("Soften the lighting on the candle, it looks harsh.")];
-    expect(buildEditSuggestionChips(steps, weakScore, ["fallback"])).toEqual([
+    expect(buildEditSuggestionChips(steps, weakScore)).toEqual([
       LIGHTING,
     ]);
   });
 
   it("detects background/clutter/framing/sharpness the same way", () => {
     expect(
-      buildEditSuggestionChips([step("Use a plain white background instead.")], weakScore, [])
+      buildEditSuggestionChips([step("Use a plain white background instead.")], weakScore)
     ).toEqual([BACKGROUND]);
     expect(
-      buildEditSuggestionChips([step("The busy, cluttered surroundings distract from the product.")], weakScore, [])
+      buildEditSuggestionChips([step("The busy, cluttered surroundings distract from the product.")], weakScore)
     ).toEqual([CLUTTER]);
     expect(
-      buildEditSuggestionChips([step("Crop so the product fills more of the frame.")], weakScore, [])
+      buildEditSuggestionChips([step("Crop so the product fills more of the frame.")], weakScore)
     ).toEqual([FRAMING]);
     expect(
-      buildEditSuggestionChips([step("The focus is soft and the details are blurry.")], weakScore, [])
+      buildEditSuggestionChips([step("The focus is soft and the details are blurry.")], weakScore)
     ).toEqual([SHARPNESS]);
   });
 
@@ -99,7 +106,7 @@ describe("buildEditSuggestionChips", () => {
     // and return the fixed, pre-vetted label, never the seller's literal
     // physical-restaging phrasing.
     const steps = [step("Put the soap on a clean white surface.")];
-    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
+    const result = buildEditSuggestionChips(steps, weakScore);
     expect(result).toEqual([BACKGROUND]);
     expect(result).not.toContain("Put the soap on a clean white surface.");
   });
@@ -110,13 +117,13 @@ describe("buildEditSuggestionChips", () => {
       step("Add a separate in-hand photo showing scale."),
       step("Keep this as your main photo, it is strong."),
     ];
-    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
-    expect(result).toEqual(["fallback"]);
+    const result = buildEditSuggestionChips(steps, weakScore);
+    expect(result).toEqual([]);
   });
 
   it("honest note: keyword detection can false-positive on unrelated senses of a word (e.g. 'light' the candle, not photo lighting) -- always safe regardless, since output is still just a fixed template", () => {
     const steps = [step("Add matches beside the candle, since you use them to light it.")];
-    const result = buildEditSuggestionChips(steps, weakScore, ["fallback"]);
+    const result = buildEditSuggestionChips(steps, weakScore);
     // Matches LIGHTING on the verb "light", not the photography sense --
     // a real, known limitation of pure keyword detection. Documented here
     // rather than hidden: the outcome is still always one of the 5 safe
@@ -125,14 +132,10 @@ describe("buildEditSuggestionChips", () => {
     expect(result).toEqual([LIGHTING]);
   });
 
-  it("strong-band photos (score >= 8) always use the fallback, regardless of content", () => {
+  it("strong-band photos (score >= 8) return no dynamic chips so the modal uses its fallback", () => {
     const steps = [step("Use a plain white background.")]; // would otherwise match
-    expect(buildEditSuggestionChips(steps, 8.4, ["fallback"])).toEqual([
-      "fallback",
-    ]);
-    expect(buildEditSuggestionChips(steps, 8.0, ["fallback"])).toEqual([
-      "fallback",
-    ]);
+    expect(buildEditSuggestionChips(steps, 8.4)).toEqual([]);
+    expect(buildEditSuggestionChips(steps, 8.0)).toEqual([]);
   });
 
   it("never returns the same category label twice, even when multiple next_steps touch on it", () => {
@@ -140,7 +143,7 @@ describe("buildEditSuggestionChips", () => {
       step("Soften the harsh lighting."),
       step("The lighting also creates glare on the metal."),
     ];
-    expect(buildEditSuggestionChips(steps, weakScore, [])).toEqual([LIGHTING]);
+    expect(buildEditSuggestionChips(steps, weakScore)).toEqual([LIGHTING]);
   });
 
   it("caps at 3 categories even when all 5 are touched on", () => {
@@ -149,21 +152,16 @@ describe("buildEditSuggestionChips", () => {
         "The lighting is harsh, the background is cluttered, the crop cuts off the frame, the focus is blurry, and the surface is messy."
       ),
     ];
-    expect(buildEditSuggestionChips(steps, weakScore, [])).toHaveLength(3);
+    expect(buildEditSuggestionChips(steps, weakScore)).toHaveLength(3);
   });
 
-  it("empty next_steps -> fallback", () => {
-    expect(buildEditSuggestionChips([], weakScore, ["fallback"])).toEqual([
-      "fallback",
-    ]);
+  it("empty next_steps -> empty result so the modal owns the canonical fallback", () => {
+    expect(buildEditSuggestionChips([], weakScore)).toEqual([]);
   });
 
-  it("no category matches -> fallback, not an empty array", () => {
+  it("no category matches -> empty result, never caller-provided text", () => {
     const steps = [step("Photograph the item again in better conditions.")];
-    expect(buildEditSuggestionChips(steps, weakScore, ["a", "b"])).toEqual([
-      "a",
-      "b",
-    ]);
+    expect(buildEditSuggestionChips(steps, weakScore)).toEqual([]);
   });
 });
 
