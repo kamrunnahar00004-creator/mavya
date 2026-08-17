@@ -98,105 +98,126 @@ export default async function ProductPage({
   const rows = (photoData as PhotoRow[] | null) ?? [];
   const photoIds = rows.map((r) => r.id);
 
-  // The audit each photo's current_audit_id points at — fetched by id, NOT
-  // re-derived with an independent order-by (that duplication is exactly what
-  // let the pointer and the display disagree before 0024). One row per photo,
-  // no cap needed: current_audit_id names exactly one id per photo.
-  const auditsById = new Map<string, AuditRow>();
+  // current_audits, ratings, and generations each depend only on rows/
+  // photoIds (fetched above), not on each other's results -- run concurrently
+  // instead of one-after-another (Codex + founder-reviewed perf pass,
+  // 2026-08-17: saves ~100-130ms on a cold request; does not address the
+  // dominant cold-start costs, middleware auth / first DB round trip).
   const currentAuditIds = rows
     .map((r) => r.current_audit_id)
     .filter((id): id is string => Boolean(id));
-  if (currentAuditIds.length > 0) {
-    const auditRows = unwrapOrThrow(
-      await timed("product.current_audits", () =>
-        supabase
-          .from("audits")
-          .select("id, rubric, created_at")
-          .in("id", currentAuditIds)
-      ),
-      "product_hydration_failed"
-    );
-    for (const a of (auditRows as AuditRow[] | null) ?? []) {
-      auditsById.set(a.id, a);
-    }
-  }
 
-  // Latest rating job per photo: a photo without an audit yet must still
-  // render (analyzing while its durable rating runs, or a visible failed
-  // state the seller can delete) — uploaded photos NEVER silently vanish.
-  const ratingByPhoto = new Map<
-    string,
-    { id: string; status: string; error_message: string | null }
-  >();
-  if (photoIds.length > 0) {
-    const ratingRows = unwrapOrThrow(
-      await timed("product.ratings", () =>
-        supabase
-          .from("rating_jobs")
-          .select("id, photo_id, status, error_message, created_at")
-          .in("photo_id", photoIds)
-          .order("created_at", { ascending: false })
-          .limit(photoIds.length * 3)
-      ),
-      "product_hydration_failed"
-    );
-    for (const r of (ratingRows as
-      | { id: string; photo_id: string; status: string; error_message: string | null }[]
-      | null) ?? []) {
-      if (!ratingByPhoto.has(r.photo_id)) ratingByPhoto.set(r.photo_id, r);
-    }
-  }
-
-  // Recent generation jobs per photo (RLS scopes to the owner). BOUNDED: the
-  // UI needs the latest job, the selected/alternate versions, and the last
-  // five completed results — twelve newest rows per photo covers that with
-  // margin, and keeps the page fast for heavy generators. Per-photo queries
-  // run concurrently (a product has at most one main + a few supporting).
   const JOB_SELECT =
     "id, photo_id, status, stage, outcome, error_code, result_storage_path, candidate_rubric, fidelity, attempt_number, workflow_id, operation, created_at";
-  const jobsByPhoto = new Map<string, JobRow>();
-  const jobsByPhotoId = new Map<string, JobRow[]>();
-  const jobsById = new Map<string, JobRow>();
-  const registerJob = (j: JobRow) => {
-    if (jobsById.has(j.id)) return;
-    jobsById.set(j.id, j);
-    const list = jobsByPhotoId.get(j.photo_id) ?? [];
-    list.push(j);
-    jobsByPhotoId.set(j.photo_id, list);
-  };
-  if (photoIds.length > 0) {
-    await timed("product.generations", async () => {
-      const perPhoto = await Promise.all(
-        photoIds.map((photoId) =>
-          supabase
-            .from("generation_jobs")
-            .select(JOB_SELECT)
-            .eq("photo_id", photoId)
-            .order("created_at", { ascending: false })
-            .limit(12)
-        )
-      );
-      for (const result of perPhoto) {
-        const jobs = unwrapOrThrow(result, "product_hydration_failed");
-        for (const j of (jobs as JobRow[] | null) ?? []) {
-          registerJob(j);
-          if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
-        }
-      }
-      // A selected/alternate version older than the recent window must still
-      // hydrate: fetch any referenced ids the bounded query missed.
-      const missingIds = rows
-        .flatMap((r) => [r.selected_generation_job_id, r.alternate_generation_job_id])
-        .filter((id): id is string => Boolean(id) && !jobsById.has(id as string));
-      if (missingIds.length > 0) {
-        const extra = unwrapOrThrow(
-          await supabase.from("generation_jobs").select(JOB_SELECT).in("id", missingIds),
+
+  const [auditsById, ratingByPhoto, generationsResult] = await Promise.all([
+    // The audit each photo's current_audit_id points at — fetched by id, NOT
+    // re-derived with an independent order-by (that duplication is exactly
+    // what let the pointer and the display disagree before 0024). One row
+    // per photo, no cap needed: current_audit_id names exactly one id per
+    // photo.
+    (async () => {
+      const auditsById = new Map<string, AuditRow>();
+      if (currentAuditIds.length > 0) {
+        const auditRows = unwrapOrThrow(
+          await timed("product.current_audits", () =>
+            supabase
+              .from("audits")
+              .select("id, rubric, created_at")
+              .in("id", currentAuditIds)
+          ),
           "product_hydration_failed"
         );
-        for (const j of (extra as JobRow[] | null) ?? []) registerJob(j);
+        for (const a of (auditRows as AuditRow[] | null) ?? []) {
+          auditsById.set(a.id, a);
+        }
       }
-    });
-  }
+      return auditsById;
+    })(),
+
+    // Latest rating job per photo: a photo without an audit yet must still
+    // render (analyzing while its durable rating runs, or a visible failed
+    // state the seller can delete) — uploaded photos NEVER silently vanish.
+    (async () => {
+      const ratingByPhoto = new Map<
+        string,
+        { id: string; status: string; error_message: string | null }
+      >();
+      if (photoIds.length > 0) {
+        const ratingRows = unwrapOrThrow(
+          await timed("product.ratings", () =>
+            supabase
+              .from("rating_jobs")
+              .select("id, photo_id, status, error_message, created_at")
+              .in("photo_id", photoIds)
+              .order("created_at", { ascending: false })
+              .limit(photoIds.length * 3)
+          ),
+          "product_hydration_failed"
+        );
+        for (const r of (ratingRows as
+          | { id: string; photo_id: string; status: string; error_message: string | null }[]
+          | null) ?? []) {
+          if (!ratingByPhoto.has(r.photo_id)) ratingByPhoto.set(r.photo_id, r);
+        }
+      }
+      return ratingByPhoto;
+    })(),
+
+    // Recent generation jobs per photo (RLS scopes to the owner). BOUNDED:
+    // the UI needs the latest job, the selected/alternate versions, and the
+    // last five completed results — twelve newest rows per photo covers
+    // that with margin, and keeps the page fast for heavy generators.
+    // Per-photo queries run concurrently (a product has at most one main +
+    // a few supporting).
+    (async () => {
+      const jobsByPhoto = new Map<string, JobRow>();
+      const jobsByPhotoId = new Map<string, JobRow[]>();
+      const jobsById = new Map<string, JobRow>();
+      const registerJob = (j: JobRow) => {
+        if (jobsById.has(j.id)) return;
+        jobsById.set(j.id, j);
+        const list = jobsByPhotoId.get(j.photo_id) ?? [];
+        list.push(j);
+        jobsByPhotoId.set(j.photo_id, list);
+      };
+      if (photoIds.length > 0) {
+        await timed("product.generations", async () => {
+          const perPhoto = await Promise.all(
+            photoIds.map((photoId) =>
+              supabase
+                .from("generation_jobs")
+                .select(JOB_SELECT)
+                .eq("photo_id", photoId)
+                .order("created_at", { ascending: false })
+                .limit(12)
+            )
+          );
+          for (const result of perPhoto) {
+            const jobs = unwrapOrThrow(result, "product_hydration_failed");
+            for (const j of (jobs as JobRow[] | null) ?? []) {
+              registerJob(j);
+              if (!jobsByPhoto.has(j.photo_id)) jobsByPhoto.set(j.photo_id, j);
+            }
+          }
+          // A selected/alternate version older than the recent window must
+          // still hydrate: fetch any referenced ids the bounded query missed.
+          const missingIds = rows
+            .flatMap((r) => [r.selected_generation_job_id, r.alternate_generation_job_id])
+            .filter((id): id is string => Boolean(id) && !jobsById.has(id as string));
+          if (missingIds.length > 0) {
+            const extra = unwrapOrThrow(
+              await supabase.from("generation_jobs").select(JOB_SELECT).in("id", missingIds),
+              "product_hydration_failed"
+            );
+            for (const j of (extra as JobRow[] | null) ?? []) registerJob(j);
+          }
+        });
+      }
+      return { jobsByPhoto, jobsByPhotoId, jobsById };
+    })(),
+  ]);
+  const { jobsByPhoto, jobsByPhotoId, jobsById } = generationsResult;
 
   // Pre-calculate selected and completed rows for each photo to avoid duplication.
   // Only process photos with valid latest rubric.
