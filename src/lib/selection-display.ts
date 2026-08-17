@@ -186,10 +186,17 @@ type EditChipCategory = {
   readonly keywords: readonly string[];
 };
 
-// Same 5 categories/labels Codex specified directly. Also doubles as (most
-// of) edit-photo-modal.tsx's static fallback set, so the "dynamic" behavior
-// is really just "which subset of this same known-safe list applies to THIS
-// photo" -- a closed set of 5 possible strings, not open-ended free text.
+// Same 5 categories/labels Codex specified directly. IS edit-photo-modal.tsx's
+// static fallback set (via EDIT_CHIP_SAFE_LABELS below), not just similar to
+// it -- Codex review round 4 caught that the fallback used to be a SEPARATE,
+// independently maintained list, and it had drifted to include "Make the
+// text easier to read" (a real fidelity risk -- can cause the AI to
+// regenerate/alter actual label text) and "Straighten the photo" (outside
+// the 5). A second list that CAN diverge from the safe set eventually WILL,
+// as just happened -- there is now exactly one canonical list, imported by
+// both the dynamic detector and the static fallback, so the "every possible
+// output is one of 5 known-safe strings" guarantee is actually enforced by
+// the type system/module structure, not just true by current convention.
 const EDIT_CHIP_CATEGORIES: readonly EditChipCategory[] = [
   {
     label: "Brighten the product evenly",
@@ -212,6 +219,19 @@ const EDIT_CHIP_CATEGORIES: readonly EditChipCategory[] = [
     keywords: ["sharp", "blur", "blurry", "focus", "resolution", "detail"],
   },
 ];
+
+/**
+ * The complete, canonical set of edit-safe chip labels -- the ONLY strings
+ * buildEditSuggestionChips() can ever return, and the ONLY strings
+ * edit-photo-modal.tsx's static fallback chips may show, for both main and
+ * supporting photos. Single source of truth on purpose (Codex review round
+ * 4): a second, independently maintained fallback list is how "Make the
+ * text easier to read" and "Straighten the photo" ended up in the
+ * supporting-photo fallback despite being outside this set.
+ */
+export const EDIT_CHIP_SAFE_LABELS: readonly string[] = EDIT_CHIP_CATEGORIES.map(
+  (c) => c.label
+);
 
 function wordBoundaryIncludes(lowerText: string, phrase: string): boolean {
   const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

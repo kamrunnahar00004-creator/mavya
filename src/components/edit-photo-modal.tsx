@@ -3,42 +3,34 @@
 import { useState, type FormEvent } from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EDIT_CHIP_SAFE_LABELS } from "@/lib/selection-display";
 
 const MAX_EDIT_LEN = 300;
 
-// Codex review, 2026-08-16: "Fix the lighting" / "Fill the frame" (an
-// earlier draft of this list) don't meet the same concreteness bar the
-// rubric's own advice is held to (a number, tool, surface, or color).
-// Rewritten to name the actual surface/attribute, matching that bar.
-const MAIN_CHIPS = [
-  "Brighten the product evenly",
-  "Use a plain white background",
-  "Remove background clutter",
-  "Center the full product",
-];
-
-// Supporting chips avoid hero-conversion language; they target readability and
-// presentation of the supporting photo's existing content.
-const SUPPORTING_CHIPS = [
-  "Brighten the product evenly",
-  "Sharpen the image",
-  "Use a plain white background",
-  "Make the text easier to read",
-  "Straighten the photo",
-];
+// Codex review round 4, 2026-08-16: this file used to keep its own
+// SEPARATE main/supporting chip lists, and the supporting list had drifted
+// to include "Make the text easier to read" (a real fidelity risk -- can
+// cause the AI to regenerate/alter actual label text) and "Straighten the
+// photo" (outside the 5 categories) -- neither ever passed through
+// buildEditSuggestionChips()'s safety logic at all, since this was a
+// hand-maintained fallback list, not the detector's output. A second list
+// that CAN diverge from the safe set eventually will. Now there is exactly
+// one canonical list (EDIT_CHIP_SAFE_LABELS, exported from
+// selection-display.ts), used as the fallback for BOTH main and supporting
+// photos -- no separate "mode" list to drift out of sync again.
 
 type Props = {
   imageSrc: string;
   onSubmit: (instruction: string) => Promise<void> | void;
   onClose: () => void;
   loading?: boolean;
-  /** "extra" swaps in supporting-photo example chips. */
+  /** Retained for API stability; no longer changes which chips render (both use the same safe list). */
   mode?: "main" | "extra";
   /**
-   * Per-photo suggestions from buildEditSuggestionChips() (already filtered
-   * to edit-safe operations). When present and non-empty, shown instead of
-   * the static MAIN_CHIPS/SUPPORTING_CHIPS. Falls back to the static set
-   * otherwise -- never renders an empty chip row.
+   * Per-photo suggestions from buildEditSuggestionChips() (already limited
+   * to the same canonical safe set). When present and non-empty, shown
+   * instead of the full EDIT_CHIP_SAFE_LABELS fallback. Falls back to the
+   * static set otherwise -- never renders an empty chip row.
    */
   suggestedChips?: string[];
 };
@@ -52,13 +44,11 @@ export function EditPhotoModal({
   onSubmit,
   onClose,
   loading = false,
-  mode = "main",
   suggestedChips,
 }: Props) {
   const [text, setText] = useState("");
-  const staticChips = mode === "extra" ? SUPPORTING_CHIPS : MAIN_CHIPS;
   const exampleChips =
-    suggestedChips && suggestedChips.length > 0 ? suggestedChips : staticChips;
+    suggestedChips && suggestedChips.length > 0 ? suggestedChips : EDIT_CHIP_SAFE_LABELS;
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();

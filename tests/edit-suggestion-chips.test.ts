@@ -2,8 +2,48 @@ import { describe, expect, it } from "vitest";
 import {
   buildEditSuggestionChips,
   deriveEditContext,
+  EDIT_CHIP_SAFE_LABELS,
   type EditableNextStep,
 } from "../src/lib/selection-display";
+
+/**
+ * Codex review round 4: edit-photo-modal.tsx used to keep its own SEPARATE
+ * fallback chip lists, and the supporting-photo one had drifted to include
+ * "Make the text easier to read" (a real fidelity risk) and "Straighten the
+ * photo" -- neither ever passed through buildEditSuggestionChips()'s safety
+ * logic, since it was a hand-maintained list, not the detector's output.
+ * EDIT_CHIP_SAFE_LABELS is now the one canonical source both the detector
+ * and the modal's fallback read from. This test locks in the actual
+ * guarantee that matters: whatever buildEditSuggestionChips returns is
+ * ALWAYS a subset of this exact list, never something else.
+ */
+describe("EDIT_CHIP_SAFE_LABELS (Codex review round 4: one canonical safe set, not two independently maintained lists)", () => {
+  it("is exactly the 5 categories, no more, no less", () => {
+    expect(EDIT_CHIP_SAFE_LABELS).toEqual([
+      "Brighten the product evenly",
+      "Use a plain white background",
+      "Remove background clutter",
+      "Center the full product",
+      "Sharpen product details",
+    ]);
+  });
+
+  it("buildEditSuggestionChips can never return anything outside this list", () => {
+    const cases: EditableNextStep[][] = [
+      [{ observation: "", action: "Soften the lighting on the candle." }],
+      [{ observation: "", action: "Use a plain white background." }],
+      [{ observation: "", action: "Put the soap on a clean white surface." }],
+      [{ observation: "", action: "Add a small box of matches beside the candle." }],
+      [{ observation: "", action: "Make the label text sharper and easier to read." }],
+    ];
+    for (const steps of cases) {
+      const result = buildEditSuggestionChips(steps, 6.5, [...EDIT_CHIP_SAFE_LABELS]);
+      for (const chip of result) {
+        expect(EDIT_CHIP_SAFE_LABELS).toContain(chip);
+      }
+    }
+  });
+});
 
 /**
  * Codex review (2026-08-16), round 3: buildEditSuggestionChips used to
