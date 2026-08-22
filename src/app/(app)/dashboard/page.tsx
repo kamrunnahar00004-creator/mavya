@@ -131,6 +131,14 @@ export default async function DashboardPage() {
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
         Each product is one Etsy listing.
       </p>
+      {typeof entitlement.activeListingLimit === "number" && (
+        <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
+          {cards.length} of {entitlement.activeListingLimit} active listings used.
+          {!pastDue && cards.length >= entitlement.activeListingLimit && (
+            <span className="text-[var(--color-ink)]"> Delete a listing to add another.</span>
+          )}
+        </p>
+      )}
 
       <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 sm:gap-5 lg:grid-cols-4">
         {cards.map((c) => (
