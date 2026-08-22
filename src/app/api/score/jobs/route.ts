@@ -51,7 +51,8 @@ export async function POST(req: NextRequest) {
     // happen (entitlements.ts always pairs active:true with a resolved
     // plan), but fail closed explicitly rather than let a new product get
     // created with an undefined limit.
-    return apiError("subscription_required", "An active plan is needed to rate photos.");
+    logEvent("rating.plan_limit_missing", { userId: user.id });
+    return apiError("billing_unavailable", "Your plan could not be verified. Try again shortly.");
   }
   const userLimit = await rateLimit(`score-start:u:${user.id}`, 6, 60_000);
   const ipLimit = await rateLimit(`score-start:${clientIp(req)}`, 12, 60_000);

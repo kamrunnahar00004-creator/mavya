@@ -148,8 +148,15 @@ export async function persistPhotoAndQueueRating(
       // closed here rather than silently falling through to the RPC's own
       // defensive check (which would also catch it, but failing fast with
       // a clear message is better than relying solely on the DB layer).
-      if (typeof input.activeListingLimit !== "number" || input.activeListingLimit <= 0) {
-        return fail("bad_request", "Missing active listing limit.", 400);
+      if (
+        typeof input.activeListingLimit !== "number" ||
+        ![5, 15, 40].includes(input.activeListingLimit)
+      ) {
+        return fail(
+          "billing_unavailable",
+          "Your plan could not be verified. Try again shortly.",
+          503
+        );
       }
       const { data: newProductId, error } = await admin.rpc(
         "create_product_within_active_limit",

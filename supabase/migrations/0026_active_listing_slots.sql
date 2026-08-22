@@ -9,8 +9,11 @@
 -- touch this at all; only NEW product creation is gated.
 --
 -- Does not edit 0025_photo_batches.sql (already applied in production).
--- ensure_batch_product's signature changes here via drop + recreate, a new
--- migration, not an edit to the old one.
+-- The limit-aware batch RPC uses a new name. The old service-role-only RPC
+-- from 0025 becomes a compatibility wrapper capped at the legacy 5-slot
+-- limit, so applying this migration before the matching application deploy
+-- neither breaks uploads nor leaves an unenforced creation path. Current
+-- application code calls the limit-aware RPC directly.
 
 -- ---------------------------------------------------------------------------
 -- create_product_within_active_limit: the single, shared enforcement point
@@ -42,7 +45,7 @@ begin
   -- to already be validated -- the caller (application code) is expected to
   -- pass entitlement.activeListingLimit, but this is the last line of
   -- defense against a bug upstream ever slipping through a bad number.
-  if p_limit is null or p_limit <= 0 or p_limit > 100000 then
+  if p_limit is null or p_limit not in (5, 15, 40) then
     raise exception 'invalid active listing limit';
   end if;
 
@@ -66,17 +69,16 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- ensure_batch_product, new signature (adds p_limit). The old 2-argument
--- version from 0025 is dropped, not left as a callable, unsafe bypass --
--- nothing should be able to create a batch product without a limit anymore.
+-- ensure_batch_product_within_active_limit: limit-aware replacement for the
+-- 0025 RPC. It has a distinct name so database-first rollout is compatible
+-- with the currently deployed application. Both functions are service-role
+-- only; after the application deploy, only this function is called.
 -- Retry idempotency is unchanged: if the batch already has a product_id,
 -- return it immediately WITHOUT touching create_product_within_active_limit
 -- at all -- a retry of an already-created batch never re-checks or
 -- re-consumes a slot, even if the account is now full.
 -- ---------------------------------------------------------------------------
-drop function if exists public.ensure_batch_product(uuid, uuid);
-
-create or replace function public.ensure_batch_product(
+create or replace function public.ensure_batch_product_within_active_limit(
   p_batch_id uuid,
   p_user uuid,
   p_limit integer
@@ -110,10 +112,71 @@ begin
 end;
 $$;
 
+-- Database-first rollout compatibility for the currently deployed route.
+-- Before the multi-tier application deploy, every purchasable account is a
+-- legacy 5-slot account. Once the new route deploys it calls the limit-aware
+-- RPC with the entitlement-derived 5/15/40 value instead. This wrapper must
+-- be declared after the function it invokes so a fresh migration can resolve
+-- the SQL body when it is created.
+create or replace function public.ensure_batch_product(
+  p_batch_id uuid,
+  p_user uuid
+) returns uuid
+language sql
+security definer
+set search_path = public
+as $$
+  select public.ensure_batch_product_within_active_limit(p_batch_id, p_user, 5)
+$$;
+
+-- If the first upload in a batch fails after creating its product, release
+-- that empty product so an abandoned/failed batch cannot consume an active
+-- listing slot forever. The batch lock serializes this with retries. A
+-- product with any persisted photo is never released here.
+create or replace function public.release_empty_batch_product(
+  p_batch_id uuid,
+  p_user uuid,
+  p_product uuid
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_product_id uuid;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_batch_id::text, 1));
+
+  select product_id into v_product_id
+    from public.photo_batches
+   where id = p_batch_id and user_id = p_user;
+  if not found or v_product_id is distinct from p_product then
+    return false;
+  end if;
+
+  if exists (select 1 from public.photos where product_id = p_product) then
+    return false;
+  end if;
+
+  update public.photo_batches
+     set product_id = null, updated_at = now()
+   where id = p_batch_id and user_id = p_user and product_id = p_product;
+
+  perform public.request_product_deletion(p_user, p_product);
+  return true;
+end;
+$$;
+
 revoke all on function public.create_product_within_active_limit(uuid, text, integer)
   from public, anon, authenticated;
-revoke all on function public.ensure_batch_product(uuid, uuid, integer)
+revoke all on function public.ensure_batch_product(uuid, uuid)
+  from public, anon, authenticated;
+revoke all on function public.ensure_batch_product_within_active_limit(uuid, uuid, integer)
+  from public, anon, authenticated;
+revoke all on function public.release_empty_batch_product(uuid, uuid, uuid)
   from public, anon, authenticated;
 
 grant execute on function public.create_product_within_active_limit(uuid, text, integer) to service_role;
-grant execute on function public.ensure_batch_product(uuid, uuid, integer) to service_role;
+grant execute on function public.ensure_batch_product(uuid, uuid) to service_role;
+grant execute on function public.ensure_batch_product_within_active_limit(uuid, uuid, integer) to service_role;
+grant execute on function public.release_empty_batch_product(uuid, uuid, uuid) to service_role;

@@ -39,6 +39,26 @@ async function finalizeBatch(
   }
 }
 
+async function releaseEmptyBatchProduct(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  batchId: string,
+  userId: string,
+  productId: string
+) {
+  const { error } = await admin.rpc("release_empty_batch_product", {
+    p_batch_id: batchId,
+    p_user: userId,
+    p_product: productId,
+  });
+  if (error) {
+    logEvent("batch.empty_product_release_failed", {
+      userId,
+      batchId,
+      error: error.message,
+    });
+  }
+}
+
 function itemPayload(item: BatchItemRow, extra: Record<string, unknown> = {}) {
   return {
     ok: item.status === "uploaded",
@@ -68,7 +88,8 @@ export async function POST(req: NextRequest) {
     );
   }
   if (entitlement.activeListingLimit == null) {
-    return apiError("subscription_required", "An active plan is needed to rate photos.");
+    logEvent("batch.plan_limit_missing", { userId: user.id });
+    return apiError("billing_unavailable", "Your plan could not be verified. Try again shortly.");
   }
   // Light abuse guard on the upload endpoint itself -- not the scoring-start
   // budget (that was already spent, weighted, at batch init).
@@ -146,11 +167,14 @@ export async function POST(req: NextRequest) {
     return apiError("invalid_upload", "The uploaded photo did not match what was selected.");
   }
 
-  const { data: productIdData, error: productError } = await admin.rpc("ensure_batch_product", {
-    p_batch_id: batchId,
-    p_user: user.id,
-    p_limit: entitlement.activeListingLimit,
-  });
+  const { data: productIdData, error: productError } = await admin.rpc(
+    "ensure_batch_product_within_active_limit",
+    {
+      p_batch_id: batchId,
+      p_user: user.id,
+      p_limit: entitlement.activeListingLimit,
+    }
+  );
   const productId = productIdData as string | null;
   if (productError) {
     if (productError.message?.includes("active_listing_limit_reached")) {
@@ -174,6 +198,7 @@ export async function POST(req: NextRequest) {
   const effectiveRole = effectiveRoleData as "main" | "supporting" | null;
   if (roleError || !effectiveRole) {
     logEvent("batch.role_failed", { userId: user.id, batchId, error: roleError?.message });
+    await releaseEmptyBatchProduct(admin, batchId, user.id, productId);
     return apiError("persistence_failed", "Could not save this photo. Try again.");
   }
 
@@ -189,6 +214,7 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result.ok) {
+    await releaseEmptyBatchProduct(admin, batchId, user.id, productId);
     const { error: updateError } = await admin
       .from("photo_batch_items")
       .update({

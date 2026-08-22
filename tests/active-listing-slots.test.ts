@@ -32,8 +32,8 @@ describe("0026_active_listing_slots migration", () => {
     expect(sql).toContain("select count(*) into v_count from products where user_id = p_user");
   });
 
-  it("validates the limit defensively as a positive bounded integer, independent of the caller", () => {
-    expect(sql).toContain("if p_limit is null or p_limit <= 0 or p_limit > 100000 then");
+  it("accepts only the founder-approved active-listing limits", () => {
+    expect(sql).toContain("if p_limit is null or p_limit not in (5, 15, 40) then");
     expect(sql).toContain("raise exception 'invalid active listing limit'");
   });
 
@@ -56,18 +56,31 @@ describe("0026_active_listing_slots migration", () => {
     expect(raiseIndex).toBeGreaterThan(exhaustedCheck);
   });
 
-  it("drops the old unsafe 2-argument ensure_batch_product before defining the new 3-argument one", () => {
-    const dropIndex = sql.indexOf("drop function if exists public.ensure_batch_product(uuid, uuid);");
-    const createIndex = sql.indexOf(
-      "create or replace function public.ensure_batch_product(\n  p_batch_id uuid,\n  p_user uuid,\n  p_limit integer\n)",
-      dropIndex
+  it("keeps the live 0025 RPC as an enforced 5-slot compatibility wrapper", () => {
+    expect(sql).not.toContain("drop function if exists public.ensure_batch_product(uuid, uuid)");
+    expect(sql).toContain(
+      "create or replace function public.ensure_batch_product_within_active_limit(\n  p_batch_id uuid,\n  p_user uuid,\n  p_limit integer\n)"
     );
-    expect(dropIndex).toBeGreaterThan(-1);
-    expect(createIndex).toBeGreaterThan(dropIndex);
+    expect(sql).toContain(
+      "select public.ensure_batch_product_within_active_limit(p_batch_id, p_user, 5)"
+    );
   });
 
-  it("ensure_batch_product returns an existing product BEFORE ever calling the limit-enforcing function -- retries never re-check or re-consume a slot", () => {
-    const functionStart = sql.indexOf("create or replace function public.ensure_batch_product(\n  p_batch_id uuid,\n  p_user uuid,\n  p_limit integer\n)");
+  it("declares the limit-aware batch RPC before its SQL compatibility wrapper", () => {
+    const limitAwareIndex = sql.indexOf(
+      "create or replace function public.ensure_batch_product_within_active_limit("
+    );
+    const wrapperIndex = sql.indexOf(
+      "create or replace function public.ensure_batch_product(\n  p_batch_id uuid,\n  p_user uuid\n)"
+    );
+    expect(limitAwareIndex).toBeGreaterThan(-1);
+    expect(wrapperIndex).toBeGreaterThan(limitAwareIndex);
+  });
+
+  it("the limit-aware batch RPC returns an existing product before calling the creator", () => {
+    const functionStart = sql.indexOf(
+      "create or replace function public.ensure_batch_product_within_active_limit(\n  p_batch_id uuid,\n  p_user uuid,\n  p_limit integer\n)"
+    );
     const earlyReturn = sql.indexOf("if v_product_id is not null then", functionStart);
     const createCall = sql.indexOf("create_product_within_active_limit(p_user", functionStart);
     expect(earlyReturn).toBeGreaterThan(functionStart);
@@ -88,7 +101,9 @@ describe("0026_active_listing_slots migration", () => {
   it("both functions are revoked from public/anon/authenticated and granted only to service_role", () => {
     for (const fn of [
       "create_product_within_active_limit(uuid, text, integer)",
-      "ensure_batch_product(uuid, uuid, integer)",
+      "ensure_batch_product(uuid, uuid)",
+      "ensure_batch_product_within_active_limit(uuid, uuid, integer)",
+      "release_empty_batch_product(uuid, uuid, uuid)",
     ]) {
       expect(sql).toContain(`revoke all on function public.${fn}`);
       expect(sql).toContain(`grant execute on function public.${fn} to service_role`);
@@ -107,8 +122,9 @@ describe("both product-creation paths use the enforced RPC, never a direct inser
   });
 
   it("photo-persistence.ts fails closed on a missing/invalid limit before ever calling the RPC", () => {
-    expect(persistence).toContain('typeof input.activeListingLimit !== "number" || input.activeListingLimit <= 0');
-    expect(persistence).toContain('return fail("bad_request", "Missing active listing limit.", 400);');
+    expect(persistence).toContain("![5, 15, 40].includes(input.activeListingLimit)");
+    expect(persistence).toContain('"billing_unavailable"');
+    expect(persistence).toContain('"Your plan could not be verified. Try again shortly."');
   });
 
   it("photo-persistence.ts maps active_listing_limit_reached to its own distinct code, not persistence_failed", () => {
@@ -118,9 +134,21 @@ describe("both product-creation paths use the enforced RPC, never a direct inser
     expect(branch).toContain("409");
   });
 
-  it("the batch upload route passes p_limit into ensure_batch_product and maps its exhaustion distinctly", () => {
+  it("the batch upload route passes p_limit into the limit-aware RPC and maps its exhaustion distinctly", () => {
+    expect(batchUploadRoute).toContain('"ensure_batch_product_within_active_limit"');
     expect(batchUploadRoute).toContain("p_limit: entitlement.activeListingLimit");
     expect(batchUploadRoute).toContain('"active_listing_limit_reached"');
+  });
+
+  it("releases an empty batch product after role or persistence failure so it cannot consume a slot", () => {
+    expect(sql).toContain("create or replace function public.release_empty_batch_product(");
+    expect(sql).toContain("if exists (select 1 from public.photos where product_id = p_product) then");
+    expect(sql).toContain("perform public.request_product_deletion(p_user, p_product)");
+    expect(batchUploadRoute).toContain("await releaseEmptyBatchProduct(admin, batchId, user.id, productId)");
+    expect(
+      batchUploadRoute.match(/await releaseEmptyBatchProduct\(admin, batchId, user\.id, productId\)/g)
+        ?.length
+    ).toBe(2);
   });
 });
 
@@ -137,6 +165,15 @@ describe("limits are server-derived from getEntitlement(), never from request da
 
   it("batch upload route fails closed when the entitlement resolves no plan limit", () => {
     expect(batchUploadRoute).toContain("entitlement.activeListingLimit == null");
+    expect(batchUploadRoute).toContain(
+      'apiError("billing_unavailable", "Your plan could not be verified. Try again shortly.")'
+    );
+  });
+
+  it("single-photo route reports a missing server plan limit as configuration failure", () => {
+    expect(scoreJobsRoute).toContain(
+      'apiError("billing_unavailable", "Your plan could not be verified. Try again shortly.")'
+    );
   });
 
   it("neither route reads a limit from the client body", () => {
