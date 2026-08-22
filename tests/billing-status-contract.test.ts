@@ -23,8 +23,8 @@ describe("billing status route contract", () => {
 });
 
 describe("portal availability does not depend on the new tier prices", () => {
-  it("stripeConfigured() checks only the secret key and the legacy price, not any new tier variable", () => {
-    expect(stripeLib).toContain("STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_ID");
+  it("stripeConfigured() checks only the secret key, not any price variable", () => {
+    expect(stripeLib).toContain("Boolean(process.env.STRIPE_SECRET_KEY)");
     for (const tierVar of [
       "STRIPE_PRICE_STARTER_MONTHLY",
       "STRIPE_PRICE_STARTER_ANNUAL",
@@ -44,5 +44,16 @@ describe("portal availability does not depend on the new tier prices", () => {
 
   it("the portal route only gates on stripeConfigured(), unaffected by tier rollout state", () => {
     expect(portalRoute).toContain("if (!stripeConfigured())");
+  });
+});
+
+describe("entitlement lookup fails closed even when registry construction throws", () => {
+  const entitlements = readFileSync("src/lib/entitlements.ts", "utf8");
+
+  it("uses an empty registry in the catch instead of rebuilding the failed registry", () => {
+    const catchIndex = entitlements.indexOf("} catch (err)");
+    const catchBody = entitlements.slice(catchIndex);
+    expect(catchBody).toContain("entitlementFromRow(null, EMPTY_PLAN_REGISTRY)");
+    expect(catchBody).not.toContain("getPlanRegistry()");
   });
 });

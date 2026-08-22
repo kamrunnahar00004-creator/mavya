@@ -20,12 +20,11 @@
  * price, cadence, or active-listing limit. Never trust these values if a
  * browser supplies them directly.
  *
- * Deliberately NOT wired into checkout, entitlements, allowances, webhooks,
- * or the portal yet -- this slice is the registry itself, reviewed on its
- * own before anything depends on it. No checkout is created here; the
- * numeric prices below are policy assertions and validation metadata, not a
- * charging mechanism -- the actual Stripe price id remains the charging
- * authority.
+ * Checkout and entitlements resolve through this registry. Allowances,
+ * webhooks, and the portal retain their existing responsibilities. The
+ * numeric prices below are also checked against Stripe before checkout so a
+ * misconfigured price id cannot charge an amount or cadence that disagrees
+ * with the pricing page.
  *
  * Built by a pure function (`buildPlanRegistry`) that takes explicit config,
  * not by reading `process.env` directly. The environment adapter lives in
@@ -171,6 +170,33 @@ export type CheckoutPlan = Readonly<{
   priceId: string;
   policy: PlanPolicy;
 }>;
+
+export type CheckoutPriceDescriptor = Readonly<{
+  active: boolean;
+  currency: string;
+  unitAmount: number | null;
+  recurringInterval: string | null;
+  recurringIntervalCount: number | null;
+}>;
+
+/**
+ * Verify that the Stripe Price configured for a checkout choice still matches
+ * Mavya's server-owned policy. This catches accidentally swapped, archived,
+ * one-time, or incorrectly priced Stripe IDs before a Checkout Session exists.
+ */
+export function checkoutPriceMatchesPolicy(
+  policy: PlanPolicy,
+  price: CheckoutPriceDescriptor
+): boolean {
+  const expectedInterval = policy.cadence === "monthly" ? "month" : "year";
+  return (
+    price.active &&
+    price.currency.toLowerCase() === policy.currency &&
+    price.unitAmount === policy.priceCents &&
+    price.recurringInterval === expectedInterval &&
+    price.recurringIntervalCount === 1
+  );
+}
 
 /**
  * Resolve a founder-approved checkout choice to a configured Stripe price.

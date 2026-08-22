@@ -3,10 +3,10 @@ import Stripe from "stripe";
 /**
  * Server-only Stripe client + helpers. Secrets never reach the browser.
  *
- * Required environment:
- *  - STRIPE_SECRET_KEY      server API key
- *  - STRIPE_WEBHOOK_SECRET  webhook signing secret (signature verification)
- *  - STRIPE_PRICE_ID        the $19/month recurring price for the Founding Beta
+ * Required environment varies by operation. The API client and customer
+ * portal require STRIPE_SECRET_KEY. Checkout additionally resolves its chosen
+ * tier through the server-side plan registry. STRIPE_PRICE_ID remains only as
+ * the legacy Founding-plan compatibility price.
  */
 export function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -21,7 +21,7 @@ export function getStripePriceId(): string {
 }
 
 export function stripeConfigured(): boolean {
-  return Boolean(process.env.STRIPE_SECRET_KEY && process.env.STRIPE_PRICE_ID);
+  return Boolean(process.env.STRIPE_SECRET_KEY);
 }
 
 /**

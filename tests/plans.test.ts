@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildPlanRegistry,
+  checkoutPriceMatchesPolicy,
   getPlanPolicy,
   isAvailableForNewCheckout,
   resolvePlan,
@@ -178,5 +179,51 @@ describe("plan registry", () => {
     expect(Object.isFrozen(registry)).toBe(true);
     expect(registry.every((entry) => Object.isFrozen(entry))).toBe(true);
     expect(Object.isFrozen(getPlanPolicy("starter", "monthly"))).toBe(true);
+  });
+
+  it("accepts only an active Stripe price matching amount, currency, and monthly cadence", () => {
+    const policy = getPlanPolicy("starter", "monthly");
+    expect(policy).not.toBeNull();
+    expect(
+      checkoutPriceMatchesPolicy(policy!, {
+        active: true,
+        currency: "USD",
+        unitAmount: 2900,
+        recurringInterval: "month",
+        recurringIntervalCount: 1,
+      })
+    ).toBe(true);
+  });
+
+  it("accepts the annual policy only with a one-year recurring Stripe price", () => {
+    const policy = getPlanPolicy("shop", "annual");
+    expect(policy).not.toBeNull();
+    expect(
+      checkoutPriceMatchesPolicy(policy!, {
+        active: true,
+        currency: "usd",
+        unitAmount: 59000,
+        recurringInterval: "year",
+        recurringIntervalCount: 1,
+      })
+    ).toBe(true);
+  });
+
+  it("rejects archived, wrong-amount, wrong-currency, one-time, and wrong-cadence Stripe prices", () => {
+    const policy = getPlanPolicy("power", "monthly");
+    expect(policy).not.toBeNull();
+    const valid = {
+      active: true,
+      currency: "usd",
+      unitAmount: 9900,
+      recurringInterval: "month",
+      recurringIntervalCount: 1,
+    };
+    expect(checkoutPriceMatchesPolicy(policy!, { ...valid, active: false })).toBe(false);
+    expect(checkoutPriceMatchesPolicy(policy!, { ...valid, unitAmount: 2900 })).toBe(false);
+    expect(checkoutPriceMatchesPolicy(policy!, { ...valid, currency: "jpy" })).toBe(false);
+    expect(checkoutPriceMatchesPolicy(policy!, { ...valid, recurringInterval: null })).toBe(false);
+    expect(checkoutPriceMatchesPolicy(policy!, { ...valid, recurringInterval: "year" })).toBe(false);
+    expect(checkoutPriceMatchesPolicy(policy!, { ...valid, recurringIntervalCount: 2 })).toBe(false);
   });
 });

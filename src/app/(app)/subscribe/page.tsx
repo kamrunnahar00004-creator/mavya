@@ -45,7 +45,7 @@ const FEATURES = [
   "Full listing-photo ratings",
   "Clear improvement recommendations",
   "Enhanced main and supporting photos",
-  "Original product preserved during enhancement",
+  "Product-preserving checks on every enhancement",
   "Full-resolution downloads",
   "Cancel anytime",
 ];

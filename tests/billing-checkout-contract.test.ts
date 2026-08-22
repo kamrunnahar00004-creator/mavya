@@ -60,6 +60,16 @@ describe("billing checkout route contract", () => {
     expect(lineItemsIndex).toBeGreaterThan(resolvedAssignment);
   });
 
+  it("verifies Stripe's real amount, currency, active state, and cadence before creating a session", () => {
+    const retrieveIndex = route.indexOf("stripe.prices.retrieve(priceId)");
+    const validateIndex = route.indexOf("checkoutPriceMatchesPolicy(resolved.policy", retrieveIndex);
+    const createIndex = route.indexOf("stripe.checkout.sessions.create", validateIndex);
+    expect(retrieveIndex).toBeGreaterThan(-1);
+    expect(validateIndex).toBeGreaterThan(retrieveIndex);
+    expect(createIndex).toBeGreaterThan(validateIndex);
+    expect(route).toContain('logEvent("billing.checkout_price_mismatch"');
+  });
+
   it("reuses an open checkout session only when it targets the same resolved price", () => {
     expect(route).toContain("session.metadata?.price_id === priceId");
   });

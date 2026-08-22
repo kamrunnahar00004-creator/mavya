@@ -30,6 +30,7 @@ import { getPlanRegistry } from "@/lib/plans.server";
  */
 
 const LEGACY_ACTIVE_LISTING_LIMIT = 5;
+const EMPTY_PLAN_REGISTRY: PriceRegistry = Object.freeze([]);
 
 export type SubscriptionRow = {
   user_id: string;
@@ -155,6 +156,9 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
       error: err instanceof Error ? err.message : String(err),
     });
     // Fail CLOSED: a billing-store failure must never grant free AI access.
-    return entitlementFromRow(null, getPlanRegistry());
+    // Do not rebuild the registry here. Registry misconfiguration is one of
+    // the errors this catch handles; rebuilding it would throw again instead
+    // of returning a closed entitlement.
+    return entitlementFromRow(null, EMPTY_PLAN_REGISTRY);
   }
 }

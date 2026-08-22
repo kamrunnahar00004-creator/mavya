@@ -3,7 +3,12 @@ import { getStripe, stripeConfigured } from "@/lib/stripe";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getEntitlement } from "@/lib/entitlements";
-import { resolveCheckoutPlan, type BillingCadence, type PlanKey } from "@/lib/plans";
+import {
+  checkoutPriceMatchesPolicy,
+  resolveCheckoutPlan,
+  type BillingCadence,
+  type PlanKey,
+} from "@/lib/plans";
 import { getPlanRegistry } from "@/lib/plans.server";
 import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
@@ -88,6 +93,22 @@ export async function POST(req: NextRequest) {
   const admin = createSupabaseAdminClient();
 
   try {
+    const configuredPrice = await stripe.prices.retrieve(priceId);
+    const priceMatchesPolicy = checkoutPriceMatchesPolicy(resolved.policy, {
+      active: configuredPrice.active,
+      currency: configuredPrice.currency,
+      unitAmount: configuredPrice.unit_amount,
+      recurringInterval: configuredPrice.recurring?.interval ?? null,
+      recurringIntervalCount: configuredPrice.recurring?.interval_count ?? null,
+    });
+    if (!priceMatchesPolicy) {
+      logEvent("billing.checkout_price_mismatch", {
+        planKey: choice.planKey,
+        cadence: choice.cadence,
+      });
+      return apiError("billing_unavailable", "That plan is not available right now.");
+    }
+
     // Reuse the linked customer or create one bound to this user id.
     let customerId = entitlement.stripeCustomerId;
     if (!customerId) {
