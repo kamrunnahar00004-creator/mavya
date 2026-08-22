@@ -2,8 +2,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/errors";
 
 /**
- * Shared monthly credits (founder decisions, 2026-07-14):
- *  - 1,000 credits per Stripe billing period.
+ * Shared monthly credits (founder decisions, 2026-07-14; cap raised
+ * 2026-08-22): this is no longer a real customer-facing usage limit. The
+ * active-listing-slot model (0026) is the actual product limit now --
+ * "unlimited within your slots, add stricter limits only if real abuse is
+ * observed" (founder decision). CREDITS_PER_PERIOD is kept only as a very
+ * high abuse backstop so the charge/refund/idempotency machinery below
+ * (already load-bearing for stale-job recovery, keep-better floors, and the
+ * refinement starvation backstop -- see tests/stale-generation-recovery.test.ts,
+ * tests/edit-workflow-refinement.test.ts) doesn't need to be restructured.
+ * No real seller can plausibly reach it: even a maxed-out 40-slot Power
+ * account rating and re-rating aggressively falls far short.
  *  - photo rating: 10 credits (internal kind='assessment')
  *  - Improve, Manual Edit, user Retry: 20 credits each (internal kind='workflow')
  *  - Automatic attempts 2-3: free (operation='refine')
@@ -15,7 +24,7 @@ import { logEvent } from "@/lib/errors";
  * Renewal refreshes exactly once (period key changes once per renewal). Refunds
  * occur for infrastructure failures only; honest rejections do not refund.
  */
-export const CREDITS_PER_PERIOD = 1000;
+export const CREDITS_PER_PERIOD = 100_000;
 export const RATING_COST = 10;
 export const WORKFLOW_COST = 20;
 

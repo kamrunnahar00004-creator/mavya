@@ -15,11 +15,17 @@ const scoreRoute = read("src/app/api/score/route.ts");
 const generateRoute = read("src/app/api/generate/route.ts");
 const billingStatus = read("src/app/api/billing/status/route.ts");
 const subscribePage = read("src/app/(app)/subscribe/page.tsx");
+const settingsPage = read("src/app/(app)/settings/page.tsx");
 const refinement = read("src/lib/refinement.ts");
 
 describe("shared monthly credit policy", () => {
-  it("uses one 1,000-credit balance with internal action costs", () => {
-    expect(CREDITS_PER_PERIOD).toBe(1000);
+  it("uses one high-ceiling credit balance with internal action costs", () => {
+    // 2026-08-22: raised from 1,000 to a practically-unlimited abuse backstop
+    // -- the active-listing-slot model (0026) is the real product limit now.
+    // No real seller can plausibly reach this; it exists only so the
+    // charge/refund/idempotency machinery (stale-job recovery, keep-better
+    // floors, the refinement starvation backstop) never needs restructuring.
+    expect(CREDITS_PER_PERIOD).toBe(100_000);
     expect(RATING_COST).toBe(10);
     expect(WORKFLOW_COST).toBe(20);
   });
@@ -28,10 +34,10 @@ describe("shared monthly credit policy", () => {
     const canSpend = (used: number, cost: number) =>
       used + cost <= CREDITS_PER_PERIOD;
 
-    expect(canSpend(990, RATING_COST)).toBe(true);
-    expect(canSpend(991, RATING_COST)).toBe(false);
-    expect(canSpend(980, WORKFLOW_COST)).toBe(true);
-    expect(canSpend(981, WORKFLOW_COST)).toBe(false);
+    expect(canSpend(CREDITS_PER_PERIOD - RATING_COST, RATING_COST)).toBe(true);
+    expect(canSpend(CREDITS_PER_PERIOD - RATING_COST + 1, RATING_COST)).toBe(false);
+    expect(canSpend(CREDITS_PER_PERIOD - WORKFLOW_COST, WORKFLOW_COST)).toBe(true);
+    expect(canSpend(CREDITS_PER_PERIOD - WORKFLOW_COST + 1, WORKFLOW_COST)).toBe(false);
   });
 
   it("adds and backfills the shared counter without dropping compatibility counters", () => {
@@ -109,5 +115,16 @@ describe("shared monthly credit policy", () => {
   it("only refunds a stale charged root attempt, never free refinements", () => {
     expect(refinement).toContain("(job.attempt_number ?? 1) === 1");
     expect(refinement).toContain("refundAllowance(job.allowance_key)");
+  });
+
+  it("does not expose credits language at all on the settings page (2026-08-22, matches subscribe page)", () => {
+    // The settings page pre-dated the active-listing-slot rework and still
+    // showed a raw "N of 1000 credits remaining" meter plus a hardcoded
+    // "Most Popular - $19/month" label regardless of the customer's real
+    // plan. Both were leftovers, never updated when Slices 1-3 shipped.
+    expect(settingsPage).not.toMatch(/\bcredits?\b/i);
+    expect(settingsPage).not.toContain("Most Popular - $19/month");
+    expect(settingsPage).toContain("activeListingLimit");
+    expect(settingsPage).toContain("planKey");
   });
 });

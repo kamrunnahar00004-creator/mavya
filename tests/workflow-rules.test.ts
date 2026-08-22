@@ -32,8 +32,8 @@ const safeFidelity: FidelityReport = {
 };
 
 describe("paid-beta shared-credit constants (founder decisions)", () => {
-  it("locks 1,000 monthly credits, action costs, and 2 attempts", () => {
-    expect(CREDITS_PER_PERIOD).toBe(1000);
+  it("locks a high-ceiling monthly credit backstop, action costs, and 2 attempts", () => {
+    expect(CREDITS_PER_PERIOD).toBe(100_000);
     expect(RATING_COST).toBe(10);
     expect(WORKFLOW_COST).toBe(20);
     // Founder decision 2026-07-17: one visible attempt + at most ONE quiet

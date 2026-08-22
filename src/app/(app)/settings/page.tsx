@@ -1,10 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
-  Coins,
   CreditCard,
   Loader2,
   LogOut,
@@ -19,12 +18,28 @@ type BillingStatus = {
   status: string | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
-  credits: {
-    used: number;
-    remaining: number;
-    limit: number;
-  };
+  // Server-derived only, same as the subscribe page -- the browser never
+  // computes its own plan name or price from a price id.
+  planKey: "legacy" | "starter" | "shop" | "power" | null;
+  cadence: "monthly" | "annual" | null;
+  activeListingLimit: number | null;
 };
+
+// Mirrors the subscribe page's PLAN_DISPLAY (kept local, not shared, same
+// convention already established there) -- purely display names/prices,
+// never used to compute an actual limit or checkout amount.
+const PLAN_DISPLAY: Record<
+  "starter" | "shop" | "power",
+  { name: string; monthlyCents: number; annualCents: number }
+> = {
+  starter: { name: "Starter", monthlyCents: 2900, annualCents: 29000 },
+  shop: { name: "Shop", monthlyCents: 5900, annualCents: 59000 },
+  power: { name: "Power", monthlyCents: 9900, annualCents: 99000 },
+};
+
+function formatPrice(cents: number, cadence: "monthly" | "annual"): string {
+  return `$${(cents / 100).toFixed(2)}/${cadence === "annual" ? "yr" : "mo"}`;
+}
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -61,8 +76,9 @@ function planLabel(status: BillingStatus | null): {
 /**
  * Signed-in account + billing hub. Billing management and cancellation happen
  * ONLY through the Stripe customer portal (the existing server endpoint) — no
- * custom card or cancellation UI. Credit language only; internal allowance
- * names never appear.
+ * custom card or cancellation UI. Active-listing-slot language only
+ * (2026-08-22, matches the subscribe page) -- the old per-period usage-balance
+ * concept, internal or customer-facing, is intentionally absent here.
  */
 export default function SettingsPage() {
   const router = useRouter();
@@ -134,6 +150,14 @@ export default function SettingsPage() {
 
   const label = planLabel(status);
   const hasBilling = Boolean(status && status.reason !== "no_subscription");
+  const planPriceLine = useMemo(() => {
+    if (!status?.planKey) return null;
+    if (status.planKey === "legacy") return "Founding — $19.00/mo";
+    const plan = PLAN_DISPLAY[status.planKey];
+    const cadence = status.cadence ?? "monthly";
+    const cents = cadence === "annual" ? plan.annualCents : plan.monthlyCents;
+    return `${plan.name} — ${formatPrice(cents, cadence)}`;
+  }, [status?.planKey, status?.cadence]);
 
   if (!checked) {
     return (
@@ -175,7 +199,7 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Plan + credits */}
+      {/* Plan */}
       <section className="mt-5 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-soft)]">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
@@ -194,9 +218,11 @@ export default function SettingsPage() {
           </span>
         </div>
 
-        <p className="mt-2.5 text-[15px] font-semibold text-[var(--color-ink)]">
-          Most Popular - $19/month
-        </p>
+        {planPriceLine && (
+          <p className="mt-2.5 text-[15px] font-semibold text-[var(--color-ink)]">
+            {planPriceLine}
+          </p>
+        )}
 
         {status?.reason === "past_due" && (
           <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
@@ -204,30 +230,24 @@ export default function SettingsPage() {
               className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-weak)]"
               aria-hidden="true"
             />
-            Your payment did not go through. New credits are paused. Your saved
-            photos are safe.
+            Your payment did not go through, so new AI usage is paused. Your
+            saved photos are safe.
           </p>
         )}
 
         {status?.active && (
-          <div className="mt-4 space-y-3">
-            <div className="flex items-center justify-between gap-3">
-              <span className="flex items-center gap-2 text-[14px] text-[var(--color-ink)]">
-                <Coins
-                  className="h-4 w-4 text-[var(--color-ink-soft)]"
-                  aria-hidden="true"
-                />
-                Credits this month
-              </span>
-              <span className="text-[14px] font-semibold text-[var(--color-ink)]">
-                {status.credits.remaining} of {status.credits.limit} remaining
-              </span>
-            </div>
+          <div className="mt-4 space-y-1.5">
+            {status.activeListingLimit != null && (
+              <p className="text-[14px] text-[var(--color-ink)]">
+                {status.activeListingLimit} active listing
+                {status.activeListingLimit === 1 ? "" : "s"} included
+              </p>
+            )}
             {status.currentPeriodEnd && (
               <p className="text-[12.5px] text-[var(--color-ink-soft)]">
                 {status.cancelAtPeriodEnd
                   ? `Access ends ${formatDate(status.currentPeriodEnd)}.`
-                  : `Credits refresh on ${formatDate(status.currentPeriodEnd)}.`}
+                  : `Renews on ${formatDate(status.currentPeriodEnd)}.`}
               </p>
             )}
           </div>
