@@ -6,6 +6,7 @@ const read = (file: string) => readFileSync(path.resolve(file), "utf8");
 
 const migration = read("supabase/migrations/0012_durable_rating_jobs.sql");
 const route = read("src/app/api/score/jobs/route.ts");
+const photoPersistence = read("src/lib/photo-persistence.ts");
 const worker = read("src/app/api/generate/worker/route.ts");
 const ratingJobs = read("src/lib/rating-jobs.ts");
 const landing = read("src/app/page.tsx");
@@ -24,12 +25,20 @@ describe("durable rating jobs", () => {
   });
 
   it("persists product and photo before queuing server scoring", () => {
-    const productInsert = route.indexOf('.from("products")');
-    const photoInsert = route.indexOf('.from("photos").insert');
-    const jobInsert = route.indexOf('.from("rating_jobs")', photoInsert);
+    // Codex review, 2026-08-22: this insert-order logic moved out of
+    // route.ts into a shared helper (photo-persistence.ts) so the batch
+    // upload route can reuse the exact same persistence code instead of
+    // duplicating it. The order guarantee this test protects still holds --
+    // it's just enforced in the new location now.
+    const productInsert = photoPersistence.indexOf('.from("products")');
+    const photoInsert = photoPersistence.indexOf('.from("photos").insert');
+    const jobInsert = photoPersistence.indexOf('.from("rating_jobs")', photoInsert);
     expect(productInsert).toBeGreaterThan(-1);
     expect(photoInsert).toBeGreaterThan(productInsert);
     expect(jobInsert).toBeGreaterThan(photoInsert);
+    expect(route).toContain("persistPhotoAndQueueRating");
+    expect(route).toContain("kickRatingWorker");
+    // GET's refresh-safe poll trigger still lives in route.ts, unchanged.
     expect(route).toContain("after(async () =>");
     expect(route).toContain("runQueuedRatingOnce(job.id)");
   });

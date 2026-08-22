@@ -1,23 +1,56 @@
 "use client";
 
-import { useRef, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
-import { AlertCircle, ImageUp, Loader2, Plus, X } from "lucide-react";
+import {
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  ImageUp,
+  Loader2,
+  Plus,
+  RotateCcw,
+  Star,
+  X,
+} from "lucide-react";
 import { prepareUploadImage } from "@/lib/client-image";
 import {
   parseRatingQueueResponse,
   ratingQueueErrorMessage,
 } from "@/lib/rating-queue";
+import {
+  batchErrorMessage,
+  buildBatchInitPayload,
+  hashFile,
+  parseBatchInitResponse,
+  parseBatchUploadResponse,
+  runWithConcurrency,
+  withMainFirst,
+  type BatchRole,
+} from "@/lib/photo-batch-client";
 import { cn } from "@/lib/utils";
 import { AnalyzingState } from "@/components/analyzing-state";
 
 type Step = "idle" | "saving";
+const MAX_BATCH_FILES = 10;
+const BATCH_SESSION_KEY = "mavya:pendingBatch";
+
+type BatchItem = {
+  requestId: string;
+  file: File;
+  hash: string;
+  role: BatchRole;
+  previewUrl: string;
+  status: "preparing" | "ready" | "uploading" | "uploaded" | "failed";
+  errorMessage?: string;
+};
 
 /**
- * Add-product card. Opens a small dialog (name optional + photo), runs the
- * durable scoring pipeline. The server persists the product + photo first,
- * then the dashboard card keeps polling while the rating finishes.
+ * Add-product card. Single file keeps the original one-step flow entirely
+ * unchanged (immediate submit to /api/score/jobs). Selecting 2-10 files
+ * opens a preview grid instead: choose the main photo, remove or reorder,
+ * then submit the whole batch through /api/photos/batch/*.
  */
 export function AddProductCard({
   variant = "tile",
@@ -33,21 +66,45 @@ export function AddProductCard({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const busy = step !== "idle";
+  const [batch, setBatch] = useState<BatchItem[] | null>(null);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
-  function chooseFile(f: File) {
-    if (!f.type.startsWith("image/")) {
-      setError("Choose an image file (JPG or PNG).");
-      return;
-    }
-    setError(null);
-    setPreviewUrl((old) => {
-      if (old) URL.revokeObjectURL(old);
-      return URL.createObjectURL(f);
-    });
-    // One-step like the landing: uploading the photo runs the rating immediately.
-    void handleCreate(f);
-  }
+  const busy = step !== "idle" || batchSubmitting;
+
+  // A batch id recorded before a refresh means jobs may already be durably
+  // queued server-side (each upload's after() kick does not depend on this
+  // component). File objects cannot survive a refresh, so this stage does
+  // not resume uploading the remainder automatically -- it honestly points
+  // the seller at the product that was already created, if any.
+  useEffect(() => {
+    const pending = sessionStorage.getItem(BATCH_SESSION_KEY);
+    if (!pending) return;
+    sessionStorage.removeItem(BATCH_SESSION_KEY);
+    (async () => {
+      try {
+        const res = await fetch(`/api/photos/batch/${pending}`);
+        if (!res.ok) return;
+        const body = (await res.json()) as {
+          productId?: string | null;
+          items?: { state: string }[];
+        };
+        if (body.productId) {
+          const remaining = (body.items ?? []).filter((i) => i.state === "pending_upload").length;
+          setResumeNotice(
+            remaining > 0
+              ? `A previous batch was interrupted. ${remaining} photo${remaining === 1 ? "" : "s"} were not uploaded -- add them from the product.`
+              : "A previous batch finished after the page was refreshed."
+          );
+          router.push(`/dashboard/product/${body.productId}`);
+        }
+      } catch {
+        // Best-effort only -- nothing durable is lost by skipping this.
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function reset() {
     setName("");
@@ -58,6 +115,16 @@ export function AddProductCard({
     setDragActive(false);
     setStep("idle");
     setError(null);
+    clearBatch();
+  }
+
+  function clearBatch() {
+    setBatch((old) => {
+      old?.forEach((b) => URL.revokeObjectURL(b.previewUrl));
+      return null;
+    });
+    setBatchSubmitting(false);
+    setBatchProgress({ done: 0, total: 0 });
   }
 
   function close() {
@@ -89,17 +156,237 @@ export function AddProductCard({
       const queued = parseRatingQueueResponse(await res.json().catch(() => null));
       if (!queued.ok) throw new Error(queued.message);
 
-      // The durable server job owns the rating from here. Go STRAIGHT to the
-      // product page: it renders the analyzing state while the job runs and
-      // reveals the audit the moment it lands. The full-screen analyzing
-      // overlay stays up THROUGH the navigation (this component unmounts on
-      // route change), so the dashboard never flashes underneath.
       router.push(`/dashboard/product/${queued.productId}`);
     } catch (err) {
       setStep("idle");
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
     }
   }
+
+  async function chooseFiles(fileList: FileList | File[]) {
+    if (busy) return;
+    const files = Array.from(fileList);
+    const images = files.filter((f) => f.type.startsWith("image/"));
+    if (images.length === 0) {
+      setError("Choose an image file (JPG or PNG).");
+      return;
+    }
+    if (images.length === 1) {
+      setError(null);
+      setPreviewUrl((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return URL.createObjectURL(images[0]);
+      });
+      void handleCreate(images[0]);
+      return;
+    }
+
+    let kept = images;
+    if (kept.length > MAX_BATCH_FILES) {
+      kept = kept.slice(0, MAX_BATCH_FILES);
+      setError(`Only the first ${MAX_BATCH_FILES} photos were kept.`);
+    } else {
+      setError(null);
+    }
+
+    const prepared: BatchItem[] = kept.map((file, i) => ({
+      requestId: crypto.randomUUID(),
+      file,
+      hash: "",
+      role: i === 0 ? "main" : "supporting",
+      previewUrl: URL.createObjectURL(file),
+      status: "preparing",
+    }));
+    setBatch(prepared);
+
+    const seenHashes: string[] = [];
+    for (const item of prepared) {
+      const readyFile = await prepareUploadImage(item.file);
+      const hash = await hashFile(readyFile);
+      const isDuplicate = seenHashes.includes(hash);
+      seenHashes.push(hash);
+      setBatch((old) =>
+        old?.map((b) =>
+          b.requestId === item.requestId
+            ? {
+                ...b,
+                file: readyFile,
+                hash,
+                status: isDuplicate ? "failed" : "ready",
+                errorMessage: isDuplicate ? "Same photo as another one selected" : undefined,
+              }
+            : b
+        ) ?? old
+      );
+    }
+  }
+
+  function removeBatchItem(requestId: string) {
+    setBatch((old) => {
+      if (!old) return old;
+      const removed = old.find((b) => b.requestId === requestId);
+      if (removed) URL.revokeObjectURL(removed.previewUrl);
+      const rest = old.filter((b) => b.requestId !== requestId);
+      if (removed?.role === "main" && rest.length > 0) {
+        rest[0] = { ...rest[0], role: "main" };
+      }
+      return rest;
+    });
+  }
+
+  function setMain(requestId: string) {
+    setBatch(
+      (old) => old?.map((b) => ({ ...b, role: b.requestId === requestId ? "main" : "supporting" })) ?? old
+    );
+  }
+
+  function moveItem(requestId: string, direction: -1 | 1) {
+    setBatch((old) => {
+      if (!old) return old;
+      const index = old.findIndex((b) => b.requestId === requestId);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= old.length) return old;
+      const next = [...old];
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
+    });
+  }
+
+  async function submitBatch() {
+    if (!batch || batchSubmitting) return;
+    const usable = batch.filter((b) => b.status !== "failed" && b.hash);
+    if (usable.length < 2) {
+      setError("Select at least 2 different photos.");
+      return;
+    }
+    if (!usable.some((b) => b.role === "main")) {
+      usable[0].role = "main";
+    }
+
+    setBatchSubmitting(true);
+    setError(null);
+    setBatchProgress({ done: 0, total: usable.length });
+
+    try {
+      const idempotencyKey = crypto.randomUUID();
+      const selected = usable.map((b) => ({
+        requestId: b.requestId,
+        file: b.file,
+        role: b.role,
+        contentHash: b.hash,
+      }));
+      const initRes = await fetch("/api/photos/batch/init", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildBatchInitPayload(selected, idempotencyKey, name.trim())),
+      });
+      if (!initRes.ok) {
+        throw new Error(batchErrorMessage(await initRes.json().catch(() => null), initRes.status));
+      }
+      const init = parseBatchInitResponse(await initRes.json().catch(() => null));
+      if (!init.ok) throw new Error(init.message);
+
+      // Narrowed fields extracted into plain consts: TypeScript does not
+      // preserve discriminated-union narrowing of `init` into the nested
+      // closures below.
+      const batchId = init.batchId;
+      sessionStorage.setItem(BATCH_SESSION_KEY, batchId);
+
+      const byRequestId = new Map(usable.map((u) => [u.requestId, u]));
+      const ordered = withMainFirst(usable);
+
+      let done = 0;
+      let anyUploaded = false;
+      let productId: string | null = init.productId;
+
+      async function uploadOne(item: BatchItem) {
+        setBatch((old) =>
+          old?.map((b) => (b.requestId === item.requestId ? { ...b, status: "uploading" } : b)) ?? old
+        );
+        try {
+          const form = new FormData();
+          form.set("batch_id", batchId);
+          form.set("request_id", item.requestId);
+          form.set("image", item.file);
+          const res = await fetch("/api/photos/batch/upload", { method: "POST", body: form });
+          const body = await res.json().catch(() => null);
+          if (!res.ok) {
+            const message = batchErrorMessage(body, res.status);
+            setBatch((old) =>
+              old?.map((b) =>
+                b.requestId === item.requestId ? { ...b, status: "failed", errorMessage: message } : b
+              ) ?? old
+            );
+            return;
+          }
+          const parsed = parseBatchUploadResponse(item.requestId, body);
+          if (!parsed.ok) {
+            setBatch((old) =>
+              old?.map((b) =>
+                b.requestId === item.requestId
+                  ? { ...b, status: "failed", errorMessage: parsed.message }
+                  : b
+              ) ?? old
+            );
+            return;
+          }
+          if (parsed.productId) productId = parsed.productId;
+          anyUploaded = true;
+          setBatch((old) =>
+            old?.map((b) => (b.requestId === item.requestId ? { ...b, status: "uploaded" } : b)) ?? old
+          );
+        } catch {
+          setBatch((old) =>
+            old?.map((b) =>
+              b.requestId === item.requestId
+                ? { ...b, status: "failed", errorMessage: "Upload failed. Try again." }
+                : b
+            ) ?? old
+          );
+        } finally {
+          done += 1;
+          setBatchProgress({ done, total: usable.length });
+        }
+      }
+
+      // Declared main uploads first, alone, awaited -- this is what lets
+      // server-side promotion (resolve_batch_item_role) know for certain
+      // whether the main failed before any supporting item is persisted.
+      const [firstMain, ...rest] = ordered;
+      if (firstMain) await uploadOne(byRequestId.get(firstMain.requestId) ?? firstMain);
+      if (rest.length > 0) {
+        await runWithConcurrency(rest, 2, (i) => uploadOne(byRequestId.get(i.requestId) ?? i));
+      }
+
+      sessionStorage.removeItem(BATCH_SESSION_KEY);
+
+      if (!anyUploaded || !productId) {
+        setBatchSubmitting(false);
+        setError("None of these photos could be saved. Try again.");
+        return;
+      }
+      router.push(`/dashboard/product/${productId}`);
+    } catch (err) {
+      setBatchSubmitting(false);
+      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
+    }
+  }
+
+  const dropHandlers = {
+    onDragOver: (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      if (!busy) setDragActive(true);
+    },
+    onDragLeave: () => setDragActive(false),
+    onDrop: (e: DragEvent<HTMLDivElement>) => {
+      e.preventDefault();
+      setDragActive(false);
+      if (busy) return;
+      if (e.dataTransfer.files?.length) void chooseFiles(e.dataTransfer.files);
+    },
+  };
+
+  const showBatchGrid = Boolean(batch);
 
   return (
     <>
@@ -114,65 +401,69 @@ export function AddProductCard({
         </button>
       ) : variant === "dropzone" ? (
         <div className="w-full">
-          {/* Inline drag-and-drop card (no modal): drop or click to score a
-              thumbnail in one step. The full-screen analyzing overlay below
-              takes over while the durable rating runs. */}
-          <div
-            role="button"
-            tabIndex={0}
-            aria-label="Upload listing thumbnail"
-            onClick={() => !busy && inputRef.current?.click()}
-            onKeyDown={(e) => {
-              if ((e.key === "Enter" || e.key === " ") && !busy) {
-                e.preventDefault();
-                inputRef.current?.click();
-              }
-            }}
-            onDragOver={(e: DragEvent<HTMLDivElement>) => {
-              e.preventDefault();
-              if (!busy) setDragActive(true);
-            }}
-            onDragLeave={() => setDragActive(false)}
-            onDrop={(e: DragEvent<HTMLDivElement>) => {
-              e.preventDefault();
-              setDragActive(false);
-              if (busy) return;
-              const f = e.dataTransfer.files?.[0];
-              if (f) chooseFile(f);
-            }}
-            className={cn(
-              "group flex min-h-[400px] cursor-pointer flex-col items-center justify-center gap-6 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-8 py-16 text-center shadow-[var(--shadow-soft)] transition-all",
-              "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
-              dragActive && "dropzone-active",
-              busy && "pointer-events-none opacity-70"
-            )}
-          >
-            <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
-              <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
-            </span>
-            <span>
-              <span className="block text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
-                Drop your thumbnail here
+          {!showBatchGrid ? (
+            <div
+              role="button"
+              tabIndex={0}
+              aria-label="Upload listing photos"
+              onClick={() => !busy && inputRef.current?.click()}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && !busy) {
+                  e.preventDefault();
+                  inputRef.current?.click();
+                }
+              }}
+              {...dropHandlers}
+              className={cn(
+                "group flex min-h-[400px] cursor-pointer flex-col items-center justify-center gap-6 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-8 py-16 text-center shadow-[var(--shadow-soft)] transition-all",
+                "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
+                dragActive && "dropzone-active",
+                busy && "pointer-events-none opacity-70"
+              )}
+            >
+              <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+                <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
               </span>
-              <span className="mt-1.5 block text-[13.5px] text-[var(--color-ink-muted)]">
-                JPG or PNG, and your photo stays private
+              <span>
+                <span className="block text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+                  Drop your thumbnail here
+                </span>
+                <span className="mt-1.5 block text-[13.5px] text-[var(--color-ink-muted)]">
+                  JPG or PNG, and your photo stays private
+                </span>
               </span>
-            </span>
-            <span className="rounded-full bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
-              Score My Thumbnail
-            </span>
-          </div>
+              <span className="rounded-full bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+                Score My Thumbnail
+              </span>
+            </div>
+          ) : (
+            <BatchGrid
+              batch={batch!}
+              submitting={batchSubmitting}
+              progress={batchProgress}
+              onRemove={removeBatchItem}
+              onSetMain={setMain}
+              onMove={moveItem}
+              onSubmit={submitBatch}
+              onCancel={clearBatch}
+            />
+          )}
           <input
             ref={inputRef}
             type="file"
             accept="image/*"
+            multiple
             hidden
             onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) chooseFile(f);
+              if (e.target.files?.length) void chooseFiles(e.target.files);
               e.target.value = "";
             }}
           />
+          {resumeNotice && (
+            <div className="mt-4 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-[var(--color-page-deep)] px-3 py-2 text-left text-[13px] text-[var(--color-ink-muted)]">
+              {resumeNotice}
+            </div>
+          )}
           {error && (
             <div
               role="alert"
@@ -201,9 +492,8 @@ export function AddProductCard({
         </button>
       )}
 
-      {/* While scoring/saving, take over the full screen with the same analyzing
-          experience as the landing, then navigate to the product page. */}
       {busy &&
+        step === "saving" &&
         typeof document !== "undefined" &&
         createPortal(
           <div className="fixed inset-0 z-50 overflow-auto bg-[var(--color-page)]">
@@ -213,18 +503,22 @@ export function AddProductCard({
         )}
 
       {open &&
-        !busy &&
+        step === "idle" &&
+        !batchSubmitting &&
         typeof document !== "undefined" &&
         createPortal(
           <div
             role="dialog"
             aria-modal="true"
             aria-label="Add product"
-            className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,13,11,0.55)] px-4 py-8 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-center justify-center overflow-auto bg-[rgba(15,13,11,0.55)] px-4 py-8 backdrop-blur-sm"
             onClick={close}
           >
             <div
-              className="relative w-full max-w-[480px] rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-7 shadow-[var(--shadow-soft-strong)] sm:p-8"
+              className={cn(
+                "relative w-full rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-7 shadow-[var(--shadow-soft-strong)] sm:p-8",
+                showBatchGrid ? "max-w-[720px]" : "max-w-[480px]"
+              )}
               onClick={(e) => e.stopPropagation()}
             >
               <button
@@ -241,7 +535,7 @@ export function AddProductCard({
                 Add a product
               </h2>
               <p className="mt-1.5 text-[14px] text-[var(--color-ink-muted)]">
-                Name it and upload the listing thumbnail.
+                Name it and upload your listing photos.
               </p>
 
               <label className="mt-6 block">
@@ -259,80 +553,78 @@ export function AddProductCard({
               </label>
 
               <div className="mt-5">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-label="Upload listing thumbnail"
-                  onClick={() => !busy && inputRef.current?.click()}
-                  onKeyDown={(e) => {
-                    if ((e.key === "Enter" || e.key === " ") && !busy) {
-                      e.preventDefault();
-                      inputRef.current?.click();
-                    }
-                  }}
-                  onDragOver={(e: DragEvent<HTMLDivElement>) => {
-                    e.preventDefault();
-                    if (!busy) setDragActive(true);
-                  }}
-                  onDragLeave={() => setDragActive(false)}
-                  onDrop={(e: DragEvent<HTMLDivElement>) => {
-                    e.preventDefault();
-                    setDragActive(false);
-                    if (busy) return;
-                    const f = e.dataTransfer.files?.[0];
-                    if (f) chooseFile(f);
-                  }}
-                  className={cn(
-                    "group flex min-h-[232px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-6 py-8 text-center shadow-[var(--shadow-soft)] transition-all",
-                    "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
-                    dragActive && "dropzone-active",
-                    busy && "pointer-events-none opacity-70"
-                  )}
-                >
-                  {busy ? (
-                    <>
-                      {previewUrl && (
-                        <span className="h-28 w-28 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] shadow-[var(--shadow-soft)]">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={previewUrl}
-                            alt=""
-                            className="h-full w-full object-cover"
-                          />
+                {!showBatchGrid ? (
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Upload listing photos"
+                    onClick={() => !busy && inputRef.current?.click()}
+                    onKeyDown={(e) => {
+                      if ((e.key === "Enter" || e.key === " ") && !busy) {
+                        e.preventDefault();
+                        inputRef.current?.click();
+                      }
+                    }}
+                    {...dropHandlers}
+                    className={cn(
+                      "group flex min-h-[232px] cursor-pointer flex-col items-center justify-center gap-4 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white px-6 py-8 text-center shadow-[var(--shadow-soft)] transition-all",
+                      "hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]",
+                      dragActive && "dropzone-active",
+                      busy && "pointer-events-none opacity-70"
+                    )}
+                  >
+                    {busy ? (
+                      <>
+                        {previewUrl && (
+                          <span className="h-28 w-28 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] shadow-[var(--shadow-soft)]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={previewUrl} alt="" className="h-full w-full object-cover" />
+                          </span>
+                        )}
+                        <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-[var(--color-ink)]">
+                          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                          Saving…
                         </span>
-                      )}
-                      <span className="inline-flex items-center gap-2 text-[15px] font-semibold text-[var(--color-ink)]">
-                        <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                        {step === "saving" ? "Saving…" : "Rating photo…"}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
-                        <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
-                      </span>
-                      <span>
-                        <span className="block text-[16px] font-semibold text-[var(--color-ink)]">
-                          Drop your listing thumbnail
+                      </>
+                    ) : (
+                      <>
+                        <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+                          <ImageUp className="h-7 w-7" strokeWidth={1.8} aria-hidden="true" />
                         </span>
-                        <span className="mt-1 block text-[13px] text-[var(--color-ink-muted)]">
-                          JPG or PNG
+                        <span>
+                          <span className="block text-[16px] font-semibold text-[var(--color-ink)]">
+                            Drop your listing photos
+                          </span>
+                          <span className="mt-1 block text-[13px] text-[var(--color-ink-muted)]">
+                            JPG or PNG, up to 10 at once
+                          </span>
                         </span>
-                      </span>
-                      <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
-                        Upload photo
-                      </span>
-                    </>
-                  )}
-                </div>
+                        <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+                          Upload photos
+                        </span>
+                      </>
+                    )}
+                  </div>
+                ) : (
+                  <BatchGrid
+                    batch={batch!}
+                    submitting={batchSubmitting}
+                    progress={batchProgress}
+                    onRemove={removeBatchItem}
+                    onSetMain={setMain}
+                    onMove={moveItem}
+                    onSubmit={submitBatch}
+                    onCancel={clearBatch}
+                  />
+                )}
                 <input
                   ref={inputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   hidden
                   onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) chooseFile(f);
+                    if (e.target.files?.length) void chooseFiles(e.target.files);
                     e.target.value = "";
                   }}
                 />
@@ -355,5 +647,160 @@ export function AddProductCard({
           document.body
         )}
     </>
+  );
+}
+
+/** Preview grid for a 2-10 photo batch: main selector, remove, reorder, and
+ *  per-photo upload state once submitted. */
+function BatchGrid({
+  batch,
+  submitting,
+  progress,
+  onRemove,
+  onSetMain,
+  onMove,
+  onSubmit,
+  onCancel,
+}: {
+  batch: BatchItem[];
+  submitting: boolean;
+  progress: { done: number; total: number };
+  onRemove: (requestId: string) => void;
+  onSetMain: (requestId: string) => void;
+  onMove: (requestId: string, direction: -1 | 1) => void;
+  onSubmit: () => void;
+  onCancel: () => void;
+}) {
+  const allReady = batch.every((b) => b.status === "ready" || b.status === "failed");
+  const usableCount = batch.filter((b) => b.status !== "failed").length;
+
+  return (
+    <div>
+      <div
+        role="list"
+        aria-label="Selected photos"
+        className="grid grid-cols-3 gap-3 sm:grid-cols-4"
+      >
+        {batch.map((item, index) => (
+          <div
+            key={item.requestId}
+            role="listitem"
+            className={cn(
+              "group relative aspect-square overflow-hidden rounded-[var(--radius-lg)] border bg-[var(--color-page-deep)]",
+              item.role === "main" ? "border-[var(--color-primary)] ring-2 ring-[var(--color-tint-deep)]" : "border-[var(--color-border)]",
+              item.status === "failed" && "opacity-60"
+            )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={item.previewUrl}
+              alt={`Selected photo ${index + 1}`}
+              className="h-full w-full object-cover"
+            />
+
+            {item.role === "main" && (
+              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[10.5px] font-semibold text-white">
+                <Star className="h-3 w-3" aria-hidden="true" />
+                Main
+              </span>
+            )}
+
+            {(item.status === "preparing" || item.status === "uploading") && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/35">
+                <Loader2 className="h-5 w-5 animate-spin text-white" aria-hidden="true" />
+              </span>
+            )}
+            {item.status === "uploaded" && (
+              <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+                <span className="rounded-full bg-white px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink)]">
+                  Saved
+                </span>
+              </span>
+            )}
+            {item.status === "failed" && (
+              <span className="absolute inset-x-0 bottom-0 truncate bg-[var(--color-weak)] px-1.5 py-1 text-[10.5px] font-medium text-white">
+                {item.errorMessage ?? "Failed"}
+              </span>
+            )}
+
+            {!submitting && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onRemove(item.requestId)}
+                  aria-label={`Remove photo ${index + 1}`}
+                  title="Remove"
+                  className="absolute right-1.5 top-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" aria-hidden="true" />
+                </button>
+                {item.role !== "main" && item.status !== "failed" && (
+                  <button
+                    type="button"
+                    onClick={() => onSetMain(item.requestId)}
+                    aria-label={`Set photo ${index + 1} as main`}
+                    title="Set as main"
+                    className="absolute bottom-1.5 left-1.5 inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100"
+                  >
+                    <Star className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                )}
+                <div className="absolute bottom-1.5 right-1.5 flex gap-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => onMove(item.requestId, -1)}
+                    disabled={index === 0}
+                    aria-label={`Move photo ${index + 1} earlier`}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white disabled:opacity-30"
+                  >
+                    <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onMove(item.requestId, 1)}
+                    disabled={index === batch.length - 1}
+                    aria-label={`Move photo ${index + 1} later`}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-white disabled:opacity-30"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </>
+            )}
+            {submitting && item.status === "failed" && (
+              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
+                <RotateCcw className="h-3 w-3" aria-hidden="true" />
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-5 flex items-center justify-between gap-3">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="text-[13.5px] font-semibold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] disabled:opacity-50"
+        >
+          Start over
+        </button>
+        {submitting ? (
+          <span className="inline-flex items-center gap-2 text-[14px] font-semibold text-[var(--color-ink)]">
+            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            Saving {progress.done} of {progress.total}…
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={!allReady || usableCount < 2}
+            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            Rate {usableCount} photo{usableCount === 1 ? "" : "s"}
+          </button>
+        )}
+      </div>
+    </div>
   );
 }

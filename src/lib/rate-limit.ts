@@ -85,3 +85,69 @@ export async function rateLimit(
 
   return memoryRateLimit(key, max, windowMs);
 }
+
+/**
+ * Weighted variant, added for bulk photo-batch init (Codex review, 2026-08-22):
+ * a 10-file batch must consume more of its budget than a 1-file batch in one
+ * atomic check, which plain incr()-by-1 rate limiting cannot express. Kept as
+ * a fully separate code path (own Redis key namespace via the caller-supplied
+ * key, own memory map) so the existing single-photo limiter's behavior and
+ * tests are untouched.
+ */
+const weightedBuckets = new Map<string, { count: number; resetAt: number }>();
+
+async function redisWeightedRateLimit(
+  key: string,
+  weight: number,
+  max: number,
+  windowMs: number
+): Promise<RateLimitResult> {
+  try {
+    const namespacedKey = `rlw:${key}`;
+    const count = await getRedis().incrby(namespacedKey, weight);
+    if (count === weight) {
+      await getRedis().pexpire(namespacedKey, windowMs);
+    }
+    return count <= max ? { ok: true } : { ok: false, reason: "limited" };
+  } catch (err) {
+    console.error("[rate-limit] durable store failed:", err);
+    return { ok: false, reason: "store_error" };
+  }
+}
+
+function memoryWeightedRateLimit(
+  key: string,
+  weight: number,
+  max: number,
+  windowMs: number
+): RateLimitResult {
+  const now = Date.now();
+  const win = weightedBuckets.get(key);
+  if (!win || win.resetAt <= now) {
+    weightedBuckets.set(key, { count: weight, resetAt: now + windowMs });
+    return weight <= max ? { ok: true } : { ok: false, reason: "limited" };
+  }
+  win.count += weight;
+  return win.count <= max ? { ok: true } : { ok: false, reason: "limited" };
+}
+
+export async function weightedRateLimit(
+  key: string,
+  weight: number,
+  max: number,
+  windowMs: number
+): Promise<RateLimitResult> {
+  if (rateLimitDisabled()) {
+    return { ok: true };
+  }
+
+  if (durableRateLimitConfigured()) {
+    return redisWeightedRateLimit(key, weight, max, windowMs);
+  }
+
+  if (requiresDurableRateLimit()) {
+    return { ok: false, reason: "missing_durable_store" };
+  }
+
+  return memoryWeightedRateLimit(key, weight, max, windowMs);
+}
