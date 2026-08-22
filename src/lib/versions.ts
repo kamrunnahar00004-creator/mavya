@@ -123,8 +123,23 @@ export const TAXONOMY_VERSION = 1;
 // stated contract exactly matches what every worked example already shows.
 // No worked example or RIGHT/WRONG example needed editing -- all of them
 // already fit 2-3 total on recount.
-export const RUBRIC_VERSION = "main-v20";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v15";
+// main-v21 / supporting-v16 (2026-08-23, buyer-question-coverage slice 1):
+// added answers_question_ids to the strict OpenAI response schema (required
+// array, [] is a valid "answers nothing" result). Each photo is still
+// scored completely independently -- this adds one field to the SAME
+// existing call, never a joint multi-photo call, never cross-photo
+// comparison. The main call receives every category's fixed buyer-question
+// catalog (src/data/buyer-questions.ts) and self-selects the list matching
+// its own detected_category; a supporting call receives only its product's
+// already-confirmed single category. question_catalog_category/_version
+// are stamped by score-photo.ts AFTER validating the returned ids belong to
+// that exact catalog (no cross-category answers, no unknown ids, no
+// duplicates) -- never model-controlled. Bumped so a cached/legacy audit
+// without this field is never mistaken for a fresh one; absence must read
+// as "not evaluated under this feature," never as an answered-nothing
+// verdict (see RubricJson's answers_question_ids doc comment).
+export const RUBRIC_VERSION = "main-v21";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v16";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

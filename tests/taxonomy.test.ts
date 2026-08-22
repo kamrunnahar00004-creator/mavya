@@ -137,7 +137,8 @@ describe("canonical taxonomy", () => {
     // v12 = worn-shot rule enforced via a WORKED EXAMPLE (rules alone were
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
-    expect(RUBRIC_VERSION).toBe("main-v20");
+    // v21 = answers_question_ids added (buyer-question coverage, slice 1).
+    expect(RUBRIC_VERSION).toBe("main-v21");
     // supporting-v13 = same spoon/jargon fix applied to the supporting prompt.
     // v12 = same click_appeal/presentation + reading-level fix.
     // v11 = fixed the same self-contradictory sentence count.
@@ -146,7 +147,8 @@ describe("canonical taxonomy", () => {
     // v9 = is_marketing_graphic added to the strict response schema so it is
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v15");
+    // v16 = answers_question_ids added (buyer-question coverage, slice 1).
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v16");
   });
 });
 

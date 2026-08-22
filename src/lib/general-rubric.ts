@@ -161,7 +161,8 @@ Invalid-input JSON:
   "generation_risk_reason": "No product photo is available to grade.",
   "trust_risk": "none",
   "trust_evidence": "",
-  "is_marketing_graphic": false
+  "is_marketing_graphic": false,
+  "answers_question_ids": []
 }
 
 Valid JSON shape:
@@ -188,5 +189,6 @@ Valid JSON shape:
   "generation_risk_reason": string,
   "trust_risk": "none" | "moderate" | "high" ("none" without concrete visible evidence; "moderate" for one minor/ambiguous artifact; "high" for clear evidence per the evidence rule above. "high" means this listing cannot be trusted as shown; the backend caps the overall at 5.4),
   "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none"),
-  "is_marketing_graphic": boolean (true for a composed listing graphic: added text banners, headlines, price/CTA overlays, callouts, arrows, or diagrams; false for a real product photo, packaging, or clean page/mockup preview. Detection only — score the graphic honestly on usefulness/clarity/truthfulness; it can earn any honest score including 8+)
+  "is_marketing_graphic": boolean (true for a composed listing graphic: added text banners, headlines, price/CTA overlays, callouts, arrows, or diagrams; false for a real product photo, packaging, or clean page/mockup preview. Detection only — score the graphic honestly on usefulness/clarity/truthfulness; it can earn any honest score including 8+),
+  "answers_question_ids": array of strings, each an id copied EXACTLY from BUYER_QUESTIONS_FOR_THIS_CALL below, or [] if this photo answers none of them. Never invent an id.
 }`;

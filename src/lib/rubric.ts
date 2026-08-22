@@ -184,6 +184,24 @@ export type RubricJson = {
    *  generation (which cannot preserve a graphic's text/layout). Optional only
    *  on legacy audits scored before this field existed. */
   is_marketing_graphic?: boolean;
+  /**
+   * Buyer-question coverage (2026-08-23, slice 1). Which fixed buyer
+   * question(s), if any, THIS photo answers -- chosen only from the ids in
+   * the catalog given to the model for its detected category. Never
+   * compared against other photos here; that aggregation happens
+   * server-side (src/lib/buyer-question-coverage.ts). Required on every
+   * NEW audit (the strict OpenAI schema always returns it, [] is a valid,
+   * honest "answers nothing" result) but absent/undefined on any audit
+   * persisted before this field existed -- that absence must never be
+   * read as an answered-nothing verdict.
+   */
+  answers_question_ids: string[];
+  /** Server-stamped AFTER validating answers_question_ids against the
+   *  catalog for this category -- never model-controlled. Absent on
+   *  legacy audits and on any audit where category resolution failed. */
+  question_catalog_category?: string;
+  /** Server-stamped alongside question_catalog_category. */
+  question_catalog_version?: number;
 };
 
 export const RUBRIC_PROMPT = `You are Mavya, an Etsy product-photo auditor.
@@ -409,7 +427,8 @@ Invalid-input JSON:
   "generation_risk_reason": "No product photo is available to improve.",
   "trust_risk": "none",
   "trust_evidence": "",
-  "is_marketing_graphic": false
+  "is_marketing_graphic": false,
+  "answers_question_ids": []
 }
 
 Valid JSON shape:
@@ -441,8 +460,28 @@ Valid JSON shape:
   "generation_risk_reason": string,
   "trust_risk": "none" | "moderate" | "high" (evidence-based provenance/trust risk; "none" without concrete visible evidence; "moderate" for minor evidence such as a slight halo or one ambiguous artifact; "high" for clear evidence: AI-invented product design, garbled/melted text, warped anatomy, impossible scale, hard cutout with no contact shadow),
   "trust_evidence": string (one sentence naming the exact visible evidence, or "" when trust_risk is "none". Never claim evidence you cannot point at.),
-  "is_marketing_graphic": boolean (true ONLY when the main image is a composed promotional graphic: sales-text banner, price/CTA overlay, or ad-style collage/diagram. An ordinary product photograph is false. Detection only; it never changes the score)
+  "is_marketing_graphic": boolean (true ONLY when the main image is a composed promotional graphic: sales-text banner, price/CTA overlay, or ad-style collage/diagram. An ordinary product photograph is false. Detection only; it never changes the score),
+  "answers_question_ids": array of strings, each an id copied EXACTLY from BUYER_QUESTIONS_FOR_THIS_CALL below, or [] if this photo answers none of them. Never invent an id. Never return an id from a different category than the one you detect.
 }`;
+
+/**
+ * Appended at call time (score-photo.ts) with the actual catalog for this
+ * call. The main photo receives every category's catalog (it does not yet
+ * know its own category); a supporting photo receives only the ONE
+ * category's catalog its product's confirmed main photo already resolved.
+ */
+export function buyerQuestionsPromptBlock(
+  catalogs: readonly { category: string; questions: readonly { id: string; text: string }[] }[]
+): string {
+  const lines = catalogs
+    .map(
+      (c) =>
+        `${c.category}:\n` +
+        c.questions.map((q) => `  - ${q.id}: "${q.text}"`).join("\n")
+    )
+    .join("\n");
+  return `\n\nBUYER_QUESTIONS_FOR_THIS_CALL: for EACH category below, these are the ONLY buyer questions that exist. Pick answers_question_ids ONLY from the list matching the category YOU detect for this photo (detected_category for the main rubric; the category context you were given for a supporting photo). A photo may answer zero, one, or several questions in that category's list -- return every id it genuinely answers, not just the single best one. Never answer from a different category's list than the one you detect. Never invent an id not shown here.\n${lines}`;
+}
 
 export const INVALID_RESPONSE: RubricJson = {
   upload_kind: "invalid",
@@ -485,6 +524,7 @@ export const INVALID_RESPONSE: RubricJson = {
   trust_risk: "none",
   trust_evidence: "",
   is_marketing_graphic: false,
+  answers_question_ids: [],
 };
 
 /**
@@ -627,6 +667,28 @@ export function isRubricJson(x: unknown): x is RubricJson {
   if (
     r.is_marketing_graphic !== undefined &&
     typeof r.is_marketing_graphic !== "boolean"
+  ) {
+    return false;
+  }
+  // Shape only: array of strings. Cross-category/unknown/duplicate id
+  // validation against the actual catalog happens in score-photo.ts, which
+  // has the catalog this call was given -- this validator has no catalog
+  // context and must not guess at semantic correctness.
+  if (
+    !Array.isArray(r.answers_question_ids) ||
+    !r.answers_question_ids.every((v) => typeof v === "string")
+  ) {
+    return false;
+  }
+  if (
+    r.question_catalog_category !== undefined &&
+    typeof r.question_catalog_category !== "string"
+  ) {
+    return false;
+  }
+  if (
+    r.question_catalog_version !== undefined &&
+    typeof r.question_catalog_version !== "number"
   ) {
     return false;
   }

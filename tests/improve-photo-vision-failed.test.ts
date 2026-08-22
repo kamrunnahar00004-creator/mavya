@@ -48,6 +48,7 @@ const mockOriginalAudit: RubricJson = {
   light_adjustment: null,
   generation_risk: "standard",
   generation_risk_reason: "none",
+  answers_question_ids: [],
 };
 
 describe("improve-photo vision_failed handling", () => {

@@ -1,5 +1,6 @@
 import {
   RUBRIC_PROMPT,
+  buyerQuestionsPromptBlock,
   computeOverall,
   computeSupportingOverall,
   isChecklistItem,
@@ -16,6 +17,26 @@ import {
 } from "@/lib/checklist-gen";
 import { checklistCall, visionScoreCall } from "@/lib/openai";
 import { ALL_SHOT_IDS, poolFor } from "@/data/photo-checklist-pool";
+import {
+  ALL_BUYER_QUESTION_CATALOGS,
+  catalogForCategory,
+  idsBelongToCatalog,
+  type QuestionCatalog,
+} from "@/data/buyer-questions";
+
+/**
+ * Which buyer-question catalog(s) to give this call (2026-08-23, slice 1).
+ * "all": the main photo -- it does not know its own category yet, so it
+ * gets every category's catalog and self-selects after detecting one.
+ * "single": a supporting photo -- its product's main category is already
+ * confirmed by the caller (rating-jobs.ts), so it gets only that one
+ * category's catalog. Omit entirely to skip the feature for this call
+ * (e.g. category resolution failed) -- answers_question_ids is then
+ * required to come back empty.
+ */
+export type BuyerQuestionMode =
+  | { kind: "all" }
+  | { kind: "single"; category: string };
 
 export class ScorePhotoError extends Error {
   constructor(message: string, readonly code: "vision_failed" | "bad_ai_response") {
@@ -94,15 +115,41 @@ export async function scorePhoto(args: {
    *  fidelity is verified by a separate dedicated check, so the scorer grades
    *  photographic quality only and never speculates about provenance. */
   isGeneratedCandidate?: boolean;
+  /** Which buyer-question catalog(s) to give this call. Omit to skip the
+   *  feature entirely for this call (answers_question_ids must then come
+   *  back empty). */
+  buyerQuestions?: BuyerQuestionMode;
 }): Promise<RubricJson> {
   const dataUrl = `data:${args.imageMimeType};base64,${args.imageBuffer.toString("base64")}`;
 
   const supporting = args.systemPrompt === GENERAL_RUBRIC_PROMPT;
   const CANDIDATE_CONTEXT =
     "\n\nContext for THIS image (OVERRIDES any advice template above): it is an AI-improved candidate produced by this product's own pipeline. Its fidelity to the seller's original photo is verified by a separate dedicated check. Score photographic quality exactly as you would any listing photo. Do NOT speculate about whether the image is AI-generated and do NOT raise provenance findings unless the concrete visible evidence defined above is present. The seller CANNOT re-photograph this image, so the words \"re-shoot\", \"pull back\", \"photograph\", and \"re-take\" are FORBIDDEN in every field, including template phrasings from the rules above. Phrase every improvement as what a stronger VERSION would change, e.g. \"Generate a version with more breathing room above the clasp.\"";
+
+  // Buyer-question catalog(s) for this call. "all" (main) gets every
+  // category so it can self-select after detecting one; "single"
+  // (supporting) gets only its product's already-confirmed category. An
+  // unresolvable single category (not in the catalog, e.g. "other") means
+  // no catalog applies -- inject nothing, and validation below requires an
+  // empty answers_question_ids.
+  const buyerQuestionCatalogs: readonly QuestionCatalog[] =
+    args.buyerQuestions?.kind === "all"
+      ? ALL_BUYER_QUESTION_CATALOGS
+      : args.buyerQuestions?.kind === "single"
+      ? (() => {
+          const c = catalogForCategory(args.buyerQuestions!.category);
+          return c ? [c] : [];
+        })()
+      : [];
+  const buyerQuestionsBlock =
+    buyerQuestionCatalogs.length > 0
+      ? buyerQuestionsPromptBlock(buyerQuestionCatalogs)
+      : "";
+
   const basePrompt =
     (args.systemPrompt ?? RUBRIC_PROMPT) +
-    (args.isGeneratedCandidate ? CANDIDATE_CONTEXT : "");
+    (args.isGeneratedCandidate ? CANDIDATE_CONTEXT : "") +
+    buyerQuestionsBlock;
 
   // One controlled retry on parse/schema failure with a stricter instruction.
   // Provider/network failures are NOT retried here (route-level policy decides).
@@ -125,11 +172,48 @@ export async function scorePhoto(args: {
 
     try {
       const candidate: unknown = JSON.parse(raw);
-      if (isRubricJson(candidate)) {
-        parsed = candidate;
-        if (attempt === 1) {
-          console.log(JSON.stringify({ event: "score.repair_retry_succeeded" }));
+      if (isRubricJson(candidate) && candidate.upload_kind !== "invalid") {
+        // Semantic catalog check (shape-only isRubricJson can't do this, it
+        // has no catalog context): every returned id must belong to the
+        // ONE catalog appropriate for this response, no cross-category
+        // answers, no unknown ids, no duplicates. "all" mode resolves that
+        // catalog from the model's OWN detected_category -- an id list
+        // that matches a DIFFERENT category's catalog is rejected even if
+        // every individual id is technically real somewhere, exactly the
+        // cross-category case this guards against.
+        const answerCatalog =
+          args.buyerQuestions?.kind === "all"
+            ? catalogForCategory(candidate.detected_category)
+            : args.buyerQuestions?.kind === "single"
+            ? catalogForCategory(args.buyerQuestions.category)
+            : undefined;
+        const idsOk = answerCatalog
+          ? idsBelongToCatalog(candidate.answers_question_ids, answerCatalog)
+          : candidate.answers_question_ids.length === 0;
+        if (idsOk) {
+          parsed = candidate;
+          if (answerCatalog) {
+            parsed.question_catalog_category = answerCatalog.category;
+            parsed.question_catalog_version = answerCatalog.version;
+          }
+          if (attempt === 1) {
+            console.log(JSON.stringify({ event: "score.repair_retry_succeeded" }));
+          }
+          break;
         }
+        console.log(
+          JSON.stringify({
+            event: "score.buyer_question_ids_invalid",
+            attempt,
+            category: candidate.detected_category,
+          })
+        );
+      } else if (isRubricJson(candidate)) {
+        // upload_kind "invalid": no product to answer buyer questions about.
+        // Accept as-is (answers_question_ids is already [] on this path per
+        // INVALID_RESPONSE / the model's own invalid-input JSON template);
+        // do not apply the catalog check meant for real product photos.
+        parsed = candidate;
         break;
       }
     } catch {

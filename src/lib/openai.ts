@@ -41,6 +41,7 @@ export const RUBRIC_RESPONSE_SCHEMA = {
       "trust_risk",
       "trust_evidence",
       "is_marketing_graphic",
+      "answers_question_ids",
     ],
     properties: {
       upload_kind: {
@@ -190,6 +191,7 @@ export const RUBRIC_RESPONSE_SCHEMA = {
       },
       generation_risk_reason: { type: "string" },
       is_marketing_graphic: { type: "boolean" },
+      answers_question_ids: { type: "array", items: { type: "string" } },
     },
   },
 } as const;
