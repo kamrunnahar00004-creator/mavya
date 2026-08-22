@@ -12,9 +12,10 @@ describe("billing status route contract", () => {
     expect(statusRoute).toContain("activeListingLimit: entitlement.activeListingLimit");
   });
 
-  it("keeps the legacy credits payload for now, transitionally", () => {
-    expect(statusRoute).toContain("credits:");
-    expect(statusRoute).toContain("CREDITS_PER_PERIOD");
+  it("does not fetch or expose the retired customer-facing credit meter", () => {
+    expect(statusRoute).not.toContain("credits:");
+    expect(statusRoute).not.toContain("CREDITS_PER_PERIOD");
+    expect(statusRoute).not.toContain("getAllowanceUsage");
   });
 
   it("still requires authentication before returning anything", () => {

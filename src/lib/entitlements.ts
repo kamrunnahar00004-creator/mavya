@@ -67,6 +67,17 @@ export type Entitlement = {
 
 const ACTIVE_STATUSES = new Set(["active", "trialing"]);
 
+/**
+ * Internal allowance-ledger bucket. This is deliberately independent of the
+ * Stripe billing cadence: annual subscribers must receive the same monthly
+ * abuse backstop as monthly subscribers. Listing slots themselves never reset.
+ */
+export function allowancePeriodKey(now: Date): string {
+  const year = now.getUTCFullYear();
+  const month = String(now.getUTCMonth() + 1).padStart(2, "0");
+  return `month:${year}-${month}`;
+}
+
 function resolveActiveListingLimit(planKey: PlanKey, cadence: BillingCadence): number | null {
   if (planKey === "legacy") return LEGACY_ACTIVE_LISTING_LIMIT;
   return getPlanPolicy(planKey, cadence)?.activeListingLimit ?? null;
@@ -128,7 +139,7 @@ export function entitlementFromRow(
       ...planFields,
       active: true,
       reason: "ok",
-      periodKey: row.current_period_start,
+      periodKey: allowancePeriodKey(now),
     };
   }
   if (row.status === "past_due") {

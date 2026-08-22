@@ -19,10 +19,11 @@ import { logEvent } from "@/lib/errors";
  *  - Internal candidate rescoring: free
  *  - Score cache hits: free (no provider work)
  *
- * Credits are consumed atomically per Stripe billing period (period key =
- * current_period_start) via SECURITY DEFINER functions (service-role only).
- * Renewal refreshes exactly once (period key changes once per renewal). Refunds
- * occur for infrastructure failures only; honest rejections do not refund.
+ * Credits are consumed atomically in an internal UTC calendar-month bucket via
+ * SECURITY DEFINER functions (service-role only). This keeps the abuse backstop
+ * identical for monthly and annual subscribers; it does not change listing
+ * slots, which never reset. Refunds occur for infrastructure failures only;
+ * honest rejections do not refund.
  */
 export const CREDITS_PER_PERIOD = 100_000;
 export const RATING_COST = 10;
@@ -86,26 +87,5 @@ export async function refundAllowance(idempotencyKey: string): Promise<boolean> 
       error: err instanceof Error ? err.message : String(err),
     });
     return false;
-  }
-}
-
-/** Current usage for the billing period (for the status endpoint / UI). */
-export async function getAllowanceUsage(
-  userId: string,
-  periodKey: string
-): Promise<{ creditsUsed: number }> {
-  try {
-    const admin = createSupabaseAdminClient();
-    const { data } = await admin
-      .from("usage_periods")
-      .select("credits_used")
-      .eq("user_id", userId)
-      .eq("period_key", periodKey)
-      .maybeSingle();
-    return {
-      creditsUsed: Math.max(0, data?.credits_used ?? 0),
-    };
-  } catch {
-    return { creditsUsed: 0 };
   }
 }

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { entitlementFromRow, type SubscriptionRow } from "@/lib/entitlements";
+import {
+  allowancePeriodKey,
+  entitlementFromRow,
+  type SubscriptionRow,
+} from "@/lib/entitlements";
 import { buildPlanRegistry } from "@/lib/plans";
 
 const LEGACY_PRICE = "price_legacy_19";
@@ -46,10 +50,22 @@ describe("entitlementFromRow (server-side subscription policy)", () => {
     const e = entitlement(row({}));
     expect(e.active).toBe(true);
     expect(e.reason).toBe("ok");
-    expect(e.periodKey).toBe("2026-07-01T00:00:00.000Z");
+    expect(e.periodKey).toBe("month:2026-07");
     expect(e.planKey).toBe("legacy");
     expect(e.cadence).toBe("monthly");
     expect(e.activeListingLimit).toBe(5);
+  });
+
+  it("uses one UTC monthly abuse-backstop bucket for monthly and annual plans", () => {
+    expect(allowancePeriodKey(new Date("2026-12-31T23:59:59.999Z"))).toBe(
+      "month:2026-12"
+    );
+    expect(allowancePeriodKey(new Date("2027-01-01T00:00:00.000Z"))).toBe(
+      "month:2027-01"
+    );
+    const annual = entitlement(row({ price_id: "price_starter_annual" }));
+    expect(annual.cadence).toBe("annual");
+    expect(annual.periodKey).toBe("month:2026-07");
   });
 
   it("active starter subscription resolves plan, cadence, and the registry's active-listing limit", () => {

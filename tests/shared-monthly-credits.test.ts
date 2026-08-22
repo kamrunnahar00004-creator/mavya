@@ -10,6 +10,7 @@ import {
 const read = (file: string) => readFileSync(path.resolve(file), "utf8");
 
 const migration = read("supabase/migrations/0009_shared_monthly_credits.sql");
+const backstopMigration = read("supabase/migrations/0027_allowance_backstop.sql");
 const allowances = read("src/lib/allowances.ts");
 const scoreRoute = read("src/app/api/score/route.ts");
 const generateRoute = read("src/app/api/generate/route.ts");
@@ -90,10 +91,17 @@ describe("shared monthly credit policy", () => {
     }
   });
 
-  it("returns one unified billing status contract", () => {
-    expect(billingStatus).toContain("credits: {");
-    expect(billingStatus).toContain("remaining: CREDITS_PER_PERIOD - creditsUsed");
+  it("keeps the internal ledger out of the customer billing-status contract", () => {
+    expect(billingStatus).not.toContain("credits: {");
+    expect(billingStatus).not.toContain("CREDITS_PER_PERIOD");
     expect(billingStatus).not.toContain("allowances:");
+  });
+
+  it("updates the SQL contract before the app sends the high backstop", () => {
+    expect(backstopMigration).toContain("p_limit not in (1000, 100000)");
+    expect(backstopMigration).toContain("(credits_used + p_cost) <= p_limit");
+    expect(backstopMigration).toContain("revoke all on function public.consume_monthly_credits");
+    expect(backstopMigration).toContain("grant execute on function public.consume_monthly_credits");
   });
 
   it("uses the exact action-specific exhaustion messages", () => {

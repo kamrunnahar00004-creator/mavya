@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   AlertCircle,
@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import {
+  getPlanPolicy,
+  type BillingCadence,
+  type PlanKey,
+} from "@/lib/plans";
 
 type BillingStatus = {
   active: boolean;
@@ -20,21 +25,15 @@ type BillingStatus = {
   currentPeriodEnd: string | null;
   // Server-derived only, same as the subscribe page -- the browser never
   // computes its own plan name or price from a price id.
-  planKey: "legacy" | "starter" | "shop" | "power" | null;
-  cadence: "monthly" | "annual" | null;
+  planKey: PlanKey | null;
+  cadence: BillingCadence | null;
   activeListingLimit: number | null;
 };
 
-// Mirrors the subscribe page's PLAN_DISPLAY (kept local, not shared, same
-// convention already established there) -- purely display names/prices,
-// never used to compute an actual limit or checkout amount.
-const PLAN_DISPLAY: Record<
-  "starter" | "shop" | "power",
-  { name: string; monthlyCents: number; annualCents: number }
-> = {
-  starter: { name: "Starter", monthlyCents: 2900, annualCents: 29000 },
-  shop: { name: "Shop", monthlyCents: 5900, annualCents: 59000 },
-  power: { name: "Power", monthlyCents: 9900, annualCents: 99000 },
+const PLAN_NAMES: Record<Exclude<PlanKey, "legacy">, string> = {
+  starter: "Starter",
+  shop: "Shop",
+  power: "Power",
 };
 
 function formatPrice(cents: number, cadence: "monthly" | "annual"): string {
@@ -71,6 +70,17 @@ function planLabel(status: BillingStatus | null): {
     return { text: "Needs attention", tone: "weak" };
   }
   return { text: "No plan", tone: "muted" };
+}
+
+function planPriceLabel(status: BillingStatus | null): string | null {
+  if (!status?.planKey || !status.cadence) return null;
+  if (status.planKey === "legacy") return "Founding — $19.00/mo";
+  const policy = getPlanPolicy(status.planKey, status.cadence);
+  if (!policy) return null;
+  return `${PLAN_NAMES[status.planKey]} — ${formatPrice(
+    policy.priceCents,
+    policy.cadence
+  )}`;
 }
 
 /**
@@ -150,14 +160,7 @@ export default function SettingsPage() {
 
   const label = planLabel(status);
   const hasBilling = Boolean(status && status.reason !== "no_subscription");
-  const planPriceLine = useMemo(() => {
-    if (!status?.planKey) return null;
-    if (status.planKey === "legacy") return "Founding — $19.00/mo";
-    const plan = PLAN_DISPLAY[status.planKey];
-    const cadence = status.cadence ?? "monthly";
-    const cents = cadence === "annual" ? plan.annualCents : plan.monthlyCents;
-    return `${plan.name} — ${formatPrice(cents, cadence)}`;
-  }, [status?.planKey, status?.cadence]);
+  const planPriceLine = planPriceLabel(status);
 
   if (!checked) {
     return (
