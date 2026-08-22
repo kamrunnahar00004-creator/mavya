@@ -279,7 +279,10 @@ function getOpenAIKey(): string {
 }
 
 export function getVisionModel(): string {
-  return process.env.OPENAI_VISION_MODEL || "gpt-4o";
+  // 2026-08-23: default bumped gpt-4o -> gpt-5.6-sol (founder decision,
+  // main-v22/supporting-v17). OPENAI_VISION_MODEL still overrides this in
+  // any environment, e.g. Vercel production.
+  return process.env.OPENAI_VISION_MODEL || "gpt-5.6-sol";
 }
 
 export function getImageModel(): string {

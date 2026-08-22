@@ -4,8 +4,10 @@
  * variance is visible), evaluates expectations with hard/soft tolerances, and
  * writes reports + baseline comparisons.
  *
- * Cost: every fixture run is a live gpt-4o vision call. Only invoked through
- * the env-gated live runner (eval/live-eval.test.ts) or explicitly.
+ * Cost: every fixture run is a live vision call against whatever
+ * OPENAI_VISION_MODEL resolves to (gpt-5.6-sol by default as of 2026-08-23).
+ * Only invoked through the env-gated live runner (eval/live-eval.test.ts) or
+ * explicitly.
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";

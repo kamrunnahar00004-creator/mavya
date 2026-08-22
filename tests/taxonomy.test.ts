@@ -138,7 +138,8 @@ describe("canonical taxonomy", () => {
     // ignored; the exemplar fixed it: 8.4/8.4 on the founder gold).
     // (v11 = worn rule; v10 = detectability + 5.4 cap; v7 = trust lane.)
     // v21 = answers_question_ids added (buyer-question coverage, slice 1).
-    expect(RUBRIC_VERSION).toBe("main-v21");
+    // v22 = model switched to gpt-5.6-sol.
+    expect(RUBRIC_VERSION).toBe("main-v22");
     // supporting-v13 = same spoon/jargon fix applied to the supporting prompt.
     // v12 = same click_appeal/presentation + reading-level fix.
     // v11 = fixed the same self-contradictory sentence count.
@@ -148,7 +149,8 @@ describe("canonical taxonomy", () => {
     // actually emittable (v8's field was forbidden by the schema); detection
     // only, no score penalty; keeps the v7 Accuracy gate.
     // v16 = answers_question_ids added (buyer-question coverage, slice 1).
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v16");
+    // v17 = model switched to gpt-5.6-sol.
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v17");
   });
 });
 

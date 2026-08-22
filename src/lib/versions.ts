@@ -138,8 +138,14 @@ export const TAXONOMY_VERSION = 1;
 // without this field is never mistaken for a fresh one; absence must read
 // as "not evaluated under this feature," never as an answered-nothing
 // verdict (see RubricJson's answers_question_ids doc comment).
-export const RUBRIC_VERSION = "main-v21";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v16";
+// main-v22 / supporting-v17 (2026-08-23, founder decision): switched the
+// scoring model from gpt-4o to gpt-5.6-sol (OPENAI_VISION_MODEL). Founder
+// explicitly accepted the resulting baseline shift -- given near-zero real
+// customers at this point, there is no meaningful old-vs-new score
+// population to reconcile. Bumped anyway so any future cached/legacy score
+// is never silently compared against a different model's judgment.
+export const RUBRIC_VERSION = "main-v22";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v17";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
