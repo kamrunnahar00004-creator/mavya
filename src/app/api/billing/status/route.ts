@@ -41,6 +41,15 @@ export async function GET() {
       status: entitlement.status,
       cancelAtPeriodEnd: entitlement.cancelAtPeriodEnd,
       currentPeriodEnd: entitlement.currentPeriodEnd,
+      // Server-derived only -- the browser never computes its own limit from
+      // a price id. Null whenever there's no resolved plan (matches
+      // Entitlement's own null-together contract for these three fields).
+      planKey: entitlement.planKey,
+      cadence: entitlement.cadence,
+      activeListingLimit: entitlement.activeListingLimit,
+      // Transitional: the legacy credit system's numbers, kept as-is so
+      // current runtime paths (the subscribe page's usage meter) do not
+      // break. Not part of the new active-listing model.
       credits: {
         used: creditsUsed,
         remaining: CREDITS_PER_PERIOD - creditsUsed,

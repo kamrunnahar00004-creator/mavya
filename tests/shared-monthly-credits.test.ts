@@ -95,8 +95,12 @@ describe("shared monthly credit policy", () => {
     expect(generateRoute).toContain('"Your product improvement credit ran out"');
   });
 
-  it("does not expose internal conversion costs on the pricing page", () => {
-    expect(subscribePage).toContain("1,000 AI credits every month");
+  it("does not expose credits language at all on the pricing page (slice 2, active-listing model)", () => {
+    // The page used to describe the shared credit pool in friendly terms
+    // ("1,000 AI credits every month"). That copy is deliberately removed
+    // now that pricing is framed around active-listing slots -- credits
+    // stay a backend concept only, not customer-facing anywhere here.
+    expect(subscribePage).not.toMatch(/\bcredits?\b/i);
     expect(subscribePage).not.toMatch(/rating.{0,30}10 credits/i);
     expect(subscribePage).not.toMatch(/improv.{0,30}20 credits/i);
     expect(subscribePage).not.toMatch(/50 ratings|25 improvements/i);
