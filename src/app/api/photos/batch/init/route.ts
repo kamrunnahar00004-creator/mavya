@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getEntitlement } from "@/lib/entitlements";
-import { weightedRateLimit } from "@/lib/rate-limit";
+import { weightedRateLimitMany } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { apiError, logEvent } from "@/lib/errors";
 import { aiDisabled } from "@/lib/usage";
+import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -33,8 +34,10 @@ function isFileMeta(v: unknown): v is FileMeta {
     typeof f.contentHash === "string" &&
     /^[a-f0-9]{64}$/i.test(f.contentHash) &&
     typeof f.byteSize === "number" &&
+    Number.isInteger(f.byteSize) &&
     f.byteSize > 0 &&
-    typeof f.mimeType === "string"
+    f.byteSize <= MAX_SERVER_IMAGE_BYTES &&
+    (f.mimeType === "image/jpeg" || f.mimeType === "image/png")
   );
 }
 
@@ -69,6 +72,12 @@ export async function POST(req: NextRequest) {
   if (typeof b.idempotencyKey !== "string" || !/^[a-zA-Z0-9-]{8,100}$/.test(b.idempotencyKey)) {
     return apiError("bad_request", "Missing batch id.");
   }
+  if (b.productName !== undefined && b.productName !== null && typeof b.productName !== "string") {
+    return apiError("bad_request", "Invalid product name.");
+  }
+  const productName = typeof b.productName === "string"
+    ? b.productName.trim().slice(0, 120) || null
+    : null;
   if (!Array.isArray(b.files) || b.files.length < 2 || b.files.length > 10) {
     return apiError("bad_request", "Select 2 to 10 photos.");
   }
@@ -93,36 +102,38 @@ export async function POST(req: NextRequest) {
 
   // Fast path: a retry of an already-initialized batch skips the rate
   // limit entirely -- retries must not consume the batch budget again.
-  const { data: existingBatch } = await admin
+  const { data: existingBatch, error: existingError } = await admin
     .from("photo_batches")
     .select("id")
     .eq("user_id", user.id)
     .eq("idempotency_key", b.idempotencyKey)
     .maybeSingle();
 
+  if (existingError) {
+    logEvent("batch.lookup_failed", { userId: user.id, error: existingError.message });
+    return apiError("persistence_failed", "Could not start the batch. Try again.");
+  }
+
   if (!existingBatch) {
-    const userLimit = await weightedRateLimit(
-      `batch-init:u:${user.id}`,
+    const limit = await weightedRateLimitMany(
+      [
+        { key: `batch-init:u:${user.id}`, max: BATCH_USER_LIMIT },
+        { key: `batch-init:${clientIp(req)}`, max: BATCH_IP_LIMIT },
+      ],
       files.length,
-      BATCH_USER_LIMIT,
-      BATCH_WINDOW_MS
+      BATCH_WINDOW_MS,
+      `${user.id}:${b.idempotencyKey}`
     );
-    const ipLimit = await weightedRateLimit(
-      `batch-init:${clientIp(req)}`,
-      files.length,
-      BATCH_IP_LIMIT,
-      BATCH_WINDOW_MS
-    );
-    if (!userLimit.ok || !ipLimit.ok) {
+    if (!limit.ok) {
       return apiError("rate_limited", "Too many photos submitted at once. Wait a minute.");
     }
   }
 
-  const items = files.map((f) => ({
+  const items = files.map((f, position) => ({
     requestId: f.requestId,
     photoId: crypto.randomUUID(),
     role: f.role,
-    position: files.indexOf(f),
+    position,
     contentHash: f.contentHash.toLowerCase(),
     byteSize: f.byteSize,
     mimeType: f.mimeType,
@@ -132,6 +143,7 @@ export async function POST(req: NextRequest) {
     .rpc("init_photo_batch", {
       p_user: user.id,
       p_idempotency_key: b.idempotencyKey,
+      p_product_name: productName,
       p_items: items,
     })
     .maybeSingle<{

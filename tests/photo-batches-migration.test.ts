@@ -42,11 +42,12 @@ describe("0025_photo_batches migration invariants", () => {
     expect(sql).not.toContain("'queued','scoring','completed'");
   });
 
-  it("all three batch functions are service-role only", () => {
+  it("all four batch functions are service-role only", () => {
     for (const fn of [
-      "init_photo_batch(uuid, text, jsonb)",
-      "ensure_batch_product(uuid, uuid, text)",
+      "init_photo_batch(uuid, text, text, jsonb)",
+      "ensure_batch_product(uuid, uuid)",
       "resolve_batch_item_role(uuid, uuid, uuid)",
+      "finalize_photo_batch(uuid, uuid)",
     ]) {
       expect(sql).toContain(`revoke all on function public.${fn}`);
       expect(sql).toContain(`grant execute on function public.${fn} to service_role`);
@@ -59,6 +60,7 @@ describe("0025_photo_batches migration invariants", () => {
     expect(sql).toContain("if v_count < 2 or v_count > 10 then");
     expect(sql).toContain("if v_main_count <> 1 then");
     expect(sql).toContain("if v_distinct_positions <> v_count then");
+    expect(sql).toContain("idempotency payload mismatch");
   });
 
   it("ensure_batch_product is advisory-locked per batch so concurrent first uploads create exactly one product", () => {
@@ -67,8 +69,27 @@ describe("0025_photo_batches migration invariants", () => {
     expect(sql).toContain("return v_product_id;");
   });
 
-  it("resolve_batch_item_role only promotes a supporting item when the declared main has failed and nothing else was promoted yet", () => {
-    expect(sql).toContain("v_main_failed and not v_already_promoted");
+  it("resolve_batch_item_role only promotes when no effective main exists and the declared main failed", () => {
+    expect(sql).toContain("effective_role = 'main'");
+    expect(sql).toContain("if v_main_item is null and (v_role = 'main' or v_main_failed) then");
+    expect(sql).toContain("status = 'failed'");
+  });
+
+  it("defers product creation until the first real upload and removes an empty failed product", () => {
+    const initStart = sql.indexOf("create or replace function public.init_photo_batch");
+    const ensureStart = sql.indexOf("create or replace function public.ensure_batch_product");
+    const resolverStart = sql.indexOf("create or replace function public.resolve_batch_item_role");
+    const initBody = sql.slice(initStart, ensureStart);
+    const ensureBody = sql.slice(ensureStart, resolverStart);
+    expect(initBody).not.toContain("insert into products");
+    expect(ensureBody).toContain("insert into products");
+    expect(sql).toContain("delete from products where id = v_batch.product_id and user_id = p_user");
+  });
+
+  it("finalizes only terminal batches and distinguishes completed from failed", () => {
+    expect(sql).toContain("if v_reserved > 0 then");
+    expect(sql).toContain("elsif v_uploaded > 0 and v_main = 1 then");
+    expect(sql).toContain("status = 'completed'");
     expect(sql).toContain("status = 'failed'");
   });
 

@@ -25,6 +25,20 @@ type BatchItemRow = {
   rating_job_id: string | null;
 };
 
+async function finalizeBatch(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  batchId: string,
+  userId: string
+) {
+  const { error } = await admin.rpc("finalize_photo_batch", {
+    p_batch_id: batchId,
+    p_user: userId,
+  });
+  if (error) {
+    logEvent("batch.finalize_failed", { userId, batchId, error: error.message });
+  }
+}
+
 function itemPayload(item: BatchItemRow, extra: Record<string, unknown> = {}) {
   return {
     ok: item.status === "uploaded",
@@ -80,20 +94,28 @@ export async function POST(req: NextRequest) {
 
   const admin = createSupabaseAdminClient();
 
-  const { data: batch } = await admin
+  const { data: batch, error: batchError } = await admin
     .from("photo_batches")
     .select("id, user_id")
     .eq("id", batchId)
     .eq("user_id", user.id)
     .maybeSingle();
+  if (batchError) {
+    logEvent("batch.lookup_failed", { userId: user.id, batchId, error: batchError.message });
+    return apiError("persistence_failed", "Could not load this batch. Try again.");
+  }
   if (!batch) return apiError("source_unavailable", "Batch not found.");
 
-  const { data: item } = await admin
+  const { data: item, error: itemError } = await admin
     .from("photo_batch_items")
     .select("id, batch_id, request_id, photo_id, role, position, content_hash, status, rating_job_id")
     .eq("batch_id", batchId)
     .eq("request_id", requestId)
     .maybeSingle();
+  if (itemError) {
+    logEvent("batch.item_lookup_failed", { userId: user.id, batchId, error: itemError.message });
+    return apiError("persistence_failed", "Could not load this photo. Try again.");
+  }
   if (!item) return apiError("source_unavailable", "Photo reservation not found.");
 
   if (item.status === "uploaded") {
@@ -103,22 +125,27 @@ export async function POST(req: NextRequest) {
   const buffer = Buffer.from(await file.arrayBuffer());
   const actualHash = hashImageBytes(buffer);
   if (actualHash !== item.content_hash) {
-    await admin
+    const { error: updateError } = await admin
       .from("photo_batch_items")
       .update({
         status: "failed",
+        effective_role: null,
         error_code: "hash_mismatch",
         error_message: "The uploaded photo did not match what was selected.",
         updated_at: new Date().toISOString(),
       })
       .eq("id", item.id);
+    if (updateError) {
+      logEvent("batch.item_update_failed", { userId: user.id, batchId, error: updateError.message });
+      return apiError("persistence_failed", "Could not update this photo. Try again.");
+    }
+    await finalizeBatch(admin, batchId, user.id);
     return apiError("invalid_upload", "The uploaded photo did not match what was selected.");
   }
 
   const { data: productIdData, error: productError } = await admin.rpc("ensure_batch_product", {
     p_batch_id: batchId,
     p_user: user.id,
-    p_name: null,
   });
   const productId = productIdData as string | null;
   if (productError || !productId) {
@@ -148,19 +175,30 @@ export async function POST(req: NextRequest) {
   });
 
   if (!result.ok) {
-    await admin
+    const { error: updateError } = await admin
       .from("photo_batch_items")
       .update({
         status: "failed",
+        effective_role: null,
         error_code: result.code,
         error_message: result.message,
         updated_at: new Date().toISOString(),
       })
       .eq("id", item.id);
+    if (updateError) {
+      logEvent("batch.item_update_failed", { userId: user.id, batchId, error: updateError.message });
+      return apiError("persistence_failed", "Could not update this photo. Try again.");
+    }
+    await finalizeBatch(admin, batchId, user.id);
     return apiError(result.code as Parameters<typeof apiError>[0], result.message);
   }
 
-  await admin
+  // Persistence and the durable rating job already succeeded. Kick the
+  // worker even if the bookkeeping update below transiently fails; the
+  // finalize endpoint can reconcile this item from the idempotency key.
+  after(() => kickRatingWorker(result.jobId));
+
+  const { error: uploadedError } = await admin
     .from("photo_batch_items")
     .update({
       status: "uploaded",
@@ -170,8 +208,12 @@ export async function POST(req: NextRequest) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", item.id);
+  if (uploadedError) {
+    logEvent("batch.item_update_failed", { userId: user.id, batchId, error: uploadedError.message });
+    return apiError("persistence_failed", "The photo was saved, but its batch status could not update.");
+  }
 
-  after(() => kickRatingWorker(result.jobId));
+  await finalizeBatch(admin, batchId, user.id);
 
   return NextResponse.json(
     itemPayload(

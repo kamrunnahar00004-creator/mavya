@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  batchSubmissionFingerprint,
   batchErrorMessage,
   buildBatchInitPayload,
   findDuplicateHashIndex,
   hashFile,
+  parseBatchFinalizeResponse,
   parseBatchInitResponse,
+  parseBatchSubmissionIdentity,
   parseBatchUploadResponse,
+  resolveBatchSubmissionIdentity,
   runWithConcurrency,
   withMainFirst,
   type SelectedFile,
@@ -63,13 +67,19 @@ describe("parseBatchInitResponse", () => {
       batchId: "b1",
       productId: null,
       isNew: true,
-      items: [{ requestId: "r1", photoId: "p1", role: "main", position: 0 }],
+      items: [
+        { requestId: "r1", photoId: "p1", role: "main", position: 0 },
+        { requestId: "r2", photoId: "p2", role: "supporting", position: 1 },
+      ],
     });
     expect(result).toEqual({
       ok: true,
       batchId: "b1",
       productId: null,
-      items: [{ requestId: "r1", photoId: "p1", role: "main", position: 0 }],
+      items: [
+        { requestId: "r1", photoId: "p1", role: "main", position: 0 },
+        { requestId: "r2", photoId: "p2", role: "supporting", position: 1 },
+      ],
     });
   });
 
@@ -81,9 +91,110 @@ describe("parseBatchInitResponse", () => {
   });
 
   it("rejects a response missing items", () => {
-    expect(parseBatchInitResponse({ batchId: "b1" })).toEqual({
+    expect(parseBatchInitResponse({ batchId: "b1", productId: null })).toEqual({
       ok: false,
       message: "Could not start the batch.",
+    });
+  });
+
+  it("rejects malformed item metadata instead of trusting the server response", () => {
+    expect(
+      parseBatchInitResponse({
+        batchId: "b1",
+        productId: null,
+        items: [
+          { requestId: "r1", photoId: "p1", role: "main", position: 0 },
+          { requestId: "r2", photoId: null, role: "supporting", position: 1 },
+        ],
+      })
+    ).toEqual({ ok: false, message: "Could not start the batch." });
+  });
+
+  it("distinguishes an explicit null product from a missing productId", () => {
+    const items = [
+      { requestId: "r1", photoId: "p1", role: "main", position: 0 },
+      { requestId: "r2", photoId: "p2", role: "supporting", position: 1 },
+    ];
+    expect(parseBatchInitResponse({ batchId: "b1", productId: null, items }).ok).toBe(true);
+    expect(parseBatchInitResponse({ batchId: "b1", items })).toEqual({
+      ok: false,
+      message: "Could not start the batch.",
+    });
+  });
+});
+
+describe("batch submission identity", () => {
+  const selected: SelectedFile[] = [
+    { requestId: "request-1", file: fakeFile("main.jpg", [1]), role: "main", contentHash: "h1" },
+    {
+      requestId: "request-2",
+      file: fakeFile("supporting.jpg", [2]),
+      role: "supporting",
+      contentHash: "h2",
+    },
+  ];
+
+  it("parses valid stored identity and rejects malformed storage", () => {
+    expect(
+      parseBatchSubmissionIdentity(
+        JSON.stringify({ fingerprint: "fp", idempotencyKey: "idem-key-123", batchId: "b1" })
+      )
+    ).toEqual({ fingerprint: "fp", idempotencyKey: "idem-key-123", batchId: "b1" });
+    expect(parseBatchSubmissionIdentity("not-json")).toBeNull();
+    expect(parseBatchSubmissionIdentity(JSON.stringify({ fingerprint: "fp" }))).toBeNull();
+  });
+
+  it("reuses identity only for the exact same prepared submission", () => {
+    const fingerprint = batchSubmissionFingerprint(selected, "Product");
+    const previous = { fingerprint, idempotencyKey: "idem-key-123", batchId: "b1" };
+    expect(resolveBatchSubmissionIdentity(previous, fingerprint, () => "new-key-123")).toBe(
+      previous
+    );
+    expect(
+      resolveBatchSubmissionIdentity(previous, batchSubmissionFingerprint(selected, "Other"), () =>
+        "new-key-123"
+      )
+    ).toEqual({
+      fingerprint: batchSubmissionFingerprint(selected, "Other"),
+      idempotencyKey: "new-key-123",
+    });
+  });
+
+  it("changes when order or roles change", () => {
+    const original = batchSubmissionFingerprint(selected, "Product");
+    expect(batchSubmissionFingerprint([...selected].reverse(), "Product")).not.toBe(original);
+    expect(
+      batchSubmissionFingerprint(
+        selected.map((item, index) => ({
+          ...item,
+          role: index === 0 ? ("supporting" as const) : ("main" as const),
+        })),
+        "Product"
+      )
+    ).not.toBe(original);
+  });
+});
+
+describe("parseBatchFinalizeResponse", () => {
+  it("accepts a retained product and an explicitly deleted empty product", () => {
+    expect(parseBatchFinalizeResponse({ ok: true, productId: "prod1" })).toEqual({
+      ok: true,
+      productId: "prod1",
+    });
+    expect(parseBatchFinalizeResponse({ ok: true, productId: null })).toEqual({
+      ok: true,
+      productId: null,
+    });
+  });
+
+  it("rejects missing or malformed product identity", () => {
+    expect(parseBatchFinalizeResponse({ ok: true })).toEqual({
+      ok: false,
+      message: "Could not finish this batch.",
+    });
+    expect(parseBatchFinalizeResponse({ ok: true, productId: 12 })).toEqual({
+      ok: false,
+      message: "Could not finish this batch.",
     });
   });
 });

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { apiError } from "@/lib/errors";
+import { apiError, logEvent } from "@/lib/errors";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -42,30 +42,69 @@ export async function GET(
   const { batchId } = await params;
 
   const admin = createSupabaseAdminClient();
-  const { data: batch } = await admin
+  // Reconcile any upload requests whose terminal item update succeeded but
+  // whose best-effort finalizer call was interrupted. Reserved items remain
+  // reserved; this never guesses whether browser-owned bytes were uploaded.
+  const { error: finalizeError } = await admin.rpc("finalize_photo_batch", {
+    p_batch_id: batchId,
+    p_user: user.id,
+  });
+  if (finalizeError) {
+    logEvent("batch.status_finalize_failed", {
+      userId: user.id,
+      batchId,
+      error: finalizeError.message,
+    });
+  }
+
+  const { data: batch, error: batchError } = await admin
     .from("photo_batches")
     .select("id, product_id, status, file_count, created_at")
     .eq("id", batchId)
     .eq("user_id", user.id)
     .maybeSingle();
+  if (batchError) {
+    logEvent("batch.status_lookup_failed", {
+      userId: user.id,
+      batchId,
+      error: batchError.message,
+    });
+    return apiError("persistence_failed", "Could not load this batch. Try again.");
+  }
   if (!batch) return apiError("source_unavailable", "Batch not found.");
 
-  const { data: items } = await admin
+  const { data: items, error: itemsError } = await admin
     .from("photo_batch_items")
     .select(
       "request_id, photo_id, role, effective_role, position, status, rating_job_id, error_code, error_message"
     )
     .eq("batch_id", batchId)
     .order("position", { ascending: true });
+  if (itemsError) {
+    logEvent("batch.status_items_failed", {
+      userId: user.id,
+      batchId,
+      error: itemsError.message,
+    });
+    return apiError("persistence_failed", "Could not load the batch photos. Try again.");
+  }
 
   const rows = (items ?? []) as ItemRow[];
   const jobIds = rows.map((r) => r.rating_job_id).filter((id): id is string => Boolean(id));
   const jobsById = new Map<string, JobRow>();
   if (jobIds.length > 0) {
-    const { data: jobs } = await admin
+    const { data: jobs, error: jobsError } = await admin
       .from("rating_jobs")
       .select("id, status, error_code, error_message")
       .in("id", jobIds);
+    if (jobsError) {
+      logEvent("batch.status_jobs_failed", {
+        userId: user.id,
+        batchId,
+        error: jobsError.message,
+      });
+      return apiError("persistence_failed", "Could not load photo ratings. Try again.");
+    }
     for (const j of (jobs as JobRow[] | null) ?? []) jobsById.set(j.id, j);
   }
 

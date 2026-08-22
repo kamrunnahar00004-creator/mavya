@@ -63,6 +63,62 @@ export function buildBatchInitPayload(
   };
 }
 
+export type BatchSubmissionIdentity = {
+  fingerprint: string;
+  idempotencyKey: string;
+  batchId?: string;
+};
+
+export function parseBatchSubmissionIdentity(raw: string | null): BatchSubmissionIdentity | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as Record<string, unknown>;
+    if (
+      typeof value.fingerprint !== "string" ||
+      typeof value.idempotencyKey !== "string" ||
+      !/^[a-zA-Z0-9-]{8,100}$/.test(value.idempotencyKey) ||
+      (value.batchId !== undefined && typeof value.batchId !== "string")
+    ) {
+      return null;
+    }
+    return {
+      fingerprint: value.fingerprint,
+      idempotencyKey: value.idempotencyKey,
+      ...(value.batchId ? { batchId: value.batchId } : {}),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Stable across retries of the same prepared selection. File bytes are
+ * represented by their already-computed hashes, so filenames do not affect
+ * identity and changing order/role/name intentionally creates a new batch. */
+export function batchSubmissionFingerprint(
+  selected: readonly SelectedFile[],
+  productName?: string
+): string {
+  return JSON.stringify({
+    productName: productName?.trim() || null,
+    files: selected.map((item) => ({
+      requestId: item.requestId,
+      role: item.role,
+      contentHash: item.contentHash,
+      byteSize: item.file.size,
+      mimeType: item.file.type,
+    })),
+  });
+}
+
+export function resolveBatchSubmissionIdentity(
+  previous: BatchSubmissionIdentity | null,
+  fingerprint: string,
+  createKey: () => string
+): BatchSubmissionIdentity {
+  if (previous?.fingerprint === fingerprint) return previous;
+  return { fingerprint, idempotencyKey: createKey() };
+}
+
 export type BatchInitItem = { requestId: string; photoId: string; role: BatchRole; position: number };
 
 export type BatchInitResult =
@@ -75,13 +131,33 @@ export function parseBatchInitResponse(body: unknown): BatchInitResult {
     productId?: unknown;
     items?: unknown;
   };
-  if (typeof b.batchId !== "string" || !b.batchId || !Array.isArray(b.items)) {
+  const validProductId =
+    b.productId === null || (typeof b.productId === "string" && b.productId.length > 0);
+  const validItems =
+    Array.isArray(b.items) &&
+    b.items.length >= 2 &&
+    b.items.length <= 10 &&
+    b.items.every((item) => {
+      if (!item || typeof item !== "object") return false;
+      const value = item as Record<string, unknown>;
+      return (
+        typeof value.requestId === "string" &&
+        value.requestId.length > 0 &&
+        typeof value.photoId === "string" &&
+        value.photoId.length > 0 &&
+        (value.role === "main" || value.role === "supporting") &&
+        typeof value.position === "number" &&
+        Number.isInteger(value.position) &&
+        value.position >= 0
+      );
+    });
+  if (typeof b.batchId !== "string" || !b.batchId || !validProductId || !validItems) {
     return { ok: false, message: "Could not start the batch." };
   }
   return {
     ok: true,
     batchId: b.batchId,
-    productId: typeof b.productId === "string" ? b.productId : null,
+    productId: b.productId as string | null,
     items: b.items as BatchInitItem[],
   };
 }
@@ -101,6 +177,24 @@ export function parseBatchUploadResponse(requestId: string, body: unknown): Batc
     photoId: b.photoId,
     productId: typeof b.productId === "string" ? b.productId : undefined,
   };
+}
+
+export type BatchFinalizeResult =
+  | { ok: true; productId: string | null }
+  | { ok: false; message: string };
+
+/** Finalization may legitimately return null after deleting an empty product.
+ * Keep that distinct from a malformed response so the client never falls
+ * back to an init-time product id that no longer exists. */
+export function parseBatchFinalizeResponse(body: unknown): BatchFinalizeResult {
+  const b = (body ?? {}) as { ok?: unknown; productId?: unknown };
+  if (
+    b.ok !== true ||
+    !(b.productId === null || (typeof b.productId === "string" && b.productId.length > 0))
+  ) {
+    return { ok: false, message: "Could not finish this batch." };
+  }
+  return { ok: true, productId: b.productId };
 }
 
 export function batchErrorMessage(body: unknown, status: number): string {

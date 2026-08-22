@@ -11,7 +11,7 @@
 --    idempotent, and resumable as ONE logical operation.
 --  - RLS enabled, ZERO policies granted to anon/authenticated: the browser
 --    can never read or write these tables directly. All access is through
---    the two SECURITY DEFINER functions below, called only by the
+--    the SECURITY DEFINER functions below, called only by the
 --    service-role admin client from API routes (same pattern as
 --    consume_monthly_credits / persist_audit_and_advance_current).
 --  - `role` is the seller's ORIGINAL request (immutable once reserved).
@@ -33,6 +33,7 @@ create table public.photo_batches (
   id            uuid primary key default gen_random_uuid(),
   user_id       uuid not null,
   idempotency_key text not null,
+  product_name  text,
   product_id    uuid references public.products(id) on delete set null,
   status        text not null default 'initializing'
                   check (status in ('initializing','uploading','finalizing','completed','failed')),
@@ -96,6 +97,7 @@ alter table public.photo_batch_items enable row level security;
 create or replace function public.init_photo_batch(
   p_user uuid,
   p_idempotency_key text,
+  p_product_name text,
   p_items jsonb
 ) returns table (
   batch_id uuid,
@@ -112,6 +114,9 @@ declare
   v_count integer;
   v_main_count integer;
   v_distinct_positions integer;
+  v_existing_meta jsonb;
+  v_requested_meta jsonb;
+  v_product_name text := left(nullif(btrim(coalesce(p_product_name, '')), ''), 120);
 begin
   if p_user is null or nullif(btrim(p_idempotency_key), '') is null then
     raise exception 'missing batch parameter';
@@ -123,6 +128,31 @@ begin
     where user_id = p_user and idempotency_key = p_idempotency_key;
 
   if found then
+    select jsonb_agg(jsonb_build_object(
+      'requestId', i.request_id,
+      'role', i.role,
+      'position', i.position,
+      'contentHash', i.content_hash,
+      'byteSize', i.byte_size,
+      'mimeType', i.mime_type
+    ) order by i.position) into v_existing_meta
+    from photo_batch_items i where i.batch_id = v_batch.id;
+
+    select jsonb_agg(jsonb_build_object(
+      'requestId', e->>'requestId',
+      'role', e->>'role',
+      'position', (e->>'position')::int,
+      'contentHash', lower(e->>'contentHash'),
+      'byteSize', (e->>'byteSize')::int,
+      'mimeType', e->>'mimeType'
+    ) order by (e->>'position')::int) into v_requested_meta
+    from jsonb_array_elements(p_items) e;
+
+    if v_batch.product_name is distinct from v_product_name
+       or v_existing_meta is distinct from v_requested_meta then
+      raise exception 'idempotency payload mismatch';
+    end if;
+
     return query
       select v_batch.id, v_batch.product_id, false,
         coalesce(
@@ -153,8 +183,8 @@ begin
     raise exception 'batch positions must be distinct';
   end if;
 
-  insert into photo_batches (user_id, idempotency_key, file_count)
-    values (p_user, p_idempotency_key, v_count)
+  insert into photo_batches (user_id, idempotency_key, product_name, file_count)
+    values (p_user, p_idempotency_key, v_product_name, v_count)
     returning * into v_batch;
 
   insert into photo_batch_items (
@@ -193,8 +223,7 @@ $$;
 -- ---------------------------------------------------------------------------
 create or replace function public.ensure_batch_product(
   p_batch_id uuid,
-  p_user uuid,
-  p_name text default null
+  p_user uuid
 ) returns uuid
 language plpgsql
 security definer
@@ -202,10 +231,11 @@ set search_path = public
 as $$
 declare
   v_product_id uuid;
+  v_product_name text;
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_batch_id::text, 1));
 
-  select product_id into v_product_id from photo_batches
+  select product_id, product_name into v_product_id, v_product_name from photo_batches
     where id = p_batch_id and user_id = p_user;
   if not found then
     raise exception 'batch not found';
@@ -215,7 +245,7 @@ begin
   end if;
 
   insert into products (user_id, name)
-    values (p_user, nullif(btrim(coalesce(p_name, '')), ''))
+    values (p_user, v_product_name)
     returning id into v_product_id;
 
   update photo_batches
@@ -250,7 +280,7 @@ declare
   v_owner uuid;
   v_role text;
   v_main_failed boolean;
-  v_already_promoted boolean;
+  v_main_item uuid;
 begin
   perform pg_advisory_xact_lock(hashtextextended(p_batch_id::text, 1));
 
@@ -265,41 +295,97 @@ begin
     raise exception 'batch item not found';
   end if;
 
-  if v_role = 'main' then
-    update photo_batch_items set effective_role = 'main', updated_at = now()
-      where id = p_item_id;
-    return 'main';
-  end if;
-
   select exists(
     select 1 from photo_batch_items
       where batch_id = p_batch_id and role = 'main' and status = 'failed'
   ) into v_main_failed;
 
-  select exists(
-    select 1 from photo_batch_items
-      where batch_id = p_batch_id and effective_role = 'main'
-  ) into v_already_promoted;
+  select id into v_main_item from photo_batch_items
+    where batch_id = p_batch_id
+      and effective_role = 'main'
+      and id <> p_item_id
+    limit 1;
 
-  if v_main_failed and not v_already_promoted then
+  if v_main_item is null and (v_role = 'main' or v_main_failed) then
     update photo_batch_items set effective_role = 'main', updated_at = now()
       where id = p_item_id;
+    update photo_batches set status = 'uploading', finalized_at = null, updated_at = now()
+      where id = p_batch_id;
     return 'main';
   end if;
 
   update photo_batch_items set effective_role = 'supporting', updated_at = now()
     where id = p_item_id;
+  update photo_batches set status = 'uploading', finalized_at = null, updated_at = now()
+    where id = p_batch_id;
   return 'supporting';
 end;
 $$;
 
-revoke all on function public.init_photo_batch(uuid, text, jsonb)
+-- Reconciles the durable batch after every item reaches a terminal upload
+-- state. A completely failed batch cannot leave an empty dashboard product.
+-- A retry may move a finalized batch back to uploading via the role resolver.
+create or replace function public.finalize_photo_batch(
+  p_batch_id uuid,
+  p_user uuid
+) returns table (status text, product_id uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_batch photo_batches%rowtype;
+  v_reserved integer;
+  v_uploaded integer;
+  v_main integer;
+  v_product_has_photos boolean;
+begin
+  perform pg_advisory_xact_lock(hashtextextended(p_batch_id::text, 1));
+
+  select * into v_batch from photo_batches
+    where id = p_batch_id and user_id = p_user for update;
+  if not found then raise exception 'batch not found'; end if;
+
+  select
+    count(*) filter (where i.status = 'reserved'),
+    count(*) filter (where i.status = 'uploaded'),
+    count(*) filter (where i.status = 'uploaded' and i.effective_role = 'main')
+  into v_reserved, v_uploaded, v_main
+  from photo_batch_items i where i.batch_id = p_batch_id;
+
+  if v_reserved > 0 then
+    update photo_batches set status = 'uploading', finalized_at = null, updated_at = now()
+      where id = p_batch_id;
+  elsif v_uploaded > 0 and v_main = 1 then
+    update photo_batches set status = 'completed', finalized_at = now(), updated_at = now()
+      where id = p_batch_id;
+  else
+    if v_uploaded = 0 and v_batch.product_id is not null then
+      select exists(select 1 from photos where product_id = v_batch.product_id)
+        into v_product_has_photos;
+      if not v_product_has_photos then
+        delete from products where id = v_batch.product_id and user_id = p_user;
+        update photo_batches set product_id = null where id = p_batch_id;
+      end if;
+    end if;
+    update photo_batches set status = 'failed', finalized_at = now(), updated_at = now()
+      where id = p_batch_id;
+  end if;
+
+  return query select b.status, b.product_id from photo_batches b where b.id = p_batch_id;
+end;
+$$;
+
+revoke all on function public.init_photo_batch(uuid, text, text, jsonb)
   from public, anon, authenticated;
-revoke all on function public.ensure_batch_product(uuid, uuid, text)
+revoke all on function public.ensure_batch_product(uuid, uuid)
   from public, anon, authenticated;
 revoke all on function public.resolve_batch_item_role(uuid, uuid, uuid)
   from public, anon, authenticated;
+revoke all on function public.finalize_photo_batch(uuid, uuid)
+  from public, anon, authenticated;
 
-grant execute on function public.init_photo_batch(uuid, text, jsonb) to service_role;
-grant execute on function public.ensure_batch_product(uuid, uuid, text) to service_role;
+grant execute on function public.init_photo_batch(uuid, text, text, jsonb) to service_role;
+grant execute on function public.ensure_batch_product(uuid, uuid) to service_role;
 grant execute on function public.resolve_batch_item_role(uuid, uuid, uuid) to service_role;
+grant execute on function public.finalize_photo_batch(uuid, uuid) to service_role;

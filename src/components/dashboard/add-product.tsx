@@ -20,13 +20,18 @@ import {
   ratingQueueErrorMessage,
 } from "@/lib/rating-queue";
 import {
+  batchSubmissionFingerprint,
   batchErrorMessage,
   buildBatchInitPayload,
   hashFile,
+  parseBatchSubmissionIdentity,
+  parseBatchFinalizeResponse,
   parseBatchInitResponse,
   parseBatchUploadResponse,
+  resolveBatchSubmissionIdentity,
   runWithConcurrency,
   withMainFirst,
+  type BatchSubmissionIdentity,
   type BatchRole,
 } from "@/lib/photo-batch-client";
 import { cn } from "@/lib/utils";
@@ -44,6 +49,11 @@ type BatchItem = {
   previewUrl: string;
   status: "preparing" | "ready" | "uploading" | "uploaded" | "failed";
   errorMessage?: string;
+};
+
+type PendingBatchFinalization = {
+  batchId: string;
+  failedRequestIds: string[];
 };
 
 /**
@@ -69,38 +79,59 @@ export function AddProductCard({
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ done: 0, total: 0 });
+  const [pendingFinalization, setPendingFinalization] =
+    useState<PendingBatchFinalization | null>(null);
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
-  const busy = step !== "idle" || batchSubmitting;
+  const busy = step !== "idle" || batchSubmitting || pendingFinalization !== null;
 
-  // A batch id recorded before a refresh means jobs may already be durably
-  // queued server-side (each upload's after() kick does not depend on this
-  // component). File objects cannot survive a refresh, so this stage does
-  // not resume uploading the remainder automatically -- it honestly points
-  // the seller at the product that was already created, if any.
+  // File objects cannot survive a refresh. A saved identity lets the init
+  // request remain idempotent and lets this recovery pass explicitly close
+  // any browser-owned uploads that never finished.
   useEffect(() => {
-    const pending = sessionStorage.getItem(BATCH_SESSION_KEY);
-    if (!pending) return;
-    sessionStorage.removeItem(BATCH_SESSION_KEY);
+    const pending = parseBatchSubmissionIdentity(sessionStorage.getItem(BATCH_SESSION_KEY));
+    if (!pending) {
+      sessionStorage.removeItem(BATCH_SESSION_KEY);
+      return;
+    }
+    if (!pending.batchId) {
+      sessionStorage.removeItem(BATCH_SESSION_KEY);
+      setResumeNotice("A previous upload did not start. Select the photos again to retry.");
+      return;
+    }
     (async () => {
       try {
-        const res = await fetch(`/api/photos/batch/${pending}`);
-        if (!res.ok) return;
+        const res = await fetch(`/api/photos/batch/${pending.batchId}`);
+        if (!res.ok) throw new Error("status_failed");
         const body = (await res.json()) as {
           productId?: string | null;
-          items?: { state: string }[];
+          items?: { requestId?: string; state: string }[];
         };
-        if (body.productId) {
-          const remaining = (body.items ?? []).filter((i) => i.state === "pending_upload").length;
+        const pendingRequestIds = (body.items ?? [])
+          .filter((item) => item.state === "pending_upload" && item.requestId)
+          .map((item) => item.requestId as string);
+        const finalizeRes = await fetch(`/api/photos/batch/${pending.batchId}/finalize`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ failedRequestIds: pendingRequestIds }),
+        });
+        if (!finalizeRes.ok) throw new Error("finalize_failed");
+        const finalized = parseBatchFinalizeResponse(await finalizeRes.json().catch(() => null));
+        if (!finalized.ok) throw new Error("finalize_failed");
+        sessionStorage.removeItem(BATCH_SESSION_KEY);
+        const productId = finalized.productId;
+        if (productId) {
           setResumeNotice(
-            remaining > 0
-              ? `A previous batch was interrupted. ${remaining} photo${remaining === 1 ? "" : "s"} were not uploaded -- add them from the product.`
+            pendingRequestIds.length > 0
+              ? `A previous batch was interrupted. ${pendingRequestIds.length} photo${pendingRequestIds.length === 1 ? "" : "s"} were not uploaded. Add them from the product.`
               : "A previous batch finished after the page was refreshed."
           );
-          router.push(`/dashboard/product/${body.productId}`);
+          router.push(`/dashboard/product/${productId}`);
+        } else {
+          setResumeNotice("The previous batch did not save any photos. Select them again to retry.");
         }
       } catch {
-        // Best-effort only -- nothing durable is lost by skipping this.
+        setResumeNotice("A previous upload still needs attention. Refresh to retry recovery.");
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -119,12 +150,14 @@ export function AddProductCard({
   }
 
   function clearBatch() {
+    sessionStorage.removeItem(BATCH_SESSION_KEY);
     setBatch((old) => {
       old?.forEach((b) => URL.revokeObjectURL(b.previewUrl));
       return null;
     });
     setBatchSubmitting(false);
     setBatchProgress({ done: 0, total: 0 });
+    setPendingFinalization(null);
   }
 
   function close() {
@@ -201,23 +234,38 @@ export function AddProductCard({
 
     const seenHashes: string[] = [];
     for (const item of prepared) {
-      const readyFile = await prepareUploadImage(item.file);
-      const hash = await hashFile(readyFile);
-      const isDuplicate = seenHashes.includes(hash);
-      seenHashes.push(hash);
-      setBatch((old) =>
-        old?.map((b) =>
-          b.requestId === item.requestId
-            ? {
-                ...b,
-                file: readyFile,
-                hash,
-                status: isDuplicate ? "failed" : "ready",
-                errorMessage: isDuplicate ? "Same photo as another one selected" : undefined,
-              }
-            : b
-        ) ?? old
-      );
+      try {
+        const readyFile = await prepareUploadImage(item.file);
+        const hash = await hashFile(readyFile);
+        const isDuplicate = seenHashes.includes(hash);
+        seenHashes.push(hash);
+        setBatch((old) =>
+          old?.map((b) =>
+            b.requestId === item.requestId
+              ? {
+                  ...b,
+                  file: readyFile,
+                  hash,
+                  status: isDuplicate ? "failed" : "ready",
+                  errorMessage: isDuplicate ? "Same photo as another one selected" : undefined,
+                }
+              : b
+          ) ?? old
+        );
+      } catch (err) {
+        setBatch((old) =>
+          old?.map((b) =>
+            b.requestId === item.requestId
+              ? {
+                  ...b,
+                  status: "failed",
+                  errorMessage:
+                    err instanceof Error ? err.message : "Could not prepare this photo",
+                }
+              : b
+          ) ?? old
+        );
+      }
     }
   }
 
@@ -252,33 +300,77 @@ export function AddProductCard({
     });
   }
 
+  async function finishBatch(pending: PendingBatchFinalization) {
+    const finalizeRes = await fetch(`/api/photos/batch/${pending.batchId}/finalize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ failedRequestIds: pending.failedRequestIds }),
+    });
+    if (!finalizeRes.ok) {
+      throw new Error(
+        batchErrorMessage(await finalizeRes.json().catch(() => null), finalizeRes.status)
+      );
+    }
+    const finalized = parseBatchFinalizeResponse(
+      await finalizeRes.json().catch(() => null)
+    );
+    if (!finalized.ok) throw new Error(finalized.message);
+
+    sessionStorage.removeItem(BATCH_SESSION_KEY);
+    setPendingFinalization(null);
+    if (!finalized.productId) {
+      setBatchSubmitting(false);
+      setError("None of these photos could be saved. Try again.");
+      return;
+    }
+    router.push(`/dashboard/product/${finalized.productId}`);
+  }
+
   async function submitBatch() {
     if (!batch || batchSubmitting) return;
+    if (pendingFinalization) {
+      setBatchSubmitting(true);
+      setError(null);
+      try {
+        await finishBatch(pendingFinalization);
+      } catch (err) {
+        setBatchSubmitting(false);
+        setError(err instanceof Error ? err.message : "Could not finish this batch. Try again.");
+      }
+      return;
+    }
     const usable = batch.filter((b) => b.status !== "failed" && b.hash);
     if (usable.length < 2) {
       setError("Select at least 2 different photos.");
       return;
     }
-    if (!usable.some((b) => b.role === "main")) {
-      usable[0].role = "main";
-    }
+    const normalizedUsable = usable.some((b) => b.role === "main")
+      ? usable
+      : usable.map((item, index) => ({
+          ...item,
+          role: index === 0 ? ("main" as const) : ("supporting" as const),
+        }));
 
     setBatchSubmitting(true);
     setError(null);
-    setBatchProgress({ done: 0, total: usable.length });
+    setBatchProgress({ done: 0, total: normalizedUsable.length });
 
     try {
-      const idempotencyKey = crypto.randomUUID();
-      const selected = usable.map((b) => ({
+      const selected = normalizedUsable.map((b) => ({
         requestId: b.requestId,
         file: b.file,
         role: b.role,
         contentHash: b.hash,
       }));
+      const fingerprint = batchSubmissionFingerprint(selected, name);
+      const previous = parseBatchSubmissionIdentity(sessionStorage.getItem(BATCH_SESSION_KEY));
+      const identity = resolveBatchSubmissionIdentity(previous, fingerprint, () => crypto.randomUUID());
+      sessionStorage.setItem(BATCH_SESSION_KEY, JSON.stringify(identity));
+
       const initRes = await fetch("/api/photos/batch/init", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildBatchInitPayload(selected, idempotencyKey, name.trim())),
+        body: JSON.stringify(buildBatchInitPayload(selected, identity.idempotencyKey, name.trim())),
       });
       if (!initRes.ok) {
         throw new Error(batchErrorMessage(await initRes.json().catch(() => null), initRes.status));
@@ -290,16 +382,15 @@ export function AddProductCard({
       // preserve discriminated-union narrowing of `init` into the nested
       // closures below.
       const batchId = init.batchId;
-      sessionStorage.setItem(BATCH_SESSION_KEY, batchId);
+      const startedIdentity: BatchSubmissionIdentity = { ...identity, batchId };
+      sessionStorage.setItem(BATCH_SESSION_KEY, JSON.stringify(startedIdentity));
 
-      const byRequestId = new Map(usable.map((u) => [u.requestId, u]));
-      const ordered = withMainFirst(usable);
+      const byRequestId = new Map(normalizedUsable.map((u) => [u.requestId, u]));
+      const ordered = withMainFirst(normalizedUsable);
+      const failedRequestIds = new Set<string>();
 
       let done = 0;
-      let anyUploaded = false;
-      let productId: string | null = init.productId;
-
-      async function uploadOne(item: BatchItem) {
+      async function uploadOne(item: BatchItem): Promise<boolean> {
         setBatch((old) =>
           old?.map((b) => (b.requestId === item.requestId ? { ...b, status: "uploading" } : b)) ?? old
         );
@@ -317,7 +408,8 @@ export function AddProductCard({
                 b.requestId === item.requestId ? { ...b, status: "failed", errorMessage: message } : b
               ) ?? old
             );
-            return;
+            failedRequestIds.add(item.requestId);
+            return false;
           }
           const parsed = parseBatchUploadResponse(item.requestId, body);
           if (!parsed.ok) {
@@ -328,24 +420,26 @@ export function AddProductCard({
                   : b
               ) ?? old
             );
-            return;
+            failedRequestIds.add(item.requestId);
+            return false;
           }
-          if (parsed.productId) productId = parsed.productId;
-          anyUploaded = true;
           setBatch((old) =>
             old?.map((b) => (b.requestId === item.requestId ? { ...b, status: "uploaded" } : b)) ?? old
           );
+          return true;
         } catch {
           setBatch((old) =>
             old?.map((b) =>
               b.requestId === item.requestId
                 ? { ...b, status: "failed", errorMessage: "Upload failed. Try again." }
                 : b
-            ) ?? old
+              ) ?? old
           );
+          failedRequestIds.add(item.requestId);
+          return false;
         } finally {
           done += 1;
-          setBatchProgress({ done, total: usable.length });
+          setBatchProgress({ done, total: normalizedUsable.length });
         }
       }
 
@@ -353,19 +447,33 @@ export function AddProductCard({
       // server-side promotion (resolve_batch_item_role) know for certain
       // whether the main failed before any supporting item is persisted.
       const [firstMain, ...rest] = ordered;
-      if (firstMain) await uploadOne(byRequestId.get(firstMain.requestId) ?? firstMain);
-      if (rest.length > 0) {
-        await runWithConcurrency(rest, 2, (i) => uploadOne(byRequestId.get(i.requestId) ?? i));
+      const mainUploaded = firstMain
+        ? await uploadOne(byRequestId.get(firstMain.requestId) ?? firstMain)
+        : false;
+
+      let remaining = rest;
+      if (!mainUploaded) {
+        // Only one supporting upload may race for promotion to main. Once
+        // one succeeds, the remaining items are safe to upload concurrently.
+        for (let index = 0; index < rest.length; index += 1) {
+          const candidate = rest[index];
+          const uploaded = await uploadOne(byRequestId.get(candidate.requestId) ?? candidate);
+          if (uploaded) {
+            remaining = rest.slice(index + 1);
+            break;
+          }
+          remaining = [];
+        }
+      }
+      if (remaining.length > 0) {
+        await runWithConcurrency(remaining, 2, async (item) => {
+          await uploadOne(byRequestId.get(item.requestId) ?? item);
+        });
       }
 
-      sessionStorage.removeItem(BATCH_SESSION_KEY);
-
-      if (!anyUploaded || !productId) {
-        setBatchSubmitting(false);
-        setError("None of these photos could be saved. Try again.");
-        return;
-      }
-      router.push(`/dashboard/product/${productId}`);
+      const pending = { batchId, failedRequestIds: [...failedRequestIds] };
+      setPendingFinalization(pending);
+      await finishBatch(pending);
     } catch (err) {
       setBatchSubmitting(false);
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
@@ -426,20 +534,21 @@ export function AddProductCard({
               </span>
               <span>
                 <span className="block text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
-                  Drop your thumbnail here
+                  Drop your listing photos here
                 </span>
                 <span className="mt-1.5 block text-[13.5px] text-[var(--color-ink-muted)]">
-                  JPG or PNG, and your photo stays private
+                  Add 1 photo, or up to 10 at once. JPG or PNG.
                 </span>
               </span>
               <span className="rounded-full bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
-                Score My Thumbnail
+                Score listing photos
               </span>
             </div>
           ) : (
             <BatchGrid
               batch={batch!}
               submitting={batchSubmitting}
+              finalizationPending={pendingFinalization !== null}
               progress={batchProgress}
               onRemove={removeBatchItem}
               onSetMain={setMain}
@@ -504,7 +613,6 @@ export function AddProductCard({
 
       {open &&
         step === "idle" &&
-        !batchSubmitting &&
         typeof document !== "undefined" &&
         createPortal(
           <div
@@ -596,11 +704,11 @@ export function AddProductCard({
                             Drop your listing photos
                           </span>
                           <span className="mt-1 block text-[13px] text-[var(--color-ink-muted)]">
-                            JPG or PNG, up to 10 at once
+                            Add 1 photo, or up to 10 at once. JPG or PNG.
                           </span>
                         </span>
                         <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
-                          Upload photos
+                          Score listing photos
                         </span>
                       </>
                     )}
@@ -609,6 +717,7 @@ export function AddProductCard({
                   <BatchGrid
                     batch={batch!}
                     submitting={batchSubmitting}
+                    finalizationPending={pendingFinalization !== null}
                     progress={batchProgress}
                     onRemove={removeBatchItem}
                     onSetMain={setMain}
@@ -655,6 +764,7 @@ export function AddProductCard({
 function BatchGrid({
   batch,
   submitting,
+  finalizationPending,
   progress,
   onRemove,
   onSetMain,
@@ -664,6 +774,7 @@ function BatchGrid({
 }: {
   batch: BatchItem[];
   submitting: boolean;
+  finalizationPending: boolean;
   progress: { done: number; total: number };
   onRemove: (requestId: string) => void;
   onSetMain: (requestId: string) => void;
@@ -723,7 +834,7 @@ function BatchGrid({
               </span>
             )}
 
-            {!submitting && (
+            {!submitting && !finalizationPending && (
               <>
                 <button
                   type="button"
@@ -780,7 +891,7 @@ function BatchGrid({
         <button
           type="button"
           onClick={onCancel}
-          disabled={submitting}
+          disabled={submitting || finalizationPending}
           className="text-[13.5px] font-semibold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)] disabled:opacity-50"
         >
           Start over
@@ -788,16 +899,20 @@ function BatchGrid({
         {submitting ? (
           <span className="inline-flex items-center gap-2 text-[14px] font-semibold text-[var(--color-ink)]">
             <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-            Saving {progress.done} of {progress.total}…
+            {finalizationPending
+              ? "Finishing upload…"
+              : `Saving ${progress.done} of ${progress.total}…`}
           </span>
         ) : (
           <button
             type="button"
             onClick={onSubmit}
-            disabled={!allReady || usableCount < 2}
+            disabled={!finalizationPending && (!allReady || usableCount < 2)}
             className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Rate {usableCount} photo{usableCount === 1 ? "" : "s"}
+            {finalizationPending
+              ? "Finish upload"
+              : `Rate ${usableCount} photo${usableCount === 1 ? "" : "s"}`}
           </button>
         )}
       </div>
