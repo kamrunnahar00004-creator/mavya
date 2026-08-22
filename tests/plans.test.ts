@@ -4,6 +4,7 @@ import {
   getPlanPolicy,
   isAvailableForNewCheckout,
   resolvePlan,
+  resolveCheckoutPlan,
   type PlanKey,
   type BillingCadence,
   type PlanRegistryConfig,
@@ -90,7 +91,7 @@ describe("plan registry", () => {
       shopMonthlyPriceId: "price_shop_monthly",
     });
     expect(resolvePlan(registry, "")).toBeNull();
-    expect(registry.size).toBe(1);
+    expect(registry).toHaveLength(1);
     expect(resolvePlan(registry, "price_shop_monthly")).toEqual({
       planKey: "shop",
       cadence: "monthly",
@@ -142,7 +143,7 @@ describe("plan registry", () => {
 
   it("building with zero configured variables does not throw, returns an empty registry", () => {
     const registry = buildPlanRegistry({});
-    expect(registry.size).toBe(0);
+    expect(registry).toHaveLength(0);
     expect(resolvePlan(registry, "anything")).toBeNull();
   });
 
@@ -155,6 +156,27 @@ describe("plan registry", () => {
       planKey: "legacy",
       cadence: "monthly",
     });
-    expect(registry.size).toBe(1);
+    expect(registry).toHaveLength(1);
+  });
+
+  it("resolves checkout choices only when an approved price is configured", () => {
+    const fullRegistry = buildPlanRegistry(FULL_CONFIG);
+    expect(resolveCheckoutPlan(fullRegistry, "shop", "annual")).toEqual({
+      priceId: "price_shop_annual",
+      policy: getPlanPolicy("shop", "annual"),
+    });
+
+    const partialRegistry = buildPlanRegistry({
+      starterMonthlyPriceId: "price_starter_monthly",
+    });
+    expect(resolveCheckoutPlan(partialRegistry, "shop", "annual")).toBeNull();
+    expect(resolveCheckoutPlan(fullRegistry, "legacy", "monthly")).toBeNull();
+  });
+
+  it("returns a runtime-frozen registry and policies", () => {
+    const registry = buildPlanRegistry(FULL_CONFIG);
+    expect(Object.isFrozen(registry)).toBe(true);
+    expect(registry.every((entry) => Object.isFrozen(entry))).toBe(true);
+    expect(Object.isFrozen(getPlanPolicy("starter", "monthly"))).toBe(true);
   });
 });

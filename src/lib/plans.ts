@@ -1,5 +1,5 @@
 /**
- * Server-only subscription plan registry (build slice 1 of the multi-tier
+ * Subscription plan registry (build slice 1 of the multi-tier
  * pricing rework, Codex-reviewed architecture, 2026-08-22 -- corrected
  * revision: Mavya is moving AWAY from AI credits. This module intentionally
  * contains NO credit fields anywhere. The old flat 1,000-credit system stays
@@ -28,32 +28,21 @@
  * authority.
  *
  * Built by a pure function (`buildPlanRegistry`) that takes explicit config,
- * not by reading `process.env` directly -- fully unit-testable with fake
- * config, no env mocking required. The thin `getPlanRegistry()` adapter at
- * the bottom is the only piece that touches `process.env`, matching this
- * codebase's existing convention in stripe.ts (plain functions, no external
- * "server-only" package dependency -- none is installed in this repo).
- * Nothing here executes at import time; every check happens lazily inside a
- * function call, so a deploy with unset future-tier variables cannot break
- * unrelated imports or build routes.
- *
- * Required environment (all server-only, never exposed to client components):
- *  - STRIPE_PRICE_ID                the OLD $19/month price. Kept, hidden,
- *                                    recognized only -- never offered at new
- *                                    checkout, no listing allowance assigned
- *                                    to it in this slice. STRIPE_PRICE_FOUNDING
- *                                    does not exist and must not be added.
- *  - STRIPE_PRICE_STARTER_MONTHLY / _ANNUAL
- *  - STRIPE_PRICE_SHOP_MONTHLY / _ANNUAL
- *  - STRIPE_PRICE_POWER_MONTHLY / _ANNUAL
+ * not by reading `process.env` directly. The environment adapter lives in
+ * `plans.server.ts`, keeping this policy module safe to import from tests and
+ * shared code without pulling server configuration into a client bundle.
  */
 
 export type PlanKey = "legacy" | "starter" | "shop" | "power";
 export type BillingCadence = "monthly" | "annual";
 
-export type PriceRegistryEntry = Readonly<{ planKey: PlanKey; cadence: BillingCadence }>;
-/** priceId -> {planKey, cadence}. Built once per call, read-only after construction. */
-export type PriceRegistry = ReadonlyMap<string, PriceRegistryEntry>;
+export type PriceRegistryEntry = Readonly<{
+  priceId: string;
+  planKey: PlanKey;
+  cadence: BillingCadence;
+}>;
+/** Frozen configured entries. Seven entries is the absolute maximum. */
+export type PriceRegistry = readonly PriceRegistryEntry[];
 
 /**
  * Policy assertions for a purchasable plan/cadence combination. Deliberately
@@ -77,14 +66,18 @@ export type PlanPolicy = Readonly<{
  * billing only, never the slot count. Slots do not reset on any cycle;
  * deleting a listing frees its slot immediately, regardless of cadence.
  */
-const PLAN_POLICIES: readonly PlanPolicy[] = [
+const PLAN_POLICY_VALUES = [
   { planKey: "starter", cadence: "monthly", activeListingLimit: 5, priceCents: 2900, currency: "usd", availableForNewCheckout: true },
   { planKey: "starter", cadence: "annual", activeListingLimit: 5, priceCents: 29000, currency: "usd", availableForNewCheckout: true },
   { planKey: "shop", cadence: "monthly", activeListingLimit: 15, priceCents: 5900, currency: "usd", availableForNewCheckout: true },
   { planKey: "shop", cadence: "annual", activeListingLimit: 15, priceCents: 59000, currency: "usd", availableForNewCheckout: true },
   { planKey: "power", cadence: "monthly", activeListingLimit: 40, priceCents: 9900, currency: "usd", availableForNewCheckout: true },
   { planKey: "power", cadence: "annual", activeListingLimit: 40, priceCents: 99000, currency: "usd", availableForNewCheckout: true },
-];
+] satisfies readonly PlanPolicy[];
+
+const PLAN_POLICIES: readonly PlanPolicy[] = Object.freeze(
+  PLAN_POLICY_VALUES.map((policy) => Object.freeze(policy))
+);
 
 /** Null for any plan/cadence with no assigned policy -- always true for
  *  "legacy" in this slice, by design, not by omission. */
@@ -129,7 +122,7 @@ function normalize(value: string | undefined): string | undefined {
  * deploy that hasn't configured every future tier yet does not break.
  */
 export function buildPlanRegistry(config: PlanRegistryConfig): PriceRegistry {
-  const registry = new Map<string, PriceRegistryEntry>();
+  const registry: PriceRegistryEntry[] = [];
   const claimedBy = new Map<string, string>(); // priceId -> "planKey:cadence" label
 
   function claim(priceId: string | undefined, planKey: PlanKey, cadence: BillingCadence): void {
@@ -143,7 +136,7 @@ export function buildPlanRegistry(config: PlanRegistryConfig): PriceRegistry {
       );
     }
     claimedBy.set(id, label);
-    registry.set(id, { planKey, cadence });
+    registry.push(Object.freeze({ priceId: id, planKey, cadence }));
   }
 
   claim(config.legacyPriceId, "legacy", "monthly");
@@ -154,33 +147,45 @@ export function buildPlanRegistry(config: PlanRegistryConfig): PriceRegistry {
   claim(config.powerMonthlyPriceId, "power", "monthly");
   claim(config.powerAnnualPriceId, "power", "annual");
 
-  return registry;
+  return Object.freeze(registry);
 }
 
 /** Fail-closed lookup: an unrecognized or empty price id resolves to null,
  *  never to a guessed plan. */
+export type ResolvedPlan = Readonly<{
+  planKey: PlanKey;
+  cadence: BillingCadence;
+}>;
+
 export function resolvePlan(
   registry: PriceRegistry,
   priceId: string | null | undefined
-): PriceRegistryEntry | null {
+): ResolvedPlan | null {
   const id = normalize(priceId ?? undefined);
   if (!id) return null;
-  return registry.get(id) ?? null;
+  const entry = registry.find((candidate) => candidate.priceId === id);
+  return entry ? { planKey: entry.planKey, cadence: entry.cadence } : null;
 }
 
-/** Reads live environment variables. The ONLY function in this module that
- *  touches `process.env`, and it only reads -- never assigns back to it.
- *  Never call this from client-bundled code; every caller must be
- *  server-only (API route, RSC, or another server-only lib), same
- *  discipline already required of stripe.ts in this codebase. */
-export function getPlanRegistry(): PriceRegistry {
-  return buildPlanRegistry({
-    legacyPriceId: process.env.STRIPE_PRICE_ID,
-    starterMonthlyPriceId: process.env.STRIPE_PRICE_STARTER_MONTHLY,
-    starterAnnualPriceId: process.env.STRIPE_PRICE_STARTER_ANNUAL,
-    shopMonthlyPriceId: process.env.STRIPE_PRICE_SHOP_MONTHLY,
-    shopAnnualPriceId: process.env.STRIPE_PRICE_SHOP_ANNUAL,
-    powerMonthlyPriceId: process.env.STRIPE_PRICE_POWER_MONTHLY,
-    powerAnnualPriceId: process.env.STRIPE_PRICE_POWER_ANNUAL,
-  });
+export type CheckoutPlan = Readonly<{
+  priceId: string;
+  policy: PlanPolicy;
+}>;
+
+/**
+ * Resolve a founder-approved checkout choice to a configured Stripe price.
+ * Policy availability alone is insufficient: an unset price must fail closed.
+ */
+export function resolveCheckoutPlan(
+  registry: PriceRegistry,
+  planKey: PlanKey,
+  cadence: BillingCadence
+): CheckoutPlan | null {
+  if (!isAvailableForNewCheckout(planKey, cadence)) return null;
+  const policy = getPlanPolicy(planKey, cadence);
+  if (!policy) return null;
+  const entry = registry.find(
+    (candidate) => candidate.planKey === planKey && candidate.cadence === cadence
+  );
+  return entry ? Object.freeze({ priceId: entry.priceId, policy }) : null;
 }
