@@ -29,6 +29,14 @@ export type PersistPhotoInput = {
   productId?: string;
   /** Only used when creating a new product (productId omitted). */
   productName?: string | null;
+  /**
+   * Server-derived from entitlement.activeListingLimit -- required whenever
+   * productId is omitted (a NEW product is about to be created). Never
+   * sourced from FormData, JSON, query params, or any client-supplied
+   * value. Unused when productId is provided (attaching to an existing,
+   * already-counted product never re-checks the limit).
+   */
+  activeListingLimit?: number | null;
   /** Pre-reserved photo id (batch path). Omit to mint a fresh one. */
   photoId?: string;
   /** Explicit display position (batch path). Omitted defaults to 0, matching
@@ -133,16 +141,36 @@ export async function persistPhotoAndQueueRating(
         }
       }
     } else if (!productId) {
-      const { data: product, error } = await admin
-        .from("products")
-        .insert({
-          user_id: userId,
-          name: input.productName?.trim().slice(0, 120) || null,
-        })
-        .select("id")
-        .single();
-      if (error || !product) throw error ?? new Error("Could not create product.");
-      productId = product.id;
+      // New product creation is gated by the shared, atomic, service-role
+      // RPC -- never a direct insert. The limit is server-derived
+      // (entitlement.activeListingLimit at the call site), never taken from
+      // this input without validation: a missing/invalid limit fails
+      // closed here rather than silently falling through to the RPC's own
+      // defensive check (which would also catch it, but failing fast with
+      // a clear message is better than relying solely on the DB layer).
+      if (typeof input.activeListingLimit !== "number" || input.activeListingLimit <= 0) {
+        return fail("bad_request", "Missing active listing limit.", 400);
+      }
+      const { data: newProductId, error } = await admin.rpc(
+        "create_product_within_active_limit",
+        {
+          p_user: userId,
+          p_name: input.productName?.trim().slice(0, 120) || null,
+          p_limit: input.activeListingLimit,
+        }
+      );
+      if (error) {
+        if (error.message?.includes("active_listing_limit_reached")) {
+          return fail(
+            "active_listing_limit_reached",
+            "You've reached your active listing limit. Delete a listing to free a slot.",
+            409
+          );
+        }
+        throw error;
+      }
+      if (!newProductId) throw new Error("Could not create product.");
+      productId = newProductId as string;
       createdProduct = true;
     } else {
       const { data: product } = await admin

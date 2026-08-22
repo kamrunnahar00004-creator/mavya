@@ -46,6 +46,13 @@ export async function POST(req: NextRequest) {
       "An active plan is needed to rate photos."
     );
   }
+  if (entitlement.activeListingLimit == null) {
+    // An active subscription with no resolvable plan limit should not
+    // happen (entitlements.ts always pairs active:true with a resolved
+    // plan), but fail closed explicitly rather than let a new product get
+    // created with an undefined limit.
+    return apiError("subscription_required", "An active plan is needed to rate photos.");
+  }
   const userLimit = await rateLimit(`score-start:u:${user.id}`, 6, 60_000);
   const ipLimit = await rateLimit(`score-start:${clientIp(req)}`, 12, 60_000);
   if (!userLimit.ok || !ipLimit.ok) {
@@ -77,6 +84,7 @@ export async function POST(req: NextRequest) {
     productId: typeof requestedProductId === "string" ? requestedProductId : undefined,
     productName: typeof name === "string" ? name : null,
     photoId: typeof requestedPhotoId === "string" ? requestedPhotoId : undefined,
+    activeListingLimit: entitlement.activeListingLimit,
   });
 
   if (!result.ok) {

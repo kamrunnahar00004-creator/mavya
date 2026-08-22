@@ -8,6 +8,7 @@ export type ApiErrorCode =
   | "unauthenticated"
   | "forbidden"
   | "insufficient_credits"
+  | "active_listing_limit_reached"
   | "subscription_required"
   | "subscription_past_due"
   | "allowance_exhausted"
@@ -43,6 +44,7 @@ const STATUS: Partial<Record<ApiErrorCode, number>> = {
   unauthenticated: 401,
   forbidden: 403,
   insufficient_credits: 402,
+  active_listing_limit_reached: 409,
   subscription_required: 402,
   subscription_past_due: 402,
   allowance_exhausted: 402,

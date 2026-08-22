@@ -222,6 +222,9 @@ describe("batchErrorMessage", () => {
     expect(batchErrorMessage({ code: "insufficient_credits" }, 402)).toBe(
       "Your rating credit ran out"
     );
+    expect(batchErrorMessage({ code: "active_listing_limit_reached" }, 409)).toBe(
+      "You've reached your active listing limit. Delete a listing to free a slot."
+    );
     expect(batchErrorMessage({ code: "rate_limited" }, 429)).toBe(
       "Too many photos at once. Wait a minute and try again."
     );

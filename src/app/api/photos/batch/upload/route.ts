@@ -67,6 +67,9 @@ export async function POST(req: NextRequest) {
       "An active plan is needed to rate photos."
     );
   }
+  if (entitlement.activeListingLimit == null) {
+    return apiError("subscription_required", "An active plan is needed to rate photos.");
+  }
   // Light abuse guard on the upload endpoint itself -- not the scoring-start
   // budget (that was already spent, weighted, at batch init).
   const userLimit = await rateLimit(`batch-upload:u:${user.id}`, 30, 60_000);
@@ -146,10 +149,21 @@ export async function POST(req: NextRequest) {
   const { data: productIdData, error: productError } = await admin.rpc("ensure_batch_product", {
     p_batch_id: batchId,
     p_user: user.id,
+    p_limit: entitlement.activeListingLimit,
   });
   const productId = productIdData as string | null;
-  if (productError || !productId) {
-    logEvent("batch.product_failed", { userId: user.id, batchId, error: productError?.message });
+  if (productError) {
+    if (productError.message?.includes("active_listing_limit_reached")) {
+      return apiError(
+        "active_listing_limit_reached",
+        "You've reached your active listing limit. Delete a listing to free a slot."
+      );
+    }
+    logEvent("batch.product_failed", { userId: user.id, batchId, error: productError.message });
+    return apiError("persistence_failed", "Could not save this batch. Try again.");
+  }
+  if (!productId) {
+    logEvent("batch.product_failed", { userId: user.id, batchId, error: "no product id returned" });
     return apiError("persistence_failed", "Could not save this batch. Try again.");
   }
 

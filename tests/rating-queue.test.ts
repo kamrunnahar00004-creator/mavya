@@ -31,6 +31,12 @@ describe("post-queue behavior (durable rating handoff)", () => {
     ).toBe("Your rating credit ran out");
   });
 
+  it("maps active-listing-slot exhaustion to a distinct, actionable message (slice 3)", () => {
+    expect(ratingQueueErrorMessage({ code: "active_listing_limit_reached" }, 409)).toBe(
+      "You've reached your active listing limit. Delete a listing to free a slot."
+    );
+  });
+
   it("maps subscription states to the billing message", () => {
     const expected =
       "An active plan is needed to rate photos. Check Settings to update billing.";
