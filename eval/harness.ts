@@ -178,6 +178,7 @@ export async function runFixture(fixture: GoldenFixture): Promise<FixtureResult>
         imageMimeType: img.mime,
         systemPrompt: fixture.role === "supporting" ? GENERAL_RUBRIC_PROMPT : undefined,
         mainProductContext: fixture.main_product_context,
+        buyerQuestions: { kind: "none" },
       });
     let rubric;
     try {

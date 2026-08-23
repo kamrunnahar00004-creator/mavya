@@ -500,6 +500,7 @@ async function scoreAndFidelity(args: {
       systemPrompt: args.systemPrompt,
       mainProductContext: args.mainProductContext,
       isGeneratedCandidate: true,
+      buyerQuestions: { kind: "none" },
     }),
     evaluateFidelity({
       originalBuffer: args.originalBuffer,

@@ -1,3 +1,5 @@
+import { CATEGORY_IDS, type CanonicalCategory } from "@/lib/taxonomy";
+
 /**
  * Buyer-question catalog (2026-08-23, buyer-question-coverage spec, slice 1).
  *
@@ -31,7 +33,7 @@ export type BuyerQuestion = {
 };
 
 export type QuestionCatalog = {
-  category: string;
+  category: CanonicalCategory;
   version: number;
   questions: BuyerQuestion[];
 };
@@ -43,12 +45,12 @@ export type QuestionCatalog = {
 // ---------------------------------------------------------------------------
 export const MAX_BUYER_QUESTIONS_PER_CATEGORY = 6;
 export const MAX_TOTAL_BUYER_QUESTIONS = 160;
-export const MAX_SERIALIZED_BUYER_CATALOG_CHARS = 24_000;
+export const MAX_BUYER_QUESTION_PROMPT_CHARS = 24_000;
 
 // ---------------------------------------------------------------------------
 // Physical categories.
 // ---------------------------------------------------------------------------
-const PHYSICAL: Record<string, Omit<BuyerQuestion, "id">[]> = {
+const PHYSICAL = {
   jewelry: [
     { text: "What does it look like on?", shot_instruction: "Worn on a model or hand, in daylight.", generation_eligibility: "requires_real_photo" },
     { text: "How big is it?", shot_instruction: "Beside a coin or ruler, flat surface, straight down.", generation_eligibility: "requires_verified_input" },
@@ -145,12 +147,12 @@ const PHYSICAL: Record<string, Omit<BuyerQuestion, "id">[]> = {
     { text: "What does it look like in use?", shot_instruction: "Being used, or a finished result made with it.", generation_eligibility: "requires_real_photo" },
     { text: "Are the colors accurate?", shot_instruction: "Swatch or color chart in natural light.", generation_eligibility: "requires_real_photo" },
   ],
-};
+} as const;
 
 // ---------------------------------------------------------------------------
 // Digital categories. Shots are screenshots/previews, never physical photos.
 // ---------------------------------------------------------------------------
-const DIGITAL: Record<string, Omit<BuyerQuestion, "id">[]> = {
+const DIGITAL = {
   digital_planner: [
     { text: "What do the pages look like?", shot_instruction: "Full-page screenshot of a filled-in page.", generation_eligibility: "requires_real_photo" },
     { text: "How many pages are there?", shot_instruction: "Screenshot listing the page count/contents.", generation_eligibility: "requires_verified_input" },
@@ -208,10 +210,30 @@ const DIGITAL: Record<string, Omit<BuyerQuestion, "id">[]> = {
     { text: "What can I customize?", shot_instruction: "Screenshot with editable areas called out.", generation_eligibility: "requires_verified_input" },
     { text: "What size options are there?", shot_instruction: "Screenshot listing available sizes/formats.", generation_eligibility: "requires_verified_input" },
   ],
-};
+} as const;
 
-const CATALOGS: Record<string, QuestionCatalog> = {};
-for (const [category, questions] of Object.entries({ ...PHYSICAL, ...DIGITAL })) {
+type QuestionSource = Omit<BuyerQuestion, "id">;
+
+const SOURCES = { ...PHYSICAL, ...DIGITAL } satisfies Record<
+  CanonicalCategory,
+  readonly QuestionSource[]
+>;
+
+/** Semantic ids do not change when questions are reordered. Catalog wording
+ * changes require a catalog/rubric version bump, so old persisted ids are
+ * never silently reinterpreted. */
+function semanticQuestionId(category: CanonicalCategory, text: string): string {
+  const slug = text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!slug) throw new Error(`buyer-questions: empty semantic id for ${category}`);
+  return `${category}_${slug}`;
+}
+
+const CATALOGS = {} as Record<CanonicalCategory, QuestionCatalog>;
+for (const category of CATEGORY_IDS) {
+  const questions = SOURCES[category];
   if (questions.length > MAX_BUYER_QUESTIONS_PER_CATEGORY) {
     throw new Error(
       `buyer-questions: category "${category}" has ${questions.length} questions, exceeds MAX_BUYER_QUESTIONS_PER_CATEGORY (${MAX_BUYER_QUESTIONS_PER_CATEGORY})`
@@ -220,7 +242,10 @@ for (const [category, questions] of Object.entries({ ...PHYSICAL, ...DIGITAL }))
   CATALOGS[category] = {
     category,
     version: 1,
-    questions: questions.map((q, i) => ({ id: `${category}_${i + 1}`, ...q })),
+    questions: questions.map((q) => ({
+      id: semanticQuestionId(category, q.text),
+      ...q,
+    })),
   };
 }
 
@@ -234,10 +259,25 @@ if (totalQuestions > MAX_TOTAL_BUYER_QUESTIONS) {
   );
 }
 
-const serializedSize = JSON.stringify(Object.values(CATALOGS)).length;
-if (serializedSize > MAX_SERIALIZED_BUYER_CATALOG_CHARS) {
+/** Exact text appended to the model prompt. The import-time cap measures the
+ * real prompt payload, not a different JSON serialization. */
+export function buyerQuestionsPromptBlock(
+  catalogs: readonly QuestionCatalog[]
+): string {
+  const lines = catalogs
+    .map(
+      (catalog) =>
+        `${catalog.category}:\n` +
+        catalog.questions.map((q) => `  - ${q.id}: "${q.text}"`).join("\n")
+    )
+    .join("\n");
+  return `\n\nBUYER_QUESTIONS_FOR_THIS_CALL: for EACH category below, these are the ONLY buyer questions that exist. Pick answers_question_ids ONLY from the list matching the category YOU detect for this photo (detected_category for the main rubric; the category context you were given for a supporting photo). A photo may answer zero, one, or several questions in that category's list -- return every id it genuinely answers, not just the single best one. Never answer from a different category's list than the one you detect. Never invent an id not shown here.\n${lines}`;
+}
+
+const promptSize = buyerQuestionsPromptBlock(Object.values(CATALOGS)).length;
+if (promptSize > MAX_BUYER_QUESTION_PROMPT_CHARS) {
   throw new Error(
-    `buyer-questions: serialized catalog is ${serializedSize} chars, exceeds MAX_SERIALIZED_BUYER_CATALOG_CHARS (${MAX_SERIALIZED_BUYER_CATALOG_CHARS})`
+    `buyer-questions: prompt block is ${promptSize} chars, exceeds MAX_BUYER_QUESTION_PROMPT_CHARS (${MAX_BUYER_QUESTION_PROMPT_CHARS})`
   );
 }
 
@@ -248,7 +288,7 @@ export const ALL_BUYER_QUESTION_CATALOGS: readonly QuestionCatalog[] = Object.fr
 
 /** One category's catalog, for a supporting-photo call (category already known). */
 export function catalogForCategory(category: string): QuestionCatalog | undefined {
-  return CATALOGS[category];
+  return CATALOGS[category as CanonicalCategory];
 }
 
 /** Every valid question id across every category, for validating a model response. */

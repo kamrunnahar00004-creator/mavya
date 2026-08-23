@@ -195,7 +195,7 @@ export type RubricJson = {
    * persisted before this field existed -- that absence must never be
    * read as an answered-nothing verdict.
    */
-  answers_question_ids: string[];
+  answers_question_ids?: string[];
   /** Server-stamped AFTER validating answers_question_ids against the
    *  catalog for this category -- never model-controlled. Absent on
    *  legacy audits and on any audit where category resolution failed. */
@@ -470,19 +470,6 @@ Valid JSON shape:
  * know its own category); a supporting photo receives only the ONE
  * category's catalog its product's confirmed main photo already resolved.
  */
-export function buyerQuestionsPromptBlock(
-  catalogs: readonly { category: string; questions: readonly { id: string; text: string }[] }[]
-): string {
-  const lines = catalogs
-    .map(
-      (c) =>
-        `${c.category}:\n` +
-        c.questions.map((q) => `  - ${q.id}: "${q.text}"`).join("\n")
-    )
-    .join("\n");
-  return `\n\nBUYER_QUESTIONS_FOR_THIS_CALL: for EACH category below, these are the ONLY buyer questions that exist. Pick answers_question_ids ONLY from the list matching the category YOU detect for this photo (detected_category for the main rubric; the category context you were given for a supporting photo). A photo may answer zero, one, or several questions in that category's list -- return every id it genuinely answers, not just the single best one. Never answer from a different category's list than the one you detect. Never invent an id not shown here.\n${lines}`;
-}
-
 export const INVALID_RESPONSE: RubricJson = {
   upload_kind: "invalid",
   checklist_category: "other",
@@ -675,8 +662,9 @@ export function isRubricJson(x: unknown): x is RubricJson {
   // has the catalog this call was given -- this validator has no catalog
   // context and must not guess at semantic correctness.
   if (
-    !Array.isArray(r.answers_question_ids) ||
-    !r.answers_question_ids.every((v) => typeof v === "string")
+    r.answers_question_ids !== undefined &&
+    (!Array.isArray(r.answers_question_ids) ||
+      !r.answers_question_ids.every((v) => typeof v === "string"))
   ) {
     return false;
   }

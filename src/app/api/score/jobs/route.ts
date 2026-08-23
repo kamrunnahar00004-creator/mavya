@@ -6,7 +6,11 @@ import { clientIp } from "@/lib/request-ip";
 import { apiError, logEvent } from "@/lib/errors";
 import { aiDisabled } from "@/lib/usage";
 import { persistPhotoAndQueueRating, kickRatingWorker } from "@/lib/photo-persistence";
-import { recoverStaleRatingJobs, runQueuedRatingOnce } from "@/lib/rating-jobs";
+import {
+  recoverStaleRatingJobs,
+  requeueReadyDependencyRatingJobs,
+  runQueuedRatingOnce,
+} from "@/lib/rating-jobs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,15 +133,21 @@ export async function GET(req: NextRequest) {
   if (job.status === "scoring") {
     await recoverStaleRatingJobs(job.id);
   }
-  if (job.status === "queued") {
+  if (job.status === "waiting_dependency") {
+    try {
+      await requeueReadyDependencyRatingJobs(job.id);
+    } catch {
+      // Polling must remain available while the cron backstop retries.
+      logEvent("rating.poll_dependency_scan_failed", {});
+    }
+  }
+  if (job.status === "queued" || job.status === "waiting_dependency") {
     after(async () => {
       try {
+        await requeueReadyDependencyRatingJobs(job.id);
         await runQueuedRatingOnce(job.id);
-      } catch (err) {
-        logEvent("rating.poll_trigger_failed", {
-          jobId: job.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
+      } catch {
+        logEvent("rating.poll_trigger_failed", {});
       }
     });
   }

@@ -9,8 +9,15 @@ import { consumeAllowance, refundAllowance } from "@/lib/allowances";
 import { aiDisabled, withinGlobalBudget } from "@/lib/usage";
 import { logEvent } from "@/lib/errors";
 import type { RubricJson } from "@/lib/rubric";
+import { resolveSupportingQuestionDependency } from "@/lib/buyer-question-dependency";
 
-type RatingStatus = "queued" | "scoring" | "completed" | "failed" | "cancelled";
+type RatingStatus =
+  | "queued"
+  | "waiting_dependency"
+  | "scoring"
+  | "completed"
+  | "failed"
+  | "cancelled";
 
 type RatingJobRow = {
   id: string;
@@ -45,29 +52,87 @@ async function failJob(
   logEvent("rating.finished", { jobId: job.id, status: "failed", code });
 }
 
-async function supportingContext(
-  productId: string
-): Promise<string | undefined> {
+async function supportingDependency(productId: string) {
   const admin = createSupabaseAdminClient();
-  const { data: mainPhoto } = await admin
+  const { data: mainPhoto, error: photoError } = await admin
     .from("photos")
-    .select("id")
+    .select("id, current_audit_id")
     .eq("product_id", productId)
     .eq("role", "main")
     .limit(1)
     .maybeSingle();
-  if (!mainPhoto) return undefined;
-  const { data: audit } = await admin
+  if (photoError) {
+    logEvent("rating.dependency_lookup_failed", {});
+    return { ready: false } as const;
+  }
+  if (!mainPhoto?.current_audit_id) return { ready: false } as const;
+  const { data: audit, error: auditError } = await admin
     .from("audits")
-    .select("rubric")
+    .select("rubric, rubric_version")
+    .eq("id", mainPhoto.current_audit_id)
     .eq("photo_id", mainPhoto.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
     .maybeSingle();
-  const rubric = audit?.rubric as { product_summary?: unknown } | null;
-  return typeof rubric?.product_summary === "string"
-    ? rubric.product_summary.trim().slice(0, 200) || undefined
-    : undefined;
+  if (auditError) {
+    logEvent("rating.dependency_lookup_failed", {});
+    return { ready: false } as const;
+  }
+  return resolveSupportingQuestionDependency({
+    rubric: audit?.rubric,
+    rubricVersion: audit?.rubric_version,
+  });
+}
+
+async function waitForMainDependency(job: RatingJobRow): Promise<void> {
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin
+    .from("rating_jobs")
+    .update({
+      status: "waiting_dependency",
+      attempt_count: Math.max(0, job.attempt_count - 1),
+      started_at: null,
+      error_code: "main_category_pending",
+      error_message: "Waiting for the main photo check.",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id)
+    .eq("status", "scoring");
+  if (error) throw new Error("rating_dependency_wait_failed");
+}
+
+/** Requeue waiting supporting ratings whose current main audit is now ready. */
+export async function requeueReadyDependencyRatingJobs(
+  jobId?: string
+): Promise<number> {
+  const admin = createSupabaseAdminClient();
+  let query = admin
+    .from("rating_jobs")
+    .select("id, product_id")
+    .eq("status", "waiting_dependency")
+    .order("updated_at", { ascending: true })
+    .limit(20);
+  if (jobId) query = query.eq("id", jobId);
+  const { data: waiting, error: scanError } = await query;
+  if (scanError) throw new Error("rating_dependency_scan_failed");
+  let requeued = 0;
+  for (const row of waiting ?? []) {
+    const dependency = await supportingDependency(row.product_id);
+    if (!dependency.ready) continue;
+    const { data: updated, error: updateError } = await admin
+      .from("rating_jobs")
+      .update({
+        status: "queued",
+        error_code: null,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("status", "waiting_dependency")
+      .select("id")
+      .maybeSingle();
+    if (updateError) throw new Error("rating_dependency_requeue_failed");
+    if (updated) requeued++;
+  }
+  return requeued;
 }
 
 /** Claim and finish one persisted rating. Safe under concurrent worker calls. */
@@ -141,6 +206,16 @@ export async function runQueuedRatingOnce(
       return job.id;
     }
 
+    const mode = photo.role === "main" ? "main" : "supporting";
+    const dependency =
+      mode === "supporting"
+        ? await supportingDependency(photo.product_id)
+        : null;
+    if (dependency && !dependency.ready) {
+      await waitForMainDependency(job);
+      return job.id;
+    }
+
     const { data: blob } = await admin.storage
       .from("product-photos")
       .download(photo.storage_path);
@@ -149,12 +224,18 @@ export async function runQueuedRatingOnce(
       return job.id;
     }
     const buffer = Buffer.from(await blob.arrayBuffer());
-    const mode = photo.role === "main" ? "main" : "supporting";
-    const context =
-      mode === "supporting" ? await supportingContext(photo.product_id) : undefined;
+    const context = dependency?.ready
+      ? dependency.mainProductContext
+      : undefined;
     const imageHash = hashImageBytes(buffer);
     const rubricVersion = rubricVersionFor(mode);
-    const contextHash = hashText(context ?? "");
+    const contextHash = hashText(
+      JSON.stringify({
+        summary: context ?? "",
+        buyerQuestions:
+          dependency?.ready ? dependency.cacheContext : { category: "main" },
+      })
+    );
 
     let rubric: RubricJson | null = null;
     let scoreCacheId: string | null = null;
@@ -211,6 +292,12 @@ export async function runQueuedRatingOnce(
           imageMimeType: photo.mime || "image/jpeg",
           systemPrompt: mode === "supporting" ? GENERAL_RUBRIC_PROMPT : undefined,
           mainProductContext: context,
+          buyerQuestions:
+            mode === "main"
+              ? { kind: "all" }
+              : dependency?.ready
+              ? dependency.buyerQuestions
+              : { kind: "none" },
         });
       } catch (err) {
         const scoreError =
@@ -307,6 +394,15 @@ export async function runQueuedRatingOnce(
       status: "completed",
       score: rubric.overall_score,
     });
+    if (mode === "main") {
+      try {
+        await requeueReadyDependencyRatingJobs();
+      } catch {
+        // The main rating is already durably complete. Reconciliation is a
+        // separate backstop and must never rewrite that success as a failure.
+        logEvent("rating.dependency_requeue_failed", {});
+      }
+    }
     return job.id;
   } catch (err) {
     await failJob(

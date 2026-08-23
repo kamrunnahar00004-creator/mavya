@@ -460,7 +460,9 @@ export default async function ProductPage({
       );
       if (
         pendingJob &&
-        (pendingJob.status === "queued" || pendingJob.status === "scoring")
+        (pendingJob.status === "queued" ||
+          pendingJob.status === "waiting_dependency" ||
+          pendingJob.status === "scoring")
       ) {
         const pendingSigned = await batchSignUrls(supabase, [mainRow.storage_path]);
         return (

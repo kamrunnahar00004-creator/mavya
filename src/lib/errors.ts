@@ -24,6 +24,7 @@ export type ApiErrorCode =
   | "unsupported_product"
   | "wrong_product"
   | "stale_audit"
+  | "dependency_pending"
   | "source_unavailable"
   | "provider_timeout"
   | "provider_refusal"
@@ -60,6 +61,7 @@ const STATUS: Partial<Record<ApiErrorCode, number>> = {
   unsupported_product: 422,
   wrong_product: 422,
   stale_audit: 409,
+  dependency_pending: 409,
   source_unavailable: 404,
   idempotency_conflict: 409,
   bad_request: 400,

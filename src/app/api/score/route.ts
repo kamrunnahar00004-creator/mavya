@@ -19,6 +19,7 @@ import {
   rubricVersionFor,
 } from "@/lib/versions";
 import type { RubricJson } from "@/lib/rubric";
+import { resolveSupportingQuestionDependency } from "@/lib/buyer-question-dependency";
 
 const ALLOWED_TYPES = new Set(["image/png", "image/jpeg"]);
 
@@ -116,43 +117,72 @@ export async function POST(req: NextRequest) {
   // Derive it from the owned product's persisted main audit so a caller cannot
   // describe an unrelated photo as belonging to this listing.
   let mainProductContext: string | undefined;
+  let supportingDependency: ReturnType<
+    typeof resolveSupportingQuestionDependency
+  > | null = null;
   if (scoringMode === "supporting") {
     const productId = form.get("product_id");
     if (typeof productId !== "string" || !productId) {
       return apiError("bad_request", "Supporting photos require a product.");
     }
     const server = await createSupabaseServerClient();
-    const { data: product } = await server
+    const { data: product, error: productError } = await server
       .from("products")
       .select("id")
       .eq("id", productId)
       .maybeSingle();
+    if (productError) {
+      logEvent("score.dependency_lookup_failed", {});
+      return apiError("source_unavailable", "Could not verify the main photo. Try again.");
+    }
     if (!product) return apiError("source_unavailable", "Product not found.");
-    const { data: mainPhoto } = await server
+    const { data: mainPhoto, error: mainPhotoError } = await server
       .from("photos")
-      .select("id, role")
+      .select("id, role, current_audit_id")
       .eq("product_id", product.id)
       .eq("role", "main")
       .maybeSingle();
-    if (mainPhoto) {
-      const { data: mainAudit } = await server
-        .from("audits")
-        .select("rubric, created_at")
-        .eq("photo_id", mainPhoto.id)
-        .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      const rubric = mainAudit?.rubric as { product_summary?: unknown } | null;
-      if (typeof rubric?.product_summary === "string") {
-        mainProductContext = rubric.product_summary.trim().slice(0, 200) || undefined;
-      }
+    if (mainPhotoError) {
+      logEvent("score.dependency_lookup_failed", {});
+      return apiError("source_unavailable", "Could not verify the main photo. Try again.");
     }
+    if (mainPhoto?.current_audit_id) {
+      const { data: mainAudit, error: mainAuditError } = await server
+        .from("audits")
+        .select("rubric, rubric_version")
+        .eq("id", mainPhoto.current_audit_id)
+        .eq("photo_id", mainPhoto.id)
+        .maybeSingle();
+      if (mainAuditError) {
+        logEvent("score.dependency_lookup_failed", {});
+        return apiError("source_unavailable", "Could not verify the main photo. Try again.");
+      }
+      supportingDependency = resolveSupportingQuestionDependency({
+        rubric: mainAudit?.rubric,
+        rubricVersion: mainAudit?.rubric_version,
+      });
+    }
+    if (!supportingDependency?.ready) {
+      return apiError(
+        "dependency_pending",
+        "Finish checking the main photo before rating supporting photos."
+      );
+    }
+    mainProductContext = supportingDependency.mainProductContext;
   }
 
   // 5. Cache lookup: identical image + version + mode + context => free reuse.
   const imageHash = hashImageBytes(buffer);
   const rubricVersion = rubricVersionFor(scoringMode);
-  const contextHash = hashText(mainProductContext ?? "");
+  const contextHash = hashText(
+    JSON.stringify({
+      summary: mainProductContext ?? "",
+      buyerQuestions:
+        supportingDependency?.ready
+          ? supportingDependency.cacheContext
+          : { category: "main" },
+    })
+  );
   const admin = createSupabaseAdminClient();
   try {
     const { data: cached } = await admin
@@ -220,6 +250,12 @@ export async function POST(req: NextRequest) {
       imageMimeType: file.type,
       systemPrompt,
       mainProductContext,
+      buyerQuestions:
+        scoringMode === "main"
+          ? { kind: "all" }
+          : supportingDependency?.ready
+          ? supportingDependency.buyerQuestions
+          : { kind: "none" },
     });
   } catch (err) {
     const error =

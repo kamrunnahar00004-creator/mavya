@@ -25,7 +25,14 @@ type Props = {
   /** Highest-priority recommended fix (only for sub-8 photos). */
   topFix?: string | null;
   ratingJobId?: string | null;
-  ratingStatus?: "queued" | "scoring" | "completed" | "failed" | "cancelled" | null;
+  ratingStatus?:
+    | "queued"
+    | "waiting_dependency"
+    | "scoring"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
   ratingError?: string | null;
 };
 
@@ -69,7 +76,12 @@ export function ProductCard({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!ratingJobId || (ratingStatus !== "queued" && ratingStatus !== "scoring")) {
+    if (
+      !ratingJobId ||
+      (ratingStatus !== "queued" &&
+        ratingStatus !== "waiting_dependency" &&
+        ratingStatus !== "scoring")
+    ) {
       return;
     }
     let cancelled = false;
@@ -89,7 +101,12 @@ export function ProductCard({
           router.push(`/dashboard/product/${id}`);
           return;
         }
-        if (body.status && body.status !== "queued" && body.status !== "scoring") {
+        if (
+          body.status &&
+          body.status !== "queued" &&
+          body.status !== "waiting_dependency" &&
+          body.status !== "scoring"
+        ) {
           router.refresh();
         }
       } catch {
@@ -248,7 +265,9 @@ export function ProductCard({
               </span>
             )}
             {typeof score !== "number" &&
-              (ratingStatus === "queued" || ratingStatus === "scoring") && (
+              (ratingStatus === "queued" ||
+                ratingStatus === "waiting_dependency" ||
+                ratingStatus === "scoring") && (
                 <span className="inline-flex items-center gap-1.5 text-[11.5px] font-medium text-[var(--color-primary)]">
                   <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />
                   Rating…

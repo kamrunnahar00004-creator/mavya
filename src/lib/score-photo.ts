@@ -1,6 +1,5 @@
 import {
   RUBRIC_PROMPT,
-  buyerQuestionsPromptBlock,
   computeOverall,
   computeSupportingOverall,
   isChecklistItem,
@@ -19,6 +18,7 @@ import { checklistCall, visionScoreCall } from "@/lib/openai";
 import { ALL_SHOT_IDS, poolFor } from "@/data/photo-checklist-pool";
 import {
   ALL_BUYER_QUESTION_CATALOGS,
+  buyerQuestionsPromptBlock,
   catalogForCategory,
   idsBelongToCatalog,
   type QuestionCatalog,
@@ -35,6 +35,7 @@ import {
  * required to come back empty.
  */
 export type BuyerQuestionMode =
+  | { kind: "none" }
   | { kind: "all" }
   | { kind: "single"; category: string };
 
@@ -115,10 +116,9 @@ export async function scorePhoto(args: {
    *  fidelity is verified by a separate dedicated check, so the scorer grades
    *  photographic quality only and never speculates about provenance. */
   isGeneratedCandidate?: boolean;
-  /** Which buyer-question catalog(s) to give this call. Omit to skip the
-   *  feature entirely for this call (answers_question_ids must then come
-   *  back empty). */
-  buyerQuestions?: BuyerQuestionMode;
+  /** Explicit coverage contract for this call. Generated candidates use
+   *  "none"; persisted main/supporting ratings use "all"/"single". */
+  buyerQuestions: BuyerQuestionMode;
 }): Promise<RubricJson> {
   const dataUrl = `data:${args.imageMimeType};base64,${args.imageBuffer.toString("base64")}`;
 
@@ -133,11 +133,11 @@ export async function scorePhoto(args: {
   // no catalog applies -- inject nothing, and validation below requires an
   // empty answers_question_ids.
   const buyerQuestionCatalogs: readonly QuestionCatalog[] =
-    args.buyerQuestions?.kind === "all"
+    args.buyerQuestions.kind === "all"
       ? ALL_BUYER_QUESTION_CATALOGS
-      : args.buyerQuestions?.kind === "single"
+      : args.buyerQuestions.kind === "single"
       ? (() => {
-          const c = catalogForCategory(args.buyerQuestions!.category);
+          const c = catalogForCategory(args.buyerQuestions.category);
           return c ? [c] : [];
         })()
       : [];
@@ -172,7 +172,10 @@ export async function scorePhoto(args: {
 
     try {
       const candidate: unknown = JSON.parse(raw);
-      if (isRubricJson(candidate) && candidate.upload_kind !== "invalid") {
+      const currentResponse =
+        isRubricJson(candidate) && Array.isArray(candidate.answers_question_ids);
+      if (currentResponse && candidate.upload_kind !== "invalid") {
+        const answerIds = candidate.answers_question_ids!;
         // Semantic catalog check (shape-only isRubricJson can't do this, it
         // has no catalog context): every returned id must belong to the
         // ONE catalog appropriate for this response, no cross-category
@@ -182,14 +185,14 @@ export async function scorePhoto(args: {
         // every individual id is technically real somewhere, exactly the
         // cross-category case this guards against.
         const answerCatalog =
-          args.buyerQuestions?.kind === "all"
+          args.buyerQuestions.kind === "all"
             ? catalogForCategory(candidate.detected_category)
-            : args.buyerQuestions?.kind === "single"
+            : args.buyerQuestions.kind === "single"
             ? catalogForCategory(args.buyerQuestions.category)
             : undefined;
         const idsOk = answerCatalog
-          ? idsBelongToCatalog(candidate.answers_question_ids, answerCatalog)
-          : candidate.answers_question_ids.length === 0;
+          ? idsBelongToCatalog(answerIds, answerCatalog)
+          : answerIds.length === 0;
         if (idsOk) {
           parsed = candidate;
           if (answerCatalog) {
@@ -208,12 +211,12 @@ export async function scorePhoto(args: {
             category: candidate.detected_category,
           })
         );
-      } else if (isRubricJson(candidate)) {
+      } else if (currentResponse) {
         // upload_kind "invalid": no product to answer buyer questions about.
         // Accept as-is (answers_question_ids is already [] on this path per
         // INVALID_RESPONSE / the model's own invalid-input JSON template);
         // do not apply the catalog check meant for real product photos.
-        parsed = candidate;
+        parsed = { ...candidate, answers_question_ids: [] };
         break;
       }
     } catch {

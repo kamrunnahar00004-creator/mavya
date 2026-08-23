@@ -29,7 +29,11 @@ describe.skipIf(!RUN)("one-shot score variance", () => {
       ? "image/jpeg"
       : "image/png";
     for (let i = 1; i <= REPEATS; i++) {
-      const r = (await scorePhoto({ imageBuffer: buf, imageMimeType: mime })) as unknown as Record<string, unknown>;
+      const r = (await scorePhoto({
+        imageBuffer: buf,
+        imageMimeType: mime,
+        buyerQuestions: { kind: "all" },
+      })) as unknown as Record<string, unknown>;
       const p = (r.pillars ?? {}) as Record<string, number>;
       console.log(
         `run ${i}: overall=${r.overall_score} raw=${r.raw_overall_score} ` +

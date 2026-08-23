@@ -8,6 +8,7 @@ import {
 } from "@/lib/refinement";
 import {
   recoverStaleRatingJobs,
+  requeueReadyDependencyRatingJobs,
   runQueuedRatingOnce,
 } from "@/lib/rating-jobs";
 import { drainStorageCleanup } from "@/lib/storage-cleanup";
@@ -53,6 +54,14 @@ async function handle(req: NextRequest) {
     logEvent("worker.failure_scan_failed", {});
   }
   const staleRatingsRecovered = await recoverStaleRatingJobs();
+  let dependencyRatingsRequeued = 0;
+  let dependencyRatingScanError = false;
+  try {
+    dependencyRatingsRequeued = await requeueReadyDependencyRatingJobs();
+  } catch {
+    dependencyRatingScanError = true;
+    logEvent("worker.rating_dependency_scan_failed", {});
+  }
   // Durable backstop for the deletion outbox (the delete endpoints also kick a
   // drain via after(); this guarantees eventual cleanup if that kick died).
   const storageCleaned = await drainStorageCleanup(admin);
@@ -76,6 +85,8 @@ async function handle(req: NextRequest) {
     failuresRequeued,
     failureScanError,
     staleRatingsRecovered,
+    dependencyRatingsRequeued,
+    dependencyRatingScanError,
     storageCleaned,
     processed: processed.length,
   });
@@ -86,6 +97,8 @@ async function handle(req: NextRequest) {
       failuresRequeued,
       failureScanError,
       staleRatingsRecovered,
+      dependencyRatingsRequeued,
+      dependencyRatingScanError,
       storageCleaned,
       processed,
     },

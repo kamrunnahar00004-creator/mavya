@@ -29,7 +29,7 @@ export type CategoryDef = {
   generation: string | null;
 };
 
-export const CATEGORIES: readonly CategoryDef[] = [
+export const CATEGORIES = [
   // ------------------------------------------------------------- physical
   {
     id: "jewelry",
@@ -268,13 +268,15 @@ export const CATEGORIES: readonly CategoryDef[] = [
       "Judge design legibility, editability communication, and printed-result context. Placeholder names should look intentional.",
     generation: null,
   },
-] as const;
+] as const satisfies readonly CategoryDef[];
+
+export type CanonicalCategory = (typeof CATEGORIES)[number]["id"];
 
 /** Canonical category ids + the explicit unknown fallback. */
-export const CATEGORY_IDS: readonly string[] = CATEGORIES.map((c) => c.id);
+export const CATEGORY_IDS: readonly CanonicalCategory[] = CATEGORIES.map((c) => c.id);
 export const DETECTED_CATEGORY_VALUES: readonly string[] = [...CATEGORY_IDS, "other"];
 
-const BY_ID = new Map(CATEGORIES.map((c) => [c.id, c]));
+const BY_ID = new Map<string, CategoryDef>(CATEGORIES.map((c) => [c.id, c]));
 
 export function categoryById(id: string): CategoryDef | undefined {
   return BY_ID.get(id);

@@ -11,7 +11,14 @@ export type OverviewRow = {
   score: number | null;
   priority_action: string | null;
   rating_job_id: string | null;
-  rating_status: "queued" | "scoring" | "completed" | "failed" | "cancelled" | null;
+  rating_status:
+    | "queued"
+    | "waiting_dependency"
+    | "scoring"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | null;
   rating_error: string | null;
 };
 

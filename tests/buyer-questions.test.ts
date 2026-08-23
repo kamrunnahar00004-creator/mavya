@@ -2,13 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   ALL_BUYER_QUESTION_CATALOGS,
   ALL_BUYER_QUESTION_IDS,
+  MAX_BUYER_QUESTION_PROMPT_CHARS,
   MAX_BUYER_QUESTIONS_PER_CATEGORY,
-  MAX_SERIALIZED_BUYER_CATALOG_CHARS,
   MAX_TOTAL_BUYER_QUESTIONS,
   catalogForCategory,
+  buyerQuestionsPromptBlock,
   idsBelongToCatalog,
 } from "@/data/buyer-questions";
-import { DETECTED_CATEGORY_VALUES } from "@/lib/taxonomy";
+import { CATEGORY_IDS } from "@/lib/taxonomy";
 
 describe("buyer-question catalog (slice 1)", () => {
   it("stays within every exact size cap", () => {
@@ -21,14 +22,24 @@ describe("buyer-question catalog (slice 1)", () => {
     expect(ALL_BUYER_QUESTION_IDS.size).toBeLessThanOrEqual(
       MAX_TOTAL_BUYER_QUESTIONS
     );
-    const serialized = JSON.stringify(ALL_BUYER_QUESTION_CATALOGS).length;
-    expect(serialized).toBeLessThanOrEqual(MAX_SERIALIZED_BUYER_CATALOG_CHARS);
+    const prompt = buyerQuestionsPromptBlock(ALL_BUYER_QUESTION_CATALOGS);
+    expect(prompt.length).toBeLessThanOrEqual(MAX_BUYER_QUESTION_PROMPT_CHARS);
   });
 
-  it("every catalog key is a real canonical detected_category id", () => {
-    for (const catalog of ALL_BUYER_QUESTION_CATALOGS) {
-      expect(DETECTED_CATEGORY_VALUES).toContain(catalog.category);
-    }
+  it("covers every canonical category exactly and deliberately excludes other", () => {
+    expect(ALL_BUYER_QUESTION_CATALOGS.map((c) => c.category).sort()).toEqual(
+      [...CATEGORY_IDS].sort()
+    );
+    expect(catalogForCategory("other")).toBeUndefined();
+  });
+
+  it("keeps semantic ids stable when question order changes", () => {
+    const jewelry = catalogForCategory("jewelry")!;
+    const reversed = [...jewelry.questions].reverse();
+    expect(new Set(reversed.map((q) => q.id))).toEqual(
+      new Set(jewelry.questions.map((q) => q.id))
+    );
+    expect(jewelry.questions.some((q) => /_\d+$/.test(q.id))).toBe(false);
   });
 
   it("every question id is globally unique and namespaced to its own category", () => {

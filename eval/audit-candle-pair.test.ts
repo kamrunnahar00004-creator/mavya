@@ -157,6 +157,7 @@ describe.skipIf(!RUN)("all-products score audit", () => {
                       photo.role === "supporting" ? GENERAL_RUBRIC_PROMPT : undefined,
                     mainProductContext:
                       photo.role === "supporting" ? mainContext : undefined,
+                    buyerQuestions: { kind: "none" },
                   })) as unknown as AnyRow;
                   console.log(`  RESCORE ${t.label} run ${i}: ${pillarLine(r)}`);
                   console.log(`     priority_action: ${r.priority_action}`);

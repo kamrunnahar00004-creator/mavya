@@ -188,7 +188,9 @@ function makePhoto(p: InitialPhoto): Photo {
   // rating job runs, or a failed state the seller can delete. Never vanish.
   if (!p.rubric) {
     const ratingActive =
-      p.ratingJob?.status === "queued" || p.ratingJob?.status === "scoring";
+      p.ratingJob?.status === "queued" ||
+      p.ratingJob?.status === "waiting_dependency" ||
+      p.ratingJob?.status === "scoring";
     return {
       ...analyzingPhoto(p.id, p.imageSrc),
       kind: p.role,
@@ -441,7 +443,13 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
             message?: string | null;
             rubric?: RubricJson | null;
           };
-          if (body.status === "queued" || body.status === "scoring") return;
+          if (
+            body.status === "queued" ||
+            body.status === "waiting_dependency" ||
+            body.status === "scoring"
+          ) {
+            return;
+          }
           clearInterval(pollTimers.current[key]);
           delete pollTimers.current[key];
           if (!mountedRef.current) return;
@@ -802,7 +810,9 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       if (
         !p.rubric &&
         p.ratingJob &&
-        (p.ratingJob.status === "queued" || p.ratingJob.status === "scoring")
+        (p.ratingJob.status === "queued" ||
+          p.ratingJob.status === "waiting_dependency" ||
+          p.ratingJob.status === "scoring")
       ) {
         pollRating(p.id, p.ratingJob.id);
       }
@@ -825,7 +835,12 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         if (!res.ok || cancelled) return;
         const body = (await res.json()) as { status?: string };
         if (cancelled) return;
-        if (body.status && body.status !== "queued" && body.status !== "scoring") {
+        if (
+          body.status &&
+          body.status !== "queued" &&
+          body.status !== "waiting_dependency" &&
+          body.status !== "scoring"
+        ) {
           window.clearInterval(timer);
           router.refresh();
         }
@@ -875,7 +890,9 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
       if (
         !p.rubric &&
         p.ratingJob &&
-        (p.ratingJob.status === "queued" || p.ratingJob.status === "scoring")
+        (p.ratingJob.status === "queued" ||
+          p.ratingJob.status === "waiting_dependency" ||
+          p.ratingJob.status === "scoring")
       ) {
         pollRating(p.id, p.ratingJob.id);
       }
@@ -1177,7 +1194,11 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
             rubric?: RubricJson | null;
             storagePath?: string | null;
           };
-          if (status.status === "queued" || status.status === "scoring") continue;
+          if (
+            status.status === "queued" ||
+            status.status === "waiting_dependency" ||
+            status.status === "scoring"
+          ) continue;
           if (status.status !== "completed" || !status.rubric) {
             throw new Error(status.message || "That photo could not be graded.");
           }
