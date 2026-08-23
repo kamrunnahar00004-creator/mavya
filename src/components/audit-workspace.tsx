@@ -30,6 +30,8 @@ import { PillarScores } from "./pillar-scores";
 import { NextSteps } from "./next-steps";
 import { EditPhotoModal } from "./edit-photo-modal";
 import { PhotoChecklistPanel } from "./photo-checklist-panel";
+import { BuyerQuestionCoveragePanel } from "./buyer-question-coverage-panel";
+import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { SUPPORTING_ROLE_LABELS } from "@/lib/audit-mapping";
 import { buildEditSuggestionChips, deriveEditContext } from "@/lib/selection-display";
 
@@ -123,6 +125,14 @@ type Props = {
   analyzing?: boolean;
   animate?: boolean;
   initialPreview?: boolean;
+  /** Server-computed buyer-question coverage (slice 3, 2026-08-23). Omitted
+   *  entirely on the landing-page demo, which has no real coverage data --
+   *  the panel below falls back to the legacy checklist exactly as before
+   *  when this is undefined, so the demo is unaffected. */
+  coverageState?: CoverageState;
+  /** photoId -> short display label, for tagging which photo answers a
+   *  question in the coverage panel. */
+  photoLabelById?: Map<string, string>;
 };
 
 export function AuditWorkspace({
@@ -157,6 +167,8 @@ export function AuditWorkspace({
   analyzing = false,
   animate = true,
   initialPreview = false,
+  coverageState,
+  photoLabelById,
 }: Props) {
   const isExtra = panelMode === "extra";
   const [revealed, setRevealed] = useState(!animate);
@@ -564,7 +576,31 @@ export function AuditWorkspace({
             />
           )}
 
+          {!isExtra && coverageState && coverageState.status !== "unavailable" && (
+            coverageState.status === "legacy" ? (
+              (checklistLoading ||
+                checklistError ||
+                (state.supportingChecklist && state.supportingChecklist.length > 0)) && (
+                <PhotoChecklistPanel
+                  checklist={state.supportingChecklist ?? []}
+                  loading={checklistLoading}
+                  error={checklistError}
+                  onRetry={onChecklistRetry}
+                  coveredShotIds={coveredShotIds}
+                />
+              )
+            ) : (
+              <BuyerQuestionCoveragePanel
+                coverageState={coverageState}
+                photoLabelById={photoLabelById ?? new Map()}
+              />
+            )
+          )}
+          {/* coverageState is undefined only on the landing-page demo (no real
+              coverage data exists there) -- same legacy-checklist behavior as
+              before this slice, completely unaffected. */}
           {!isExtra &&
+            !coverageState &&
             (checklistLoading ||
               checklistError ||
               (state.supportingChecklist &&

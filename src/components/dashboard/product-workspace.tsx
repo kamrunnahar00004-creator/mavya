@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { AnalyzingState } from "@/components/analyzing-state";
@@ -383,10 +383,25 @@ function newId(): string {
  * through persisted, idempotent jobs (photoId contract; the server loads the
  * stored audit + image, so nothing here is trusted for billing or safety).
  */
-export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Props) {
+export function ProductWorkspace({
+  productId,
+  initialPhotos,
+  pendingMain,
+  coverageState,
+}: Props) {
   const mountedRef = useRef(true);
   const router = useRouter();
   const [photos, setPhotos] = useState<Photo[]>(() => initialPhotos.map(makePhoto));
+  // photoId -> short display label for the coverage panel's "which photo
+  // answers this" tag. Derived from the SAME live, already-ordered photos
+  // state the rest of the workspace renders -- no separate data source.
+  const photoLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    photos.forEach((p, i) => {
+      map.set(p.id, p.kind === "main" ? "Main photo" : `Photo ${i + 1}`);
+    });
+    return map;
+  }, [photos]);
   const [activeId, setActiveId] = useState<string>(
     () => initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
   );
@@ -1422,6 +1437,8 @@ export function ProductWorkspace({ productId, initialPhotos, pendingMain }: Prop
         freePreviewMessage={active.freePreviewMsg}
         checklistLoading={active.kind === "main" ? checklistLoading : false}
         coveredShotIds={active.kind === "main" ? [...covered] : undefined}
+        coverageState={coverageState}
+        photoLabelById={photoLabelById}
         animate
       />
       {/* Version strip hidden: seller sees one current improved preview, not 1/2/3 picker. */}
