@@ -60,7 +60,7 @@ function item(rank: number): SupportingPhotoChecklistItem {
 const savedList = [item(1), item(2)];
 
 function makeServer(args: {
-  photo?: { id: string; role: string } | null;
+  photo?: { id: string; role: string; current_audit_id?: string | null } | null;
   audit?: { id: string; photo_id: string; rubric: unknown; created_at: string } | null;
 }) {
   return {
@@ -124,7 +124,7 @@ describe("checklist route: cached-first", () => {
 
   it("a saved checklist bypasses provider, entitlement, and rate limits", async () => {
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow(savedList) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow(savedList) })
     );
     const res = await POST(request());
     const body = await res.json();
@@ -139,7 +139,7 @@ describe("checklist route: cached-first", () => {
   it("a past-due user still reads the saved checklist", async () => {
     mockEntitlement.mockResolvedValue({ active: false, reason: "past_due" });
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow(savedList) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow(savedList) })
     );
     const res = await POST(request());
     const body = await res.json();
@@ -159,7 +159,7 @@ describe("checklist route: cached-first", () => {
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
       makeServer({
-        photo: { id: "photo-1", role: "main" },
+        photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" },
         audit: auditRow([{ bogus: true }]), // malformed items
       })
     );
@@ -171,6 +171,20 @@ describe("checklist route: cached-first", () => {
 
   it("another user's photo (RLS null) returns empty with zero provider calls", async () => {
     mockServerClient.mockResolvedValue(makeServer({ photo: null }));
+    const res = await POST(request());
+    const body = await res.json();
+    expect(body.supporting_photo_checklist).toEqual([]);
+    expect(mockGenerate).not.toHaveBeenCalled();
+    expect(mockAdminClient).not.toHaveBeenCalled();
+  });
+
+  it("a main photo with no current_audit_id returns empty without an independent latest-audit lookup (slice 2)", async () => {
+    mockServerClient.mockResolvedValue(
+      makeServer({
+        photo: { id: "photo-1", role: "main", current_audit_id: null },
+        audit: auditRow(savedList), // present in the mock DB, but unreachable: no pointer to it
+      })
+    );
     const res = await POST(request());
     const body = await res.json();
     expect(body.supporting_photo_checklist).toEqual([]);
@@ -191,7 +205,7 @@ describe("checklist route: claim and persistence", () => {
     const { admin } = makeAdmin({ claim_checklist_generation: [null] });
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow([]) })
     );
     const res = await POST(request());
     const body = await res.json();
@@ -211,7 +225,7 @@ describe("checklist route: claim and persistence", () => {
     });
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow([]) })
     );
     const res = await POST(request());
     expect(res.status).toBe(200);
@@ -229,7 +243,7 @@ describe("checklist route: claim and persistence", () => {
     });
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow([]) })
     );
     const res = await POST(request());
     const body = await res.json();
@@ -255,7 +269,7 @@ describe("checklist route: claim and persistence", () => {
     });
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow([]) })
     );
     const [a, b] = await Promise.all([POST(request()), POST(request())]);
     expect(mockGenerate).toHaveBeenCalledTimes(1);
@@ -270,7 +284,7 @@ describe("checklist route: claim and persistence", () => {
     });
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow([]) })
     );
     const res = await POST(request());
     const body = await res.json();
@@ -290,7 +304,7 @@ describe("checklist route: claim and persistence", () => {
     });
     mockAdminClient.mockReturnValue(admin);
     mockServerClient.mockResolvedValue(
-      makeServer({ photo: { id: "photo-1", role: "main" }, audit: auditRow([]) })
+      makeServer({ photo: { id: "photo-1", role: "main", current_audit_id: "audit-1" }, audit: auditRow([]) })
     );
     await POST(request());
     const save = calls.find((c) => c.fn === "save_supporting_checklist");

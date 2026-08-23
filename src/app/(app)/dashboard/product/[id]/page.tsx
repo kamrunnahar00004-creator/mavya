@@ -12,10 +12,16 @@ import { getEntitlement } from "@/lib/entitlements";
 import { batchSignUrls } from "@/lib/batch-sign-urls";
 import { unwrapOrThrow } from "@/lib/unwrap";
 import { timed } from "@/lib/perf";
+import {
+  computeBuyerQuestionCoverage,
+  type CoveragePhotoInput,
+  type CoverageRatingStatus,
+  type CoverageState,
+} from "@/lib/buyer-question-coverage";
 
 export const dynamic = "force-dynamic";
 
-type AuditRow = { id: string; rubric: RubricJson; created_at: string };
+type AuditRow = { id: string; rubric: RubricJson; rubric_version: string | null; created_at: string };
 type PhotoRow = {
   id: string;
   role: "main" | "supporting";
@@ -123,7 +129,7 @@ export default async function ProductPage({
           await timed("product.current_audits", () =>
             supabase
               .from("audits")
-              .select("id, rubric, created_at")
+              .select("id, rubric, rubric_version, created_at")
               .in("id", currentAuditIds)
           ),
           "product_hydration_failed"
@@ -141,14 +147,21 @@ export default async function ProductPage({
     (async () => {
       const ratingByPhoto = new Map<
         string,
-        { id: string; status: string; error_message: string | null }
+        { id: string; status: string; error_message: string | null; error_code: string | null }
       >();
       if (photoIds.length > 0) {
+        // rating_jobs has a UNIQUE constraint on photo_id (migration 0012):
+        // there is ever at most one row per photo, so this can never be
+        // crowded out by another photo's history the way generation_jobs'
+        // per-photo-window query below genuinely needs to guard against --
+        // .in("photo_id", photoIds) alone already returns at most
+        // photoIds.length rows, full stop. The limit here is generous
+        // headroom, not load-bearing correctness.
         const ratingRows = unwrapOrThrow(
           await timed("product.ratings", () =>
             supabase
               .from("rating_jobs")
-              .select("id, photo_id, status, error_message, created_at")
+              .select("id, photo_id, status, error_message, error_code, created_at")
               .in("photo_id", photoIds)
               .order("created_at", { ascending: false })
               .limit(photoIds.length * 3)
@@ -156,7 +169,13 @@ export default async function ProductPage({
           "product_hydration_failed"
         );
         for (const r of (ratingRows as
-          | { id: string; photo_id: string; status: string; error_message: string | null }[]
+          | {
+              id: string;
+              photo_id: string;
+              status: string;
+              error_message: string | null;
+              error_code: string | null;
+            }[]
           | null) ?? []) {
           if (!ratingByPhoto.has(r.photo_id)) ratingByPhoto.set(r.photo_id, r);
         }
@@ -218,6 +237,37 @@ export default async function ProductPage({
     })(),
   ]);
   const { jobsByPhoto, jobsByPhotoId, jobsById } = generationsResult;
+
+  // Server-authoritative buyer-question coverage (slice 2). Pure function
+  // over data already fetched above -- no new query. The client never
+  // recomputes this; it's passed down as a prop.
+  const coverageState: CoverageState = computeBuyerQuestionCoverage(
+    rows.map(
+      (row): CoveragePhotoInput => ({
+        id: row.id,
+        role: row.role,
+        position: row.position,
+        createdAt: row.created_at,
+        currentAudit: row.current_audit_id
+          ? (() => {
+              const audit = auditsById.get(row.current_audit_id!);
+              return audit
+                ? { rubric: audit.rubric, rubricVersion: audit.rubric_version }
+                : null;
+            })()
+          : null,
+        ratingJob: (() => {
+          const r = ratingByPhoto.get(row.id);
+          // rating_jobs.status is DB-constrained to exactly these six
+          // values (migration 0028); loosely typed as `string` at the
+          // query boundary same as elsewhere in this file.
+          return r
+            ? { status: r.status as CoverageRatingStatus, errorCode: r.error_code }
+            : null;
+        })(),
+      })
+    )
+  );
 
   // Pre-calculate selected and completed rows for each photo to avoid duplication.
   // Only process photos with valid latest rubric.
@@ -475,6 +525,7 @@ export default async function ProductPage({
               jobId: pendingJob.id,
               imageSrc: pendingSigned.get(mainRow.storage_path) ?? null,
             }}
+            coverageState={{ status: "unavailable", reason: "no_main_audit" }}
           />
         );
       }
@@ -487,6 +538,7 @@ export default async function ProductPage({
       productId={product.id}
       productName={product.name}
       initialPhotos={initialPhotos}
+      coverageState={coverageState}
     />
   );
 }

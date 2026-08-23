@@ -135,7 +135,9 @@ describe("product hydration fetches the audit via current_audit_id (0024)", () =
   });
 
   it("still carries the full rubric (incl. persisted checklist), not a trimmed subset", () => {
-    expect(page).toContain("id, rubric, created_at");
+    // rubric_version was added (slice 2, buyer-question coverage) alongside
+    // the existing fields -- a widened select, not a trimmed one.
+    expect(page).toContain("id, rubric, rubric_version, created_at");
     expect(page).not.toContain("rubric->'priority_action'"); // no field trimming here
   });
 });

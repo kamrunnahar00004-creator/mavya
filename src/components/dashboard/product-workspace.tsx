@@ -33,6 +33,7 @@ import { mergeChecklist, parseSavedChecklist } from "@/lib/checklist-store";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { prepareUploadImage } from "@/lib/client-image";
 import { trackClientEvent } from "@/lib/track-client";
+import type { CoverageState } from "@/lib/buyer-question-coverage";
 
 export type InitialJob = {
   id: string;
@@ -94,6 +95,10 @@ type Props = {
   /** Main photo whose durable rating job is still running: the workspace
    *  shows the analyzing state, polls the job, and refreshes on completion. */
   pendingMain?: { photoId: string; jobId: string; imageSrc: string | null } | null;
+  /** Server-computed buyer-question coverage (slice 2, 2026-08-23). Prop
+   *  wiring only in this slice -- not yet rendered anywhere. The client
+   *  never recomputes this; it always comes from the server. */
+  coverageState: CoverageState;
 };
 
 type Photo = {

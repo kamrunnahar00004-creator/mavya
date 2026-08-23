@@ -50,19 +50,26 @@ export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const { data: photo } = await supabase
     .from("photos")
-    .select("id, role")
+    .select("id, role, current_audit_id")
     .eq("id", photoId)
     .eq("role", "main")
     .maybeSingle();
   if (!photo) return empty();
 
-  // 3. The exact latest audit (id captured now; everything below binds to it).
+  // 3. THE audit is photos.current_audit_id -- the same single source of
+  // truth the product page and buyer-question coverage both trust
+  // (migration 0024). An independent created_at-desc "latest audit" lookup
+  // was removed here (2026-08-23, slice 2): current_audit_id can legitimately
+  // disagree with raw-latest-by-timestamp (the keep-better floor can leave
+  // an older audit current over a worse re-score), so re-deriving "latest"
+  // here could show checklist suggestions for a different audit than the
+  // one the seller is actually looking at on the product page.
+  if (!photo.current_audit_id) return empty();
   const { data: audit } = await supabase
     .from("audits")
     .select("id, photo_id, rubric, created_at")
+    .eq("id", photo.current_audit_id)
     .eq("photo_id", photo.id)
-    .order("created_at", { ascending: false })
-    .limit(1)
     .maybeSingle();
   const rubric = (audit?.rubric ?? null) as RubricJson | null;
   if (!audit || !rubric || rubric.upload_kind === "invalid") return empty();
