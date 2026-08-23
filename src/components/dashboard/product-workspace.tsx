@@ -29,6 +29,7 @@ import {
   oneClickGenerationAllowed,
 } from "@/lib/selection-display";
 import { coveredShotIds } from "@/lib/checklist-coverage";
+import { isFixAllDisplayEligible } from "@/lib/fix-eligibility";
 import { mergeChecklist, parseSavedChecklist } from "@/lib/checklist-store";
 import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { prepareUploadImage } from "@/lib/client-image";
@@ -139,6 +140,11 @@ type Photo = {
   versions: InitialJob[];
   /** Currently selected version (null = original). */
   selectedJobId: string | null;
+  /** The photo's CURRENT audit rubric (null while ungraded/failed). Kept
+   *  live -- updated whenever a rating (re)completes, not just at initial
+   *  hydration -- so the "Fix all" display hint (isFixAllDisplayEligible)
+   *  never goes stale relative to what the seller is actually looking at. */
+  rubric: RubricJson | null;
 };
 
 type RevertSnap = {
@@ -230,6 +236,7 @@ function makePhoto(p: InitialPhoto): Photo {
     versions: p.versions ?? [],
     selectedJobId: p.selectedJobId ?? p.selectedJob?.id ?? null,
     reverted: p.selectionIsReverted ?? false,
+    rubric: p.rubric,
   };
   if (p.hasAlternateGeneration) {
     if (p.alternateJob) {
@@ -347,6 +354,7 @@ function analyzingPhoto(id: string, imageSrc: string): Photo {
     revertSnap: null,
     versions: [],
     selectedJobId: null,
+    rubric: null,
   };
 }
 
@@ -488,6 +496,7 @@ export function ProductWorkspace({
               isMarketingGraphic: body.rubric.is_marketing_graphic === true,
               failedMsg: undefined,
               ratingJobId: undefined,
+              rubric: body.rubric,
             });
           } else {
             patch(photoId, {
@@ -1153,6 +1162,134 @@ export function ProductWorkspace({
   const handleAddPhoto = useCallback(() => extraInputRef.current?.click(), []);
 
   // ------------------------------------------------------------------
+  // "Fix all" bulk trigger. A DISPLAY hint only (isFixAllDisplayEligible) --
+  // POST /api/generate/bulk re-derives the real eligible set server-side on
+  // every click. Below 2 eligible photos, the single-photo action already
+  // covers it, so the button stays hidden (Codex review).
+  // ------------------------------------------------------------------
+  const fixAllEligiblePhotos = useMemo(
+    () =>
+      photos.filter((p) =>
+        isFixAllDisplayEligible({
+          rubric: p.rubric,
+          role: p.kind,
+          graded: p.status === "graded",
+          active: p.improveStatus === "generating" || p.backgroundRefining,
+          alreadyImproved: p.selectedJobId != null,
+        })
+      ),
+    [photos]
+  );
+  const [bulkFixBusy, setBulkFixBusy] = useState(false);
+  const bulkFixBusyRef = useRef(false);
+
+  const handleFixAll = useCallback(async () => {
+    if (bulkFixBusyRef.current) return;
+    bulkFixBusyRef.current = true;
+    setBulkFixBusy(true);
+    setNotice(null);
+    trackClientEvent("fix_all_clicked");
+
+    // Idempotency key survives a closed tab (localStorage, scoped to this
+    // product): if the request already reached the server before the tab
+    // died, reusing the same key resumes that exact frozen roster instead
+    // of computing a second, possibly different one. Cleared only once we
+    // KNOW the request settled (a real roster back, or a definite conflict)
+    // -- kept for a network failure, 429, or 5xx, since the server may
+    // already have frozen the request even though we never saw the reply.
+    const storageKey = `mavya:fixall:${productId}`;
+    let idempotencyKey = "";
+    try {
+      idempotencyKey = window.localStorage.getItem(storageKey) ?? "";
+    } catch {
+      idempotencyKey = "";
+    }
+    if (!idempotencyKey) {
+      idempotencyKey = newId();
+      try {
+        window.localStorage.setItem(storageKey, idempotencyKey);
+      } catch {
+        // Private mode / storage disabled: proceeds in-memory only. A lost
+        // tab just means a re-click starts a fresh bulk request instead of
+        // resuming -- the backend's own concurrency guard (migration 0029)
+        // still prevents any photo from being double-charged.
+      }
+    }
+
+    type BulkRoster = {
+      ok: true;
+      requestId: string;
+      summary: { total: number; queued: number; skipped: number; failed: number };
+      photos: Array<{
+        photoId: string;
+        status: "queued" | "skipped" | "failed";
+        jobId?: string;
+        reason?: string;
+      }>;
+    };
+    type BulkError = { ok: false; code?: string; message?: string };
+
+    try {
+      const res = await fetch("/api/generate/bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId, idempotencyKey }),
+      });
+      const data = (await res.json().catch(() => null)) as BulkRoster | BulkError | null;
+
+      if (res.ok && data && "summary" in data) {
+        try {
+          window.localStorage.removeItem(storageKey);
+        } catch {
+          // Nothing to clean up if storage is unavailable.
+        }
+        for (const entry of data.photos) {
+          if (entry.status !== "queued" || !entry.jobId) continue;
+          const jobId = entry.jobId;
+          patch(entry.photoId, {
+            improveStatus: "generating",
+            backgroundRefining: false,
+            improveStartedAt: Date.now(),
+            improveStage: JOB_STAGE_LABELS.queued,
+            improveError: undefined,
+            keepNote: undefined,
+            pendingOp: "improve",
+            canRetry: false,
+            lastJobId: jobId,
+          });
+          pollJob(entry.photoId, `id=${jobId}`);
+        }
+        const { queued, skipped, failed } = data.summary;
+        const parts: string[] = [];
+        if (queued > 0) {
+          parts.push(`Started fixes for ${queued} photo${queued === 1 ? "" : "s"}.`);
+        }
+        if (skipped > 0) parts.push(`${skipped} skipped.`);
+        if (failed > 0) parts.push(`${failed} could not be started.`);
+        setNotice(parts.length > 0 ? parts.join(" ") : "No photos needed fixing.");
+        trackClientEvent("fix_all_completed");
+      } else {
+        const err = data && !("summary" in data) ? (data as BulkError) : null;
+        if (err?.code === "idempotency_conflict") {
+          try {
+            window.localStorage.removeItem(storageKey);
+          } catch {
+            // Nothing to clean up if storage is unavailable.
+          }
+        }
+        setNotice(err?.message ?? "Fix all could not start. Try again.");
+      }
+    } catch {
+      // Network failure: the request may have already reached the server.
+      // The stored key is left in place so a re-click resumes it.
+      setNotice("Fix all could not start. Try again.");
+    } finally {
+      bulkFixBusyRef.current = false;
+      setBulkFixBusy(false);
+    }
+  }, [productId, patch, pollJob]);
+
+  // ------------------------------------------------------------------
   // Supporting-photo upload: score (authed, credit-charged) then persist.
   // Persistence failure is VISIBLE (never a silent fallback).
   // ------------------------------------------------------------------
@@ -1239,6 +1376,7 @@ export function ProductWorkspace({
             audit,
             storagePath: status.storagePath ?? "",
             supportingRole: status.rubric.supporting_photo_role,
+            rubric: status.rubric,
           });
           trackClientEvent("supporting_audit_completed");
           // Pull the newly pointer-current audit and recomputed coverage.
@@ -1407,6 +1545,20 @@ export function ProductWorkspace({
           e.target.value = "";
         }}
       />
+      {fixAllEligiblePhotos.length >= 2 && (
+        <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-6 pt-4">
+          <button
+            type="button"
+            onClick={() => void handleFixAll()}
+            disabled={bulkFixBusy}
+            className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-default disabled:opacity-70"
+          >
+            {bulkFixBusy
+              ? "Starting fixes…"
+              : `Fix ${fixAllEligiblePhotos.length} photos`}
+          </button>
+        </div>
+      )}
       <AuditWorkspace
         key={active.id}
         state={

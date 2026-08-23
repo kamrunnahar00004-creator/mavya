@@ -76,3 +76,35 @@ export function computeFixEligibilityBucket(
 export function isFixAllEligible(bucket: FixEligibilityBucket): boolean {
   return bucket === "needs_work" || bucket === "acceptable";
 }
+
+export type FixAllDisplayInput = {
+  rubric: Parameters<typeof computeFixEligibilityBucket>[0] | null;
+  role: "main" | "supporting";
+  /** photo.status === "graded" -- a rubric-less/still-rating/failed photo
+   *  has no bucket to compute at all. */
+  graded: boolean;
+  /** A generation is currently running or background-refining for this
+   *  photo (client's live view of the server's already_active check). */
+  active: boolean;
+  /** A selected generation is currently the shown preview (client's live
+   *  view of the server's already_improved check, photos.selected_generation_job_id). */
+  alreadyImproved: boolean;
+};
+
+/**
+ * "Fix all" DISPLAY eligibility (Fix-all UI wiring, 2026-08-24, Codex
+ * review). A client-side HINT ONLY, for the bulk button's label and
+ * visibility -- POST /api/generate/bulk re-derives the real eligible set
+ * from scratch on every click and is the sole authority on what actually
+ * queues. Layers the per-request conditions the intrinsic bucket alone
+ * can't see on top of computeFixEligibilityBucket + isFixAllEligible,
+ * mirroring (never duplicating) the same layering the server does in
+ * src/lib/bulk-fix.ts's classifyPhotoForBulkFix -- stale_audit ->
+ * !graded, already_active -> active, already_improved -> alreadyImproved.
+ */
+export function isFixAllDisplayEligible(input: FixAllDisplayInput): boolean {
+  if (!input.graded || !input.rubric || input.active || input.alreadyImproved) {
+    return false;
+  }
+  return isFixAllEligible(computeFixEligibilityBucket(input.rubric, input.role));
+}

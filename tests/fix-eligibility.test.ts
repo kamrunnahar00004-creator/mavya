@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   computeFixEligibilityBucket,
+  isFixAllDisplayEligible,
   isFixAllEligible,
   type FixEligibilityBucket,
 } from "@/lib/fix-eligibility";
@@ -154,5 +155,88 @@ describe("computeFixEligibilityBucket mirrors the real /api/generate gates", () 
   it("the digital/graphic gates in the real route are unconditional for non-edit operations, matching Fix all being always-auto", () => {
     expect(generateRoute).toContain('operation !== "edit" && auditIsDigital');
     expect(generateRoute).toContain('operation !== "edit" && auditIsGraphic');
+  });
+});
+
+describe("isFixAllDisplayEligible (Fix-all UI client hint)", () => {
+  it("an ungraded photo (no rubric) is never eligible", () => {
+    expect(
+      isFixAllDisplayEligible({
+        rubric: null,
+        role: "main",
+        graded: false,
+        active: false,
+        alreadyImproved: false,
+      })
+    ).toBe(false);
+  });
+
+  it("a currently generating/refining photo is not eligible", () => {
+    expect(
+      isFixAllDisplayEligible({
+        rubric: rubric({ overall_score: 5 }),
+        role: "main",
+        graded: true,
+        active: true,
+        alreadyImproved: false,
+      })
+    ).toBe(false);
+  });
+
+  it("a photo already showing a selected improvement is not eligible", () => {
+    expect(
+      isFixAllDisplayEligible({
+        rubric: rubric({ overall_score: 5 }),
+        role: "main",
+        graded: true,
+        active: false,
+        alreadyImproved: true,
+      })
+    ).toBe(false);
+  });
+
+  it("a strong photo is not eligible", () => {
+    expect(
+      isFixAllDisplayEligible({
+        rubric: rubric({ overall_score: 8.5 }),
+        role: "main",
+        graded: true,
+        active: false,
+        alreadyImproved: false,
+      })
+    ).toBe(false);
+  });
+
+  it("a not_generatable photo (e.g. digital product) is not eligible", () => {
+    expect(
+      isFixAllDisplayEligible({
+        rubric: rubric({ overall_score: 4, upload_kind: "digital_product" }),
+        role: "main",
+        graded: true,
+        active: false,
+        alreadyImproved: false,
+      })
+    ).toBe(false);
+  });
+
+  it("a graded, idle, not-yet-improved needs_work or acceptable photo IS eligible", () => {
+    expect(
+      isFixAllDisplayEligible({
+        rubric: rubric({ overall_score: 5 }),
+        role: "main",
+        graded: true,
+        active: false,
+        alreadyImproved: false,
+      })
+    ).toBe(true);
+    expect(
+      isFixAllDisplayEligible({
+        rubric: rubric({ overall_score: 7 }),
+        role: "supporting",
+        graded: true,
+        active: false,
+        alreadyImproved: false,
+      })
+    ).toBe(true);
   });
 });

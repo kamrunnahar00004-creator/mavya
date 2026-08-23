@@ -151,11 +151,14 @@ describe("0029 permissions and scope", () => {
     expect(migration).toContain("to service_role");
   });
 
-  it("does not wire a Fix-all button into the product UI in this backend slice", () => {
+  // UI wiring was deliberately deferred at Slice 4b (backend only); the
+  // product-workspace.tsx Fix-all button now exists (see tests/fix-all-ui.test.ts)
+  // and calls this exact endpoint, which is the expected, no-drift outcome.
+  it("the product UI's Fix-all button calls this exact endpoint", () => {
     const workspace = readFileSync(
       path.resolve("src/components/dashboard/product-workspace.tsx"),
       "utf8"
     );
-    expect(workspace).not.toContain("/api/generate/bulk");
+    expect(workspace).toContain('fetch("/api/generate/bulk"');
   });
 });
