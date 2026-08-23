@@ -315,10 +315,19 @@ describe("0020 generation_failures_without_successor RPC structure", () => {
 describe("polling and worker share ONE recovery implementation", () => {
   const route = readFileSync(path.resolve("src/app/api/generate/route.ts"), "utf8");
   const worker = readFileSync(path.resolve("src/app/api/generate/worker/route.ts"), "utf8");
+  // Slice 4b (2026-08-23): the single-photo queueing core, including stale
+  // recovery, was extracted into generation-queue.ts so /api/generate/bulk
+  // can share it -- neither route defines its own stale logic anymore, the
+  // recovery identifiers now live there instead of inline in route.ts.
+  const queue = readFileSync(path.resolve("src/lib/generation-queue.ts"), "utf8");
   it("the generate route no longer defines its own stale logic", () => {
     expect(route).not.toContain("failStaleJob");
-    expect(route).toContain("recoverStaleGenerationJob");
-    expect(route).toContain("isStaleActiveGenerationJob");
+    expect(route).not.toContain("recoverStaleGenerationJob");
+    expect(route).not.toContain("isStaleActiveGenerationJob");
+    expect(route).toContain("recoverIfStale");
+    expect(queue).not.toContain("failStaleJob");
+    expect(queue).toContain("recoverStaleGenerationJob");
+    expect(queue).toContain("isStaleActiveGenerationJob");
   });
   it("the worker recovers stale jobs through the shared batch function", () => {
     expect(worker).toContain("recoverStaleJobs");

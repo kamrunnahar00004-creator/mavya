@@ -8,10 +8,21 @@ export type FixEligibilityBucket =
   | "not_generatable";
 
 /**
- * "Fix all" eligibility (slice 4, 2026-08-23). Deterministic, code-computed
- * -- never returned by the AI. One shared function, used by both the
- * product-page hydration display and the bulk-fix endpoint, so the two can
- * never disagree about which photos are eligible.
+ * "Fix all" INTRINSIC quality bucket (slice 4, 2026-08-23). Deterministic,
+ * code-computed -- never returned by the AI. One shared function, used by
+ * both the product-page hydration display and the bulk-fix endpoint, so the
+ * two can never disagree about a photo's intrinsic score band and permanent
+ * generation gates.
+ *
+ * This is NOT complete "Fix all" operational eligibility (Codex architecture
+ * review, Slice 4b, 2026-08-23, finding 4): a photo can be needs_work or
+ * acceptable here and still be correctly skipped by the bulk endpoint for
+ * reasons this function has no way to see -- no current/stale audit, an
+ * already selected/generated preview (already_improved), or an active root
+ * generation workflow already in flight (already_active). Those are
+ * per-request, point-in-time conditions the bulk route (src/lib/bulk-fix.ts,
+ * src/app/api/generate/bulk/route.ts) checks separately, server-side, right
+ * before queueing.
  *
  * `not_generatable` mirrors the REAL server-side gates in
  * /api/generate/route.ts exactly (verified directly against that file this

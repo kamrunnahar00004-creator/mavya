@@ -7,7 +7,11 @@ import {
 } from "@/lib/fix-eligibility";
 import type { RubricJson } from "@/lib/rubric";
 
-const generateRoute = readFileSync("src/app/api/generate/route.ts", "utf8");
+// Slice 4b (2026-08-23): the server-side generation gates moved out of the
+// route handler into the shared generation-queue.ts primitive so
+// /api/generate and /api/generate/bulk can never disagree about them. This
+// mirrors that file now, not route.ts, which just calls into it.
+const generateRoute = readFileSync("src/lib/generation-queue.ts", "utf8");
 
 function rubric(overrides: Partial<RubricJson> = {}): Pick<
   RubricJson,

@@ -79,8 +79,10 @@ describe("worse-first-improve never displays (client wiring)", () => {
 });
 
 describe("server enforces generation gates (never trust the browser)", () => {
+  // Slice 4b (2026-08-23) moved these gates into the shared
+  // generation-queue.ts primitive so /api/generate/bulk shares them too.
   const route = readFileSync(
-    path.resolve("src/app/api/generate/route.ts"),
+    path.resolve("src/lib/generation-queue.ts"),
     "utf8"
   );
 

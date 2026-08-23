@@ -356,7 +356,9 @@ describe("0024 (6th Codex pass): isEditResult precedence, in behavioral terms", 
 });
 
 describe("0024 (4th Codex pass): generation-start DB errors are retryable failures, not false not-found", () => {
-  const route = readFileSync(path.resolve("src/app/api/generate/route.ts"), "utf8");
+  // Slice 4b (2026-08-23) moved this lookup logic out of the route into the
+  // shared generation-queue.ts primitive.
+  const route = readFileSync(path.resolve("src/lib/generation-queue.ts"), "utf8");
 
   it("a failed photo lookup logs and returns a retryable error, not 'Photo not found'", () => {
     expect(route).toContain("generate.photo_lookup_failed");

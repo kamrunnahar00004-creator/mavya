@@ -8,53 +8,21 @@ import {
   MAX_EDIT_INSTRUCTION_LEN,
 } from "@/lib/improve-photo";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
-import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
-import { generationDisabled, withinGlobalBudget } from "@/lib/usage";
+import { generationDisabled } from "@/lib/usage";
 import { getEntitlement } from "@/lib/entitlements";
-import {
-  runQueuedGenerationOnce,
-  runQueuedRefinementChain,
-  isStaleActiveGenerationJob,
-  recoverStaleGenerationJob,
-} from "@/lib/refinement";
-import { getImageModel } from "@/lib/openai";
-import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
+import { runQueuedGenerationOnce, runQueuedRefinementChain } from "@/lib/refinement";
+import { queueGeneration, recoverIfStale, type JobRow } from "@/lib/generation-queue";
 import {
   ACTIVE_JOB_STATUSES,
   type GenerationJobPayload,
   type GenerationJobStatus,
 } from "@/lib/generation-types";
-import type { RubricJson } from "@/lib/rubric";
-import type { FidelityReport } from "@/lib/fidelity";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 240;
-
-type JobRow = {
-  id: string;
-  user_id: string;
-  product_id: string | null;
-  photo_id: string | null;
-  idempotency_key: string;
-  status: GenerationJobStatus;
-  stage: string | null;
-  operation: "improve" | "edit" | "retry" | "refine";
-  edit_instruction: string | null;
-  result_storage_path: string | null;
-  candidate_rubric: RubricJson | null;
-  fidelity: FidelityReport | null;
-  outcome: "publish_ready" | "useful_free_preview" | null;
-  error_code: string | null;
-  credit_key: string | null;
-  allowance_key: string | null;
-  workflow_id: string | null;
-  attempt_number: number;
-  refunded: boolean;
-  updated_at: string;
-};
 
 async function signResult(
   supabase: SupabaseClient,
@@ -205,28 +173,6 @@ async function jobPayload(
 }
 
 /**
- * Recover an overdue ACTIVE generation attempt through the single shared
- * policy (never a queued job), then refetch so the payload reflects the failed
- * state and surfaces the queued successor. A queued job is left untouched for
- * the executor to claim.
- */
-async function recoverIfStale(
-  supabase: SupabaseClient,
-  job: JobRow
-): Promise<JobRow> {
-  if (!isStaleActiveGenerationJob(job)) return job;
-  const admin = createSupabaseAdminClient();
-  const recovered = await recoverStaleGenerationJob(admin, job.id);
-  if (!recovered) return job;
-  const { data } = await supabase
-    .from("generation_jobs")
-    .select("*")
-    .eq("id", job.id)
-    .maybeSingle();
-  return (data as JobRow) ?? job;
-}
-
-/**
  * GET: refresh-safe job status. ?id=<jobId> or ?key=<idempotencyKey>.
  * RLS scopes the select to the authenticated user's own jobs.
  */
@@ -333,208 +279,45 @@ export async function POST(req: NextRequest) {
         body.unresolvedIssues.filter((i): i is string => typeof i === "string")
       )
     : undefined;
-  const operation: JobRow["operation"] = editInstruction
+  const operation: "improve" | "edit" | "retry" = editInstruction
     ? "edit"
     : isRetry
     ? "retry"
     : "improve";
 
   const supabase = await createSupabaseServerClient();
-  const admin = createSupabaseAdminClient();
 
-  // Idempotency: an existing job for this key is returned, never re-run.
-  {
-    const { data: existing } = await supabase
-      .from("generation_jobs")
-      .select("*")
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-    if (existing) {
-      const job = existing as JobRow;
-      if (
-        job.photo_id !== photoId ||
-        job.operation !== operation ||
-        (job.edit_instruction ?? null) !== (editInstruction ?? null)
-      ) {
-        return apiError(
-          "idempotency_conflict",
-          "This request key was already used with different parameters."
-        );
-      }
-      const current = await recoverIfStale(supabase, job);
-      return NextResponse.json(await jobPayload(supabase, current), {
-        status: ACTIVE_JOB_STATUSES.has(current.status) ? 202 : 200,
-      });
-    }
-  }
+  const outcome = await queueGeneration({
+    supabase,
+    userId: user.id,
+    photoId,
+    idempotencyKey,
+    operation,
+    editInstruction,
+    previousJobId,
+    unresolvedIssues,
+  });
 
-  // Ownership: RLS scopes photos to the owner; a foreign photoId returns null.
-  // A genuine "no row" (photoErr absent, photo null) is a real not-found; a
-  // QUERY FAILURE must not be reported the same way — that would misreport a
-  // transient DB error as "Photo not found" instead of a retryable failure.
-  const { data: photo, error: photoErr } = await supabase
-    .from("photos")
-    .select("id, role, storage_path, mime, product_id, selected_generation_job_id, current_audit_id")
-    .eq("id", photoId)
-    .maybeSingle();
-  if (photoErr) {
-    logEvent("generate.photo_lookup_failed", { userId: user.id, photoId, error: photoErr.message });
-    return apiError("internal_error", "Could not start generation. Try again.");
+  if (!outcome.ok) {
+    return apiError(outcome.code, outcome.message);
   }
-  if (!photo) return apiError("source_unavailable", "Photo not found.");
-
-  // Baseline audit: the exact persisted audit the user saw. Never re-scored.
-  // Read via current_audit_id (0024's single source of truth), not an
-  // independent order-by — the same pointer the keep-better floor and the
-  // product page both read, never a third place that could disagree.
-  let auditRow:
-    | { id: string; rubric: RubricJson; created_at: string; score_cache_id: string }
-    | null = null;
-  if (photo.current_audit_id) {
-    const { data, error: auditErr } = await supabase
-      .from("audits")
-      .select("id, rubric, created_at, score_cache_id")
-      .eq("id", photo.current_audit_id)
-      .maybeSingle();
-    if (auditErr) {
-      logEvent("generate.audit_lookup_failed", {
-        userId: user.id,
-        photoId,
-        error: auditErr.message,
-      });
-      return apiError("internal_error", "Could not start generation. Try again.");
-    }
-    auditRow = data;
-  }
-  // A genuine missing/stale audit (no current_audit_id, or a legacy row
-  // without rubric/score_cache_id) is distinct from the query failures above,
-  // already returned. This is the seller's real "score it first" state.
-  if (!auditRow?.rubric || !auditRow.score_cache_id) {
-    return apiError("stale_audit", "Score this photo before improving it.");
-  }
-  const originalAudit = auditRow.rubric as RubricJson;
-  const mode: "main" | "extra" = photo.role === "main" ? "main" : "extra";
-
-  // Server-side generation gates (mirror the UI, never trust it). AUTO
-  // generation (one-click improve / retry) cannot preserve the exact text and
-  // layout of a digital listing asset or a composed listing graphic, so it is
-  // refused for those regardless of what the browser sent. Seller-directed
-  // EDITs are still allowed (explicit intent; the seller reviews the result).
-  const auditIsDigital = originalAudit.upload_kind === "digital_product";
-  const auditIsGraphic =
-    originalAudit.is_marketing_graphic === true ||
-    originalAudit.supporting_photo_role === "digital_preview";
-  if (operation !== "edit" && auditIsDigital) {
-    return apiError(
-      "unsupported_digital_generation",
-      "One-click improvement for digital product listings is not available yet because exact text and layout cannot be guaranteed. Your audit is still ready."
-    );
-  }
-  if (operation !== "edit" && auditIsGraphic) {
-    return apiError(
-      "unsupported_graphic_generation",
-      "One-click improvement is not available for a listing graphic because generation cannot preserve its exact text and layout. Your rating is ready."
-    );
-  }
-  if (originalAudit.generation_risk === "unsupported") {
-    return apiError(
-      "unsupported_product",
-      "AI improvement is not supported for this product yet because exact product details may change. Your audit is still ready."
-    );
-  }
-  if (
-    mode === "extra" &&
-    originalAudit.supporting_photo_role === "unrelated_or_wrong_product"
-  ) {
-    return apiError(
-      "wrong_product",
-      "This photo shows a different product than your listing, so it cannot be improved."
+  if (outcome.origin === "same_key_race") {
+    // Concurrent double-submit of the SAME key; tell the client to poll.
+    return NextResponse.json(
+      { ok: false, status: "queued", jobId: null, key: outcome.idempotencyKey },
+      { status: 202 }
     );
   }
 
-  if (!(await withinGlobalBudget("generate"))) {
-    return apiError("generation_disabled", "Daily capacity reached. Try again tomorrow.");
-  }
-
-  // Validate the optional base (previous completed result) BEFORE queueing so
-  // the durable executor can trust parent_job_id.
-  let baseJobId: string | null = null;
-  if (previousJobId) {
-    const { data: prev } = await supabase
-      .from("generation_jobs")
-      .select("id, status, photo_id, result_storage_path")
-      .eq("id", previousJobId)
-      .maybeSingle();
-    if (
-      prev &&
-      prev.status === "completed" &&
-      prev.photo_id === photo.id &&
-      prev.result_storage_path
-    ) {
-      baseJobId = prev.id;
-    }
-  }
-
-  // DURABLE model: queue the job and return immediately. The executor
-  // (after() below, the status-poll GET, or the worker route) owns the
-  // provider work, so closing the tab or navigating away never kills the
-  // attempt. One user request = one WORKFLOW (attempt 1 = workflow root).
-  const chargeKey = `${user.id}:workflow:${idempotencyKey}`;
-  const { data: created, error: createErr } = await admin
-    .from("generation_jobs")
-    .insert({
-      user_id: user.id,
-      product_id: photo.product_id,
-      photo_id: photo.id,
-      source_audit_id: auditRow.id,
-      idempotency_key: idempotencyKey,
-      status: "queued",
-      stage: "queued",
-      operation,
-      edit_instruction: editInstruction ?? null,
-      parent_job_id: baseJobId,
-      unresolved_issues: unresolvedIssues ?? [],
-      provider_model: getImageModel(),
-      prompt_version: GENERATION_PROMPT_VERSION,
-      allowance_key: chargeKey,
-      attempt_number: 1,
-    })
-    .select()
-    .single();
-  if (createErr || !created) {
-    // Unique violation => concurrent duplicate; tell the client to poll.
-    if (createErr?.code === "23505") {
-      return NextResponse.json(
-        { ok: false, status: "queued", jobId: null, key: idempotencyKey },
-        { status: 202 }
-      );
-    }
-    logEvent("generate.job_create_failed", { userId: user.id, error: createErr?.message });
-    return apiError("internal_error", "Could not start the generation. Try again.");
-  }
-  const job = created as JobRow;
-
-  const patchJob = async (fields: Record<string, unknown>) => {
-    await admin
-      .from("generation_jobs")
-      .update({ ...fields, updated_at: new Date().toISOString() })
-      .eq("id", job.id);
-  };
-
-  // The workflow root is this job itself.
-  await patchJob({ workflow_id: job.id });
-  job.workflow_id = job.id;
-  job.attempt_number = 1;
-
-  // Best-effort in-invocation execution. The status-poll GET and the worker
-  // route are the durable backstops: the queued row is the source of truth,
-  // so the attempt survives a closed tab, navigation, or a dead invocation.
-  after(() => runQueuedGenerationOnce(job.id));
-
-  logEvent("generate.queued", { jobId: job.id, operation });
   // Action-start latency span (no ids/paths; time from request entry to queue).
   console.log(
     JSON.stringify({ event: "perf", span: "generate.start", ms: Date.now() - requestStartedAt })
   );
-  return NextResponse.json(await jobPayload(supabase, job), { status: 202 });
+  const status =
+    outcome.origin === "new"
+      ? 202
+      : ACTIVE_JOB_STATUSES.has(outcome.job.status)
+      ? 202
+      : 200;
+  return NextResponse.json(await jobPayload(supabase, outcome.job), { status });
 }
