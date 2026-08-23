@@ -157,6 +157,79 @@ type RevertSnap = {
   freePreviewMessage?: string;
 };
 
+type BulkFixRoster = {
+  ok: true;
+  requestId: string;
+  summary: { total: number; queued: number; skipped: number; failed: number };
+  photos: Array<{
+    photoId: string;
+    status: "queued" | "skipped" | "failed";
+    jobId?: string;
+    reason?: string;
+  }>;
+};
+
+type BulkFixError = { ok: false; code?: string; message?: string };
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isBulkFixRoster(value: unknown): value is BulkFixRoster {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Partial<BulkFixRoster>;
+  const summary = candidate.summary;
+  if (
+    candidate.ok !== true ||
+    typeof candidate.requestId !== "string" ||
+    candidate.requestId.length === 0 ||
+    !summary ||
+    !isNonNegativeInteger(summary.total) ||
+    !isNonNegativeInteger(summary.queued) ||
+    !isNonNegativeInteger(summary.skipped) ||
+    !isNonNegativeInteger(summary.failed) ||
+    !Array.isArray(candidate.photos)
+  ) {
+    return false;
+  }
+  if (
+    summary.total !== candidate.photos.length ||
+    summary.queued + summary.skipped + summary.failed !== summary.total
+  ) {
+    return false;
+  }
+  const entriesValid = candidate.photos.every(
+    (entry) =>
+      Boolean(entry) &&
+      typeof entry.photoId === "string" &&
+      (entry.status === "queued" ||
+        entry.status === "skipped" ||
+        entry.status === "failed") &&
+      (entry.jobId === undefined || typeof entry.jobId === "string") &&
+      (entry.reason === undefined || typeof entry.reason === "string") &&
+      (entry.status !== "queued" || Boolean(entry.jobId))
+  );
+  if (!entriesValid) return false;
+  return (
+    candidate.photos.filter((entry) => entry.status === "queued").length ===
+      summary.queued &&
+    candidate.photos.filter((entry) => entry.status === "skipped").length ===
+      summary.skipped &&
+    candidate.photos.filter((entry) => entry.status === "failed").length === summary.failed
+  );
+}
+
+function bulkFixError(value: unknown): BulkFixError | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Partial<BulkFixError>;
+  if (candidate.ok !== false) return null;
+  return {
+    ok: false,
+    code: typeof candidate.code === "string" ? candidate.code : undefined,
+    message: typeof candidate.message === "string" ? candidate.message : undefined,
+  };
+}
+
 
 const REFINING_NOTE =
   "Mavya keeps refining this photo in the background. If a stronger faithful version is found, it will appear here automatically. Your current version stays available.";
@@ -1182,6 +1255,7 @@ export function ProductWorkspace({
   );
   const [bulkFixBusy, setBulkFixBusy] = useState(false);
   const bulkFixBusyRef = useRef(false);
+  const bulkFixKeyRef = useRef<{ productId: string; key: string } | null>(null);
 
   const handleFixAll = useCallback(async () => {
     if (bulkFixBusyRef.current) return;
@@ -1204,30 +1278,34 @@ export function ProductWorkspace({
     } catch {
       idempotencyKey = "";
     }
+    if (!idempotencyKey && bulkFixKeyRef.current?.productId === productId) {
+      idempotencyKey = bulkFixKeyRef.current.key;
+    }
     if (!idempotencyKey) {
       idempotencyKey = newId();
       try {
         window.localStorage.setItem(storageKey, idempotencyKey);
       } catch {
-        // Private mode / storage disabled: proceeds in-memory only. A lost
-        // tab just means a re-click starts a fresh bulk request instead of
-        // resuming -- the backend's own concurrency guard (migration 0029)
-        // still prevents any photo from being double-charged.
+        // Private mode / storage disabled: the ref below still preserves
+        // same-tab retries. A closed tab cannot resume without storage, but
+        // the backend concurrency guard still prevents duplicate active jobs.
       }
     }
+    bulkFixKeyRef.current = { productId, key: idempotencyKey };
 
-    type BulkRoster = {
-      ok: true;
-      requestId: string;
-      summary: { total: number; queued: number; skipped: number; failed: number };
-      photos: Array<{
-        photoId: string;
-        status: "queued" | "skipped" | "failed";
-        jobId?: string;
-        reason?: string;
-      }>;
+    const clearIdempotencyKey = () => {
+      if (
+        bulkFixKeyRef.current?.productId === productId &&
+        bulkFixKeyRef.current.key === idempotencyKey
+      ) {
+        bulkFixKeyRef.current = null;
+      }
+      try {
+        window.localStorage.removeItem(storageKey);
+      } catch {
+        // Nothing to clean up if storage is unavailable.
+      }
     };
-    type BulkError = { ok: false; code?: string; message?: string };
 
     try {
       const res = await fetch("/api/generate/bulk", {
@@ -1235,14 +1313,10 @@ export function ProductWorkspace({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productId, idempotencyKey }),
       });
-      const data = (await res.json().catch(() => null)) as BulkRoster | BulkError | null;
+      const data: unknown = await res.json().catch(() => null);
 
-      if (res.ok && data && "summary" in data) {
-        try {
-          window.localStorage.removeItem(storageKey);
-        } catch {
-          // Nothing to clean up if storage is unavailable.
-        }
+      if (res.ok && isBulkFixRoster(data)) {
+        clearIdempotencyKey();
         for (const entry of data.photos) {
           if (entry.status !== "queued" || !entry.jobId) continue;
           const jobId = entry.jobId;
@@ -1267,15 +1341,11 @@ export function ProductWorkspace({
         if (skipped > 0) parts.push(`${skipped} skipped.`);
         if (failed > 0) parts.push(`${failed} could not be started.`);
         setNotice(parts.length > 0 ? parts.join(" ") : "No photos needed fixing.");
-        trackClientEvent("fix_all_completed");
+        if (queued > 0) trackClientEvent("fix_all_queued");
       } else {
-        const err = data && !("summary" in data) ? (data as BulkError) : null;
+        const err = bulkFixError(data);
         if (err?.code === "idempotency_conflict") {
-          try {
-            window.localStorage.removeItem(storageKey);
-          } catch {
-            // Nothing to clean up if storage is unavailable.
-          }
+          clearIdempotencyKey();
         }
         setNotice(err?.message ?? "Fix all could not start. Try again.");
       }

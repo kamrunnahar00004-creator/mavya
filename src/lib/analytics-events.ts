@@ -19,7 +19,7 @@ export const FUNNEL_EVENTS = [
   "supporting_edit_completed",
   // "Fix all" bulk trigger (product-level, not per-photo).
   "fix_all_clicked",
-  "fix_all_completed",
+  "fix_all_queued",
   // Post-workflow feedback nudge engagement.
   "wf_feedback_opened",
   "wf_feedback_submitted",

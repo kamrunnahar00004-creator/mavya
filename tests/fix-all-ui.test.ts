@@ -71,14 +71,32 @@ describe("Fix-all UI wiring (product-workspace.tsx)", () => {
     expect(mint).toBeLessThan(fetchCall);
   });
 
-  it("the key is cleared ONLY on a real roster response or a definite idempotency conflict", () => {
-    const removeCalls = workspace.match(/window\.localStorage\.removeItem\(storageKey\)/g) ?? [];
-    // Exactly two clear sites: the success branch, and the conflict branch.
-    expect(removeCalls.length).toBe(2);
-    const successIdx = workspace.indexOf('if (res.ok && data && "summary" in data) {');
-    const firstRemove = workspace.indexOf("window.localStorage.removeItem(storageKey)");
-    expect(firstRemove).toBeGreaterThan(successIdx);
+  it("preserves the key in memory for same-tab retries when localStorage is unavailable", () => {
+    expect(workspace).toContain(
+      'const bulkFixKeyRef = useRef<{ productId: string; key: string } | null>(null);'
+    );
+    expect(workspace).toContain(
+      "bulkFixKeyRef.current?.productId === productId"
+    );
+    expect(workspace).toContain(
+      "idempotencyKey = bulkFixKeyRef.current.key;"
+    );
+    expect(workspace).toContain(
+      "bulkFixKeyRef.current = { productId, key: idempotencyKey };"
+    );
+  });
+
+  it("clears both persisted and in-memory keys ONLY on a valid roster or definite conflict", () => {
+    expect(workspace).toContain("const clearIdempotencyKey = () => {");
+    expect(workspace).toContain("bulkFixKeyRef.current = null;");
+    expect(workspace).toContain("window.localStorage.removeItem(storageKey)");
+    const successIdx = workspace.indexOf("if (res.ok && isBulkFixRoster(data)) {");
+    const successClear = workspace.indexOf("clearIdempotencyKey();", successIdx);
+    expect(successClear).toBeGreaterThan(successIdx);
     expect(workspace).toContain('err?.code === "idempotency_conflict"');
+    const conflictIdx = workspace.indexOf('err?.code === "idempotency_conflict"');
+    const conflictClear = workspace.indexOf("clearIdempotencyKey();", conflictIdx);
+    expect(conflictClear).toBeGreaterThan(conflictIdx);
   });
 
   it("a network failure keeps the stored key (no removeItem in the catch block)", () => {
@@ -87,6 +105,16 @@ describe("Fix-all UI wiring (product-workspace.tsx)", () => {
     expect(catchIdx).toBeGreaterThan(-1);
     const catchBlock = workspace.slice(catchIdx, financeIdx);
     expect(catchBlock).not.toContain("removeItem");
+    expect(catchBlock).not.toContain("clearIdempotencyKey");
+  });
+
+  it("validates the complete roster shape before clearing the retry key or iterating photos", () => {
+    expect(workspace).toContain("function isBulkFixRoster(value: unknown)");
+    expect(workspace).toContain("Array.isArray(candidate.photos)");
+    expect(workspace).toContain("candidate.photos.every(");
+    expect(workspace).toContain("summary.total !== candidate.photos.length");
+    expect(workspace).toContain('entry.status !== "queued" || Boolean(entry.jobId)');
+    expect(workspace).toContain("if (res.ok && isBulkFixRoster(data)) {");
   });
 
   it("only queued entries with a jobId start polling, reusing the existing pollJob/JOB_STAGE_LABELS machinery -- no new polling logic", () => {
@@ -105,6 +133,13 @@ describe("Fix-all UI wiring (product-workspace.tsx)", () => {
     // elsewhere in this file (unrelated to Fix-all's own copy) -- only the
     // Fix-all summary-copy block itself must never say "publish-ready".
     expect(copyBlock).not.toMatch(/publish.?ready/i);
+  });
+
+  it("records queued work honestly and never calls a roster response completed", () => {
+    expect(workspace).toContain(
+      'if (queued > 0) trackClientEvent("fix_all_queued");'
+    );
+    expect(workspace).not.toContain('trackClientEvent("fix_all_completed")');
   });
 
   it("the action band renders in ProductWorkspace, as a sibling before AuditWorkspace (not inside it)", () => {
