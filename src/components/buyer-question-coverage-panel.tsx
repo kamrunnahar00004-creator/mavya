@@ -3,7 +3,6 @@
 import { Check, Loader2, X } from "lucide-react";
 import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { categoryById } from "@/lib/taxonomy";
-import { cn } from "@/lib/utils";
 
 type Props = {
   coverageState: CoverageState;
@@ -25,9 +24,13 @@ type Props = {
 export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Props) {
   if (coverageState.status === "still_checking") {
     return (
-      <div className="flex items-center gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white/70 px-4 py-3">
+      <div
+        className="flex items-center gap-2.5 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white/70 px-4 py-3"
+        role="status"
+        aria-live="polite"
+      >
         <Loader2
-          className="h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-ink-soft)]"
+          className="h-4 w-4 flex-shrink-0 animate-spin text-[var(--color-ink-soft)] motion-reduce:animate-none"
           aria-hidden="true"
         />
         <span className="min-w-0 flex-1">
@@ -85,20 +88,25 @@ export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Pr
               )}
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span
-                    className={cn(
-                      "text-[13.5px] font-semibold",
-                      answered ? "text-[var(--color-ink)]" : "text-[var(--color-ink)]"
-                    )}
-                  >
+                  <span className="text-[13.5px] font-semibold text-[var(--color-ink)]">
                     {question.text}
                   </span>
                   {photoLabel && (
-                    <span className="flex-shrink-0 text-[11.5px] text-[var(--color-ink-soft)]">
+                    <span
+                      className="flex-shrink-0 text-[11.5px] text-[var(--color-ink-soft)]"
+                      aria-hidden="true"
+                    >
                       {photoLabel}
                     </span>
                   )}
                 </div>
+                <span className="sr-only">
+                  {answered
+                    ? photoLabel
+                      ? `Answered by ${photoLabel}.`
+                      : "Answered."
+                    : "Not answered yet."}
+                </span>
                 {!answered && (
                   <p className="mt-0.5 text-[12px] leading-snug text-[var(--color-ink-soft)]">
                     {question.shot_instruction}

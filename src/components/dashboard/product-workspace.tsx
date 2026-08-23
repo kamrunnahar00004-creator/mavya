@@ -496,12 +496,16 @@ export function ProductWorkspace({
               ratingJobId: undefined,
             });
           }
+          // Coverage is computed from pointer-current audits on the server.
+          // Refresh after every terminal rating outcome so the panel cannot
+          // remain stuck on an old ready/still-checking verdict.
+          router.refresh();
         } catch {
           // transient poll failure: keep trying
         }
       }, 2500);
     },
-    [patch]
+    [patch, router]
   );
 
   // ------------------------------------------------------------------
@@ -1134,10 +1138,12 @@ export function ProductWorkspace({
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
       setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
       setNotice(null);
+      // Removing a photo changes both coverage attribution and readiness.
+      router.refresh();
     } catch {
       setNotice("The photo could not be removed. Try again.");
     }
-  }, [activeId]);
+  }, [activeId, router]);
 
   const handleSelectSlot = useCallback((id: string) => {
     setActiveId(id);
@@ -1197,6 +1203,8 @@ export function ProductWorkspace({
         }
         const queued = (await res.json()) as { jobId?: string };
         if (!queued.jobId) throw new Error("Could not queue the rating.");
+        // Pull the server's still_checking state while the durable job runs.
+        router.refresh();
 
         // Keep the local slot responsive while the persisted server job runs.
         // If this component unmounts, the job continues and appears on refresh.
@@ -1233,15 +1241,19 @@ export function ProductWorkspace({
             supportingRole: status.rubric.supporting_photo_role,
           });
           trackClientEvent("supporting_audit_completed");
+          // Pull the newly pointer-current audit and recomputed coverage.
+          router.refresh();
           break;
         }
       } catch (err) {
         setPhotos((prev) => prev.filter((p) => p.id !== tempId));
         setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
         setNotice(err instanceof Error ? err.message : "That photo could not be graded.");
+        // A terminal failure can change which photos are applicable.
+        router.refresh();
       }
     },
-    [patch, productId]
+    [patch, productId, router]
   );
 
   if (pendingMain && photos.length === 0) {

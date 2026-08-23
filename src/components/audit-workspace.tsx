@@ -35,6 +35,8 @@ import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { SUPPORTING_ROLE_LABELS } from "@/lib/audit-mapping";
 import { buildEditSuggestionChips, deriveEditContext } from "@/lib/selection-display";
 
+const EMPTY_PHOTO_LABELS = new Map<string, string>();
+
 const IMPROVE_STATUSES = [
   "Analyzing fixes…",
   "Generating cleaner photo…",
@@ -576,26 +578,29 @@ export function AuditWorkspace({
             />
           )}
 
-          {!isExtra && coverageState && coverageState.status !== "unavailable" && (
-            coverageState.status === "legacy" ? (
-              (checklistLoading ||
-                checklistError ||
-                (state.supportingChecklist && state.supportingChecklist.length > 0)) && (
-                <PhotoChecklistPanel
-                  checklist={state.supportingChecklist ?? []}
-                  loading={checklistLoading}
-                  error={checklistError}
-                  onRetry={onChecklistRetry}
-                  coveredShotIds={coveredShotIds}
-                />
-              )
-            ) : (
+          {!isExtra &&
+            coverageState?.status === "legacy" &&
+            (checklistLoading ||
+              checklistError ||
+              (state.supportingChecklist &&
+                state.supportingChecklist.length > 0)) && (
+              <PhotoChecklistPanel
+                checklist={state.supportingChecklist ?? []}
+                loading={checklistLoading}
+                error={checklistError}
+                onRetry={onChecklistRetry}
+                coveredShotIds={coveredShotIds}
+              />
+            )}
+          {!isExtra &&
+            coverageState &&
+            (coverageState.status === "ready" ||
+              coverageState.status === "still_checking") && (
               <BuyerQuestionCoveragePanel
                 coverageState={coverageState}
-                photoLabelById={photoLabelById ?? new Map()}
+                photoLabelById={photoLabelById ?? EMPTY_PHOTO_LABELS}
               />
-            )
-          )}
+            )}
           {/* coverageState is undefined only on the landing-page demo (no real
               coverage data exists there) -- same legacy-checklist behavior as
               before this slice, completely unaffected. */}

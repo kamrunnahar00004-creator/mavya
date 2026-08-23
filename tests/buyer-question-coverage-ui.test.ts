@@ -36,10 +36,20 @@ describe("buyer-question coverage UI (slice 3)", () => {
     expect(readyGuardIdx).toBeGreaterThan(stillCheckingIdx);
   });
 
+  it("announces loading and answered states without relying on icons alone", () => {
+    expect(panel).toContain('role="status"');
+    expect(panel).toContain('aria-live="polite"');
+    expect(panel).toContain('className="sr-only"');
+    expect(panel).toContain("Not answered yet.");
+  });
+
   it("audit-workspace routes legacy to the old checklist, ready/still_checking to the new panel, and unavailable to neither", () => {
-    expect(auditWorkspace).toContain('coverageState.status === "legacy"');
+    expect(auditWorkspace).toContain('coverageState?.status === "legacy"');
     expect(auditWorkspace).toContain("<BuyerQuestionCoveragePanel");
-    expect(auditWorkspace).toContain('coverageState.status !== "unavailable"');
+    expect(auditWorkspace).toContain('coverageState.status === "ready"');
+    expect(auditWorkspace).toContain(
+      'coverageState.status === "still_checking"'
+    );
   });
 
   it("the landing-page demo path (coverageState undefined) keeps the exact legacy checklist behavior, untouched", () => {
@@ -54,5 +64,17 @@ describe("buyer-question coverage UI (slice 3)", () => {
     expect(productWorkspace).toContain('"Main photo"');
     expect(productWorkspace).toContain("coverageState={coverageState}");
     expect(productWorkspace).toContain("photoLabelById={photoLabelById}");
+  });
+
+  it("refreshes server-authoritative coverage after supporting-photo mutations", () => {
+    expect(productWorkspace).toContain(
+      "Coverage is computed from pointer-current audits on the server."
+    );
+    expect(productWorkspace).toContain(
+      "Removing a photo changes both coverage attribution and readiness."
+    );
+    expect(productWorkspace).toContain(
+      "Pull the newly pointer-current audit and recomputed coverage."
+    );
   });
 });
