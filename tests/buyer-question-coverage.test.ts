@@ -33,7 +33,7 @@ function main(overrides: Partial<CoveragePhotoInput> = {}): CoveragePhotoInput {
 
 function supporting(
   id: string,
-  overrides: Partial<CoveragePhotoInput> = {}
+  overrides: Partial<CoveragePhotoInput> = {},
 ): CoveragePhotoInput {
   return {
     id,
@@ -52,7 +52,9 @@ function supporting(
 describe("computeBuyerQuestionCoverage", () => {
   it("1. missing main audit -> unavailable/no_main_audit", () => {
     expect(
-      computeBuyerQuestionCoverage([main({ currentAudit: null, ratingJob: null })])
+      computeBuyerQuestionCoverage([
+        main({ currentAudit: null, ratingJob: null }),
+      ]),
     ).toEqual({ status: "unavailable", reason: "no_main_audit" });
   });
 
@@ -70,7 +72,7 @@ describe("computeBuyerQuestionCoverage", () => {
             rubricVersion: RUBRIC_VERSION,
           },
         }),
-      ])
+      ]),
     ).toEqual({ status: "unavailable", reason: "no_catalog" });
   });
 
@@ -78,18 +80,25 @@ describe("computeBuyerQuestionCoverage", () => {
     const legacyRubric = { detected_category: "jewelry" }; // no coverage fields at all
     expect(
       computeBuyerQuestionCoverage([
-        main({ currentAudit: { rubric: legacyRubric, rubricVersion: RUBRIC_VERSION } }),
-        supporting("s1", {
-          currentAudit: { rubric: legacyRubric, rubricVersion: SUPPORTING_RUBRIC_VERSION },
+        main({
+          currentAudit: { rubric: legacyRubric, rubricVersion: RUBRIC_VERSION },
         }),
-      ])
+        supporting("s1", {
+          currentAudit: {
+            rubric: legacyRubric,
+            rubricVersion: SUPPORTING_RUBRIC_VERSION,
+          },
+        }),
+      ]),
     ).toEqual({ status: "legacy" });
   });
 
   it("4. pending first audit cannot become legacy", () => {
     const legacyRubric = { detected_category: "jewelry" };
     const result = computeBuyerQuestionCoverage([
-      main({ currentAudit: { rubric: legacyRubric, rubricVersion: RUBRIC_VERSION } }),
+      main({
+        currentAudit: { rubric: legacyRubric, rubricVersion: "main-v20" },
+      }),
       supporting("s1", {
         currentAudit: null,
         ratingJob: { status: "queued", errorCode: null },
@@ -99,6 +108,47 @@ describe("computeBuyerQuestionCoverage", () => {
     if (result.status === "still_checking") {
       expect(result.pendingPhotoIds).toEqual(["s1"]);
     }
+  });
+
+  it("4b. freshly inserted photo without a job cannot become legacy", () => {
+    const legacyRubric = { detected_category: "jewelry" };
+    const result = computeBuyerQuestionCoverage([
+      main({
+        currentAudit: { rubric: legacyRubric, rubricVersion: "main-v20" },
+      }),
+      supporting("s1", { currentAudit: null, ratingJob: null }),
+    ]);
+    expect(result.status).toBe("still_checking");
+    if (result.status === "still_checking") {
+      expect(result.pendingPhotoIds).toEqual(["s1"]);
+    }
+  });
+
+  it("4c. an audit with all coverage fields absent is legacy regardless of rubric label", () => {
+    const result = computeBuyerQuestionCoverage([
+      main({
+        currentAudit: {
+          rubric: { detected_category: "jewelry" },
+          rubricVersion: RUBRIC_VERSION,
+        },
+      }),
+    ]);
+    expect(result.status).toBe("legacy");
+  });
+
+  it("4d. malformed coverage field still counts as entered, not legacy", () => {
+    const result = computeBuyerQuestionCoverage([
+      main({
+        currentAudit: {
+          rubric: {
+            detected_category: "jewelry",
+            question_catalog_version: "not-a-number",
+          },
+          rubricVersion: "main-v20",
+        },
+      }),
+    ]);
+    expect(result.status).toBe("still_checking");
   });
 
   it("5. partial metadata -> still_checking", () => {
@@ -118,7 +168,10 @@ describe("computeBuyerQuestionCoverage", () => {
     const result = computeBuyerQuestionCoverage([
       main(),
       supporting("s1", {
-        currentAudit: { rubric: currentRubric(), rubricVersion: "supporting-v16" },
+        currentAudit: {
+          rubric: currentRubric(),
+          rubricVersion: "supporting-v16",
+        },
       }),
     ]);
     expect(result.status).toBe("still_checking");
@@ -140,23 +193,33 @@ describe("computeBuyerQuestionCoverage", () => {
   it("8. queued/waiting_dependency/scoring -> pendingPhotoIds", () => {
     const result = computeBuyerQuestionCoverage([
       main(),
-      supporting("s1", { currentAudit: null, ratingJob: { status: "queued", errorCode: null } }),
+      supporting("s1", {
+        currentAudit: null,
+        ratingJob: { status: "queued", errorCode: null },
+      }),
       supporting("s2", {
         currentAudit: null,
         ratingJob: { status: "waiting_dependency", errorCode: null },
       }),
-      supporting("s3", { currentAudit: null, ratingJob: { status: "scoring", errorCode: null } }),
+      supporting("s3", {
+        currentAudit: null,
+        ratingJob: { status: "scoring", errorCode: null },
+      }),
     ]);
     expect(result.status).toBe("still_checking");
     if (result.status === "still_checking") {
-      expect(new Set(result.pendingPhotoIds)).toEqual(new Set(["s1", "s2", "s3"]));
+      expect(new Set(result.pendingPhotoIds)).toEqual(
+        new Set(["s1", "s2", "s3"]),
+      );
     }
   });
 
   it("9. terminal failed photo without audit excluded", () => {
     const legacyRubric = { detected_category: "jewelry" };
     const result = computeBuyerQuestionCoverage([
-      main({ currentAudit: { rubric: legacyRubric, rubricVersion: RUBRIC_VERSION } }),
+      main({
+        currentAudit: { rubric: legacyRubric, rubricVersion: RUBRIC_VERSION },
+      }),
       supporting("s1", {
         currentAudit: null,
         ratingJob: { status: "failed", errorCode: "invalid_upload" },
@@ -170,7 +233,9 @@ describe("computeBuyerQuestionCoverage", () => {
   it("10. failed rerating with valid contract-current audit remains usable", () => {
     const result = computeBuyerQuestionCoverage([
       main(),
-      supporting("s1", { ratingJob: { status: "failed", errorCode: "vision_failed" } }),
+      supporting("s1", {
+        ratingJob: { status: "failed", errorCode: "vision_failed" },
+      }),
     ]);
     expect(result.status).toBe("ready");
   });
@@ -179,7 +244,10 @@ describe("computeBuyerQuestionCoverage", () => {
     const result = computeBuyerQuestionCoverage([
       main(),
       supporting("s1", {
-        currentAudit: { rubric: currentRubric(), rubricVersion: "supporting-v16" },
+        currentAudit: {
+          rubric: currentRubric(),
+          rubricVersion: "supporting-v16",
+        },
         ratingJob: { status: "failed", errorCode: "vision_failed" },
       }),
     ]);
@@ -200,6 +268,31 @@ describe("computeBuyerQuestionCoverage", () => {
     }
   });
 
+  it("12b. supporting photo classification does not override the main category", () => {
+    const result = computeBuyerQuestionCoverage([
+      main(),
+      supporting("s1", {
+        currentAudit: {
+          rubric: currentRubric({ detected_category: "candles" }),
+          rubricVersion: SUPPORTING_RUBRIC_VERSION,
+        },
+      }),
+    ]);
+    expect(result.status).toBe("ready");
+  });
+
+  it("12c. invalid pointer audit is not usable as the main audit", () => {
+    const result = computeBuyerQuestionCoverage([
+      main({
+        currentAudit: {
+          rubric: currentRubric({ upload_kind: "invalid" }),
+          rubricVersion: RUBRIC_VERSION,
+        },
+      }),
+    ]);
+    expect(result).toEqual({ status: "unavailable", reason: "no_main_audit" });
+  });
+
   it("13a. unknown id rejected from ready (photo becomes still_checking, not a false answer)", () => {
     const result = computeBuyerQuestionCoverage([
       main(),
@@ -218,7 +311,9 @@ describe("computeBuyerQuestionCoverage", () => {
       main(),
       supporting("s1", {
         currentAudit: {
-          rubric: currentRubric({ answers_question_ids: [candles.questions[0].id] }),
+          rubric: currentRubric({
+            answers_question_ids: [candles.questions[0].id],
+          }),
           rubricVersion: SUPPORTING_RUBRIC_VERSION,
         },
       }),

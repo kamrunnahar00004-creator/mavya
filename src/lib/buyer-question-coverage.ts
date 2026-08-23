@@ -3,7 +3,7 @@ import {
   idsBelongToCatalog,
   type QuestionCatalog,
 } from "@/data/buyer-questions";
-import { resolveCatalogConsistency } from "@/lib/buyer-question-dependency";
+import { matchesQuestionCatalog } from "@/lib/buyer-question-dependency";
 import { RUBRIC_VERSION, SUPPORTING_RUBRIC_VERSION } from "@/lib/versions";
 import type { CanonicalCategory } from "@/lib/taxonomy";
 
@@ -70,7 +70,9 @@ export type CoveragePhotoInput = {
 
 function isPending(status: CoverageRatingStatus | undefined): boolean {
   return (
-    status === "queued" || status === "waiting_dependency" || status === "scoring"
+    status === "queued" ||
+    status === "waiting_dependency" ||
+    status === "scoring"
   );
 }
 function isTerminalFailure(status: CoverageRatingStatus | undefined): boolean {
@@ -79,6 +81,7 @@ function isTerminalFailure(status: CoverageRatingStatus | undefined): boolean {
 
 type AuditFields = {
   detected_category?: unknown;
+  upload_kind?: unknown;
   answers_question_ids?: unknown;
   question_catalog_category?: unknown;
   question_catalog_version?: unknown;
@@ -86,6 +89,21 @@ type AuditFields = {
 
 function readAuditFields(rubric: unknown): AuditFields {
   return rubric && typeof rubric === "object" ? (rubric as AuditFields) : {};
+}
+
+function hasCoverageField(rubric: unknown): boolean {
+  if (!rubric || typeof rubric !== "object") return false;
+  return [
+    "answers_question_ids",
+    "question_catalog_category",
+    "question_catalog_version",
+  ].some((key) => Object.prototype.hasOwnProperty.call(rubric, key));
+}
+
+function hasUsablePointerAudit(photo: CoveragePhotoInput): boolean {
+  if (!photo.currentAudit) return false;
+  const fields = readAuditFields(photo.currentAudit.rubric);
+  return fields.upload_kind !== "invalid";
 }
 
 function expectedRubricVersion(role: "main" | "supporting"): string {
@@ -116,25 +134,28 @@ type ContractCheck = {
 function contractCurrent(
   photo: CoveragePhotoInput,
   mainCategory: string,
-  catalog: QuestionCatalog
+  catalog: QuestionCatalog,
 ): ContractCheck {
   const audit = photo.currentAudit;
-  if (!audit) return { current: false, hasAnyField: false, answerIds: [] };
+  if (!audit || !hasUsablePointerAudit(photo)) {
+    return {
+      current: false,
+      hasAnyField: false,
+      answerIds: [],
+    };
+  }
   const rubric = readAuditFields(audit.rubric);
-  const hasAnyField =
-    typeof rubric.question_catalog_category === "string" ||
-    typeof rubric.question_catalog_version === "number" ||
-    Array.isArray(rubric.answers_question_ids);
+  const hasAnyField = hasCoverageField(audit.rubric);
+  const isCurrentRubric =
+    audit.rubricVersion === expectedRubricVersion(photo.role);
 
-  if (audit.rubricVersion !== expectedRubricVersion(photo.role)) {
+  if (!isCurrentRubric) {
     return { current: false, hasAnyField, answerIds: [] };
   }
-  // Shared category/catalog consistency check (see buyer-question-dependency.ts) --
-  // a supporting photo's own detected_category is irrelevant here; it was
-  // always scored against mainCategory's catalog, so its resolved category
-  // must equal mainCategory, not merely resolve to SOME valid catalog.
-  const resolved = resolveCatalogConsistency(audit.rubric);
-  if (!resolved || resolved.category !== mainCategory || !resolved.catalog) {
+  // Supporting classification is not authoritative for the product. The
+  // catalog stamps record the main category that this photo was checked
+  // against, so validate those stamps directly.
+  if (!matchesQuestionCatalog(audit.rubric, mainCategory, catalog)) {
     return { current: false, hasAnyField, answerIds: [] };
   }
   if (!Array.isArray(rubric.answers_question_ids)) {
@@ -148,7 +169,11 @@ function contractCurrent(
   if (!idsBelongToCatalog(ids, catalog)) {
     return { current: false, hasAnyField, answerIds: [] };
   }
-  return { current: true, hasAnyField: true, answerIds: ids };
+  return {
+    current: true,
+    hasAnyField: true,
+    answerIds: ids,
+  };
 }
 
 /** Main first (by role, never by position number -- position defaults to 0
@@ -161,9 +186,10 @@ function bySortOrder(a: CoveragePhotoInput, b: CoveragePhotoInput): number {
 }
 
 export function computeBuyerQuestionCoverage(
-  photos: readonly CoveragePhotoInput[]
+  photos: readonly CoveragePhotoInput[],
 ): CoverageState {
-  const main = photos.find((p) => p.role === "main") ?? null;
+  const orderedPhotos = [...photos].sort(bySortOrder);
+  const main = orderedPhotos.find((p) => p.role === "main") ?? null;
 
   // 1. No usable pointer-current main audit. detected_category has existed
   // on every audit since long before this feature (main-v4) -- a legacy
@@ -174,7 +200,7 @@ export function computeBuyerQuestionCoverage(
   // the consistency check and get classified unavailable instead).
   // Whether THIS photo counts as contract-current is judged uniformly for
   // every applicable photo, main included, in the loop below.
-  if (!main?.currentAudit) {
+  if (!main?.currentAudit || !hasUsablePointerAudit(main)) {
     return { status: "unavailable", reason: "no_main_audit" };
   }
   const mainFields = readAuditFields(main.currentAudit.rubric);
@@ -197,8 +223,8 @@ export function computeBuyerQuestionCoverage(
   // audit yet that's still pending (or that has no rating job at all, e.g.
   // freshly inserted) stays applicable -- it must be able to keep a
   // legacy-otherwise product from wrongly reporting "legacy".
-  const applicable = photos.filter((p) => {
-    if (p.currentAudit) return true;
+  const applicable = orderedPhotos.filter((p) => {
+    if (hasUsablePointerAudit(p)) return true;
     return !isTerminalFailure(p.ratingJob?.status);
   });
   // Unreachable in practice (main always passes the check above and is
@@ -207,7 +233,7 @@ export function computeBuyerQuestionCoverage(
     return { status: "unavailable", reason: "no_main_audit" };
   }
 
-  const sorted = [...applicable].sort(bySortOrder);
+  const sorted = applicable;
 
   const pendingPhotoIds: string[] = [];
   const failedPhotoIds: string[] = [];
@@ -216,6 +242,17 @@ export function computeBuyerQuestionCoverage(
   let allCurrent = true;
 
   for (const p of sorted) {
+    if (!hasUsablePointerAudit(p)) {
+      allCurrent = false;
+      if (!p.ratingJob || isPending(p.ratingJob.status)) {
+        pendingPhotoIds.push(p.id);
+      } else {
+        // A completed job without a usable pointer audit is an invariant
+        // failure. Keep it visible as unresolved instead of calling it legacy.
+        failedPhotoIds.push(p.id);
+      }
+      continue;
+    }
     if (isPending(p.ratingJob?.status)) {
       pendingPhotoIds.push(p.id);
       allCurrent = false;

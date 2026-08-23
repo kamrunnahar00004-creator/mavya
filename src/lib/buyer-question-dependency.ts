@@ -1,4 +1,7 @@
-import { catalogForCategory } from "@/data/buyer-questions";
+import {
+  catalogForCategory,
+  type QuestionCatalog,
+} from "@/data/buyer-questions";
 import { RUBRIC_VERSION } from "@/lib/versions";
 
 type MainAuditInput = {
@@ -11,14 +14,32 @@ export type SupportingQuestionDependency =
   | {
       ready: true;
       mainProductContext?: string;
-      buyerQuestions:
-        | { kind: "none" }
-        | { kind: "single"; category: string };
+      buyerQuestions: { kind: "none" } | { kind: "single"; category: string };
       cacheContext: {
         category: string;
         catalogVersion: number | null;
       };
     };
+
+/** Shared stamp check for callers that already have an authoritative product
+ * category. Supporting-photo coverage must use the main photo's category,
+ * not re-derive it from the supporting photo's own classification. */
+export function matchesQuestionCatalog(
+  rubric: unknown,
+  category: string,
+  catalog: QuestionCatalog,
+): boolean {
+  if (!rubric || typeof rubric !== "object") return false;
+  const fields = rubric as {
+    question_catalog_category?: unknown;
+    question_catalog_version?: unknown;
+  };
+  return (
+    catalog.category === category &&
+    fields.question_catalog_category === category &&
+    fields.question_catalog_version === catalog.version
+  );
+}
 
 /**
  * Shared with buyer-question-coverage.ts (deliberately, so the two never
@@ -35,7 +56,7 @@ export type SupportingQuestionDependency =
  * top of this shared core.
  */
 export function resolveCatalogConsistency(
-  rubric: unknown
+  rubric: unknown,
 ): { category: string; catalog: ReturnType<typeof catalogForCategory> } | null {
   if (!rubric || typeof rubric !== "object") return null;
   const fields = rubric as {
@@ -46,14 +67,8 @@ export function resolveCatalogConsistency(
   if (typeof fields.detected_category !== "string") return null;
   const category = fields.detected_category;
   const catalog = catalogForCategory(category);
-  if (catalog) {
-    if (
-      fields.question_catalog_category !== catalog.category ||
-      fields.question_catalog_version !== catalog.version
-    ) {
-      return null;
-    }
-  }
+  if (catalog && !matchesQuestionCatalog(rubric, catalog.category, catalog))
+    return null;
   return { category, catalog };
 }
 
@@ -64,7 +79,7 @@ export function resolveCatalogConsistency(
  * false coverage answers on supporting photos.
  */
 export function resolveSupportingQuestionDependency(
-  input: MainAuditInput | null
+  input: MainAuditInput | null,
 ): SupportingQuestionDependency {
   if (!input || input.rubricVersion !== RUBRIC_VERSION) return { ready: false };
 
