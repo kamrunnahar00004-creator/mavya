@@ -2,147 +2,156 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
-const route = readFileSync(
-  path.resolve("src/app/api/generate/bulk/route.ts"),
-  "utf8"
-);
+const route = readFileSync(path.resolve("src/app/api/generate/bulk/route.ts"), "utf8");
+const singleRoute = readFileSync(path.resolve("src/app/api/generate/route.ts"), "utf8");
 const queue = readFileSync(path.resolve("src/lib/generation-queue.ts"), "utf8");
 const migration = readFileSync(
   path.resolve("supabase/migrations/0029_bulk_fix_all.sql"),
   "utf8"
 );
 
-describe("POST /api/generate/bulk: request contract (never trusts the client)", () => {
-  it("only reads productId and idempotencyKey from the body -- no photoId, score, or bucket", () => {
-    expect(route).toContain("typeof body.productId === \"string\"");
-    expect(route).toContain("typeof body.idempotencyKey === \"string\"");
+describe("POST /api/generate/bulk: durable idempotent request", () => {
+  it("accepts only a product and idempotency key from the browser", () => {
+    expect(route).toContain('typeof body.productId === "string"');
+    expect(route).toContain('typeof body.idempotencyKey === "string"');
     expect(route).not.toMatch(/body\.photoId/);
     expect(route).not.toMatch(/body\.bucket/);
     expect(route).not.toMatch(/body\.score/);
+    expect(route).toContain("idempotencyKey.length > 80");
+    expect(route).not.toContain("idempotencyKey.slice");
   });
 
-  it("gates on the same paid-beta entitlement as the single-photo route", () => {
-    expect(route).toContain("await getEntitlement(user.id)");
-    expect(route).toContain("subscription_required");
-    expect(route).toContain("subscription_past_due");
+  it("scopes request idempotency to the authenticated user", () => {
+    expect(migration).toContain("unique (user_id, idempotency_key)");
+    expect(route).toContain('.eq("user_id", user.id)');
+    expect(route).toContain('.eq("idempotency_key", idempotencyKey)');
+  });
+
+  it("looks up a replay before the click anti-spam limiter", () => {
+    const lookup = route.indexOf('.from("bulk_generation_requests")');
+    const clickLimit = route.indexOf('rateLimit(`gen-bulk:u:${user.id}`');
+    expect(lookup).toBeGreaterThan(-1);
+    expect(clickLimit).toBeGreaterThan(lookup);
+  });
+
+  it("freezes normalized pending/skipped items before queueGeneration runs", () => {
+    const freeze = route.indexOf('"freeze_bulk_generation_request"');
+    const queueCall = route.indexOf("await queueGeneration({");
+    expect(freeze).toBeGreaterThan(-1);
+    expect(queueCall).toBeGreaterThan(freeze);
+    expect(migration).toContain("bulk_generation_request_items");
+    expect(migration).toContain("status in ('pending', 'queued', 'skipped', 'failed')");
+    expect(migration).toContain("photo_id        uuid not null");
+    expect(migration).not.toMatch(/photo_id\s+uuid[^\n]*references public\.photos/);
+  });
+
+  it("resumes pending items with their stored deterministic generation key", () => {
+    expect(route).toContain('item.status === "pending"');
+    expect(route).toContain("idempotencyKey: item.generation_key");
+    expect(route).toContain('.eq("request_id", requestRow.id)');
+    expect(route).toContain('.eq("photo_id", item.photo_id)');
+  });
+
+  it("does not mark the parent completed while any item remains pending", () => {
+    expect(route).toContain(
+      'if (!final.items.some((item) => item.status === "pending"))'
+    );
+    expect(route).toContain('.update({ status: "completed"');
   });
 });
 
-describe("POST /api/generate/bulk: exact idempotent replay", () => {
-  it("looks up an existing bulk_generation_requests row by idempotency_key BEFORE any eligibility computation or rate-limit charge", () => {
-    const lookupIdx = route.indexOf('.from("bulk_generation_requests")\n      .select("*")');
-    const weightedIdx = route.indexOf("await weightedRateLimitMany(");
-    const classifyIdx = route.indexOf("classifyPhotoForBulkFix(");
-    expect(lookupIdx).toBeGreaterThan(-1);
-    expect(weightedIdx).toBeGreaterThan(lookupIdx);
-    expect(classifyIdx).toBeGreaterThan(lookupIdx);
-  });
-
-  it("a replay returns the STORED roster, not a freshly recomputed one", () => {
-    expect(route).toMatch(/if \(existing\) \{[\s\S]{0,600}row\.roster/);
-  });
-
-  it("same key + different product is a stable idempotency_conflict, both on lookup and on the insert race", () => {
-    const occurrences = route.match(/row\.product_id !== productId/g) ?? [];
-    expect(occurrences.length).toBeGreaterThanOrEqual(2);
-    expect(route).toContain('"idempotency_conflict"');
-  });
-});
-
-describe("POST /api/generate/bulk: server-derived, frozen roster", () => {
-  it("classifies every photo from server-fetched audits, never a client-supplied bucket", () => {
+describe("POST /api/generate/bulk: server-derived deterministic roster", () => {
+  it("fetches audits and active workflows server-side before classification", () => {
     expect(route).toContain("computeFixEligibilityBucket(");
-    expect(route).toContain("classifyPhotoForBulkFix(");
-    expect(route).toContain('.select("id, role, current_audit_id, selected_generation_job_id")');
+    expect(route).toContain("classifyPhotoForBulkFix({");
+    expect(route).toContain("alreadyActive: activePhotoIds.has(photo.id)");
+    expect(route).toContain('.in("status", Array.from(ACTIVE_JOB_STATUSES))');
   });
 
-  it("already-improved (selected preview) is wired from selected_generation_job_id", () => {
-    expect(route).toContain("alreadyImproved: Boolean(photo.selected_generation_job_id)");
+  it("fails closed when the active-workflow lookup fails", () => {
+    expect(route).toContain('logEvent("generate.bulk_active_lookup_failed"');
+    expect(route).toMatch(/if \(activeErr\)[\s\S]{0,300}apiError\("internal_error"/);
   });
 
-  it("processes eligible photos in a loop with no early return -- one photo's outcome can never block another's", () => {
-    const loopStart = route.indexOf("for (const photoId of eligiblePhotoIds)");
-    const loopBody = route.slice(loopStart, route.indexOf("\n  }", loopStart));
-    expect(loopStart).toBeGreaterThan(-1);
-    expect(loopBody).not.toMatch(/\breturn\b/);
-    expect(loopBody).not.toMatch(/\bthrow\b/);
+  it("sorts main first, then position, creation time, and id before assigning ordinals", () => {
+    expect(route).toContain('a.role === "main" ? 0 : 1');
+    expect(route).toContain("a.position - b.position");
+    expect(route).toContain("a.created_at.localeCompare(b.created_at)");
+    expect(route).toContain("a.id.localeCompare(b.id)");
+    expect(route).toContain("photos.map((photo, ordinal)");
   });
 
-  it("derives each photo's key via the shared server hash, never the raw photo id as the key", () => {
-    expect(route).toContain("deriveBulkPhotoKey(user.id, productId, idempotencyKey, photoId)");
-  });
-
-  it("freezes the roster into bulk_generation_requests via the service-role client only", () => {
-    expect(route).toContain('await admin\n    .from("bulk_generation_requests")\n    .insert(');
-  });
-});
-
-describe("POST /api/generate/bulk: rate limiting (Codex finding 2)", () => {
-  it("has its own request-level anti-spam limiter, in its own namespace, distinct from the single-photo per-minute limiter", () => {
-    expect(route).toContain("`gen-bulk:u:${user.id}`");
-    expect(route).toContain("`gen-bulk:ip:${ip}`");
-    expect(route).not.toContain("`gen:u:${user.id}`");
-  });
-
-  it("charges ONE weighted daily budget for the whole batch, not the single-photo limiter N times", () => {
-    const weightedIdx = route.indexOf("await weightedRateLimitMany(");
-    expect(weightedIdx).toBeGreaterThan(-1);
-    expect(route).toContain("`gen-bulk-day:u:${user.id}`");
-    expect(route).toContain("eligiblePhotoIds.length");
-    // The weighted call happens once, outside the per-photo loop.
-    const loopStart = route.indexOf("for (const photoId of eligiblePhotoIds)");
-    expect(weightedIdx).toBeLessThan(loopStart);
-    // The single-photo per-minute limiter is never invoked from this route.
-    expect(route).not.toContain('rateLimit(`gen:');
-  });
-});
-
-describe("concurrent different requests targeting the same photo (Codex finding 1)", () => {
-  it("the migration adds a partial unique index: only one active ROOT workflow per photo", () => {
-    expect(migration).toContain("generation_jobs_one_active_root_per_photo");
-    expect(migration).toContain("on public.generation_jobs (photo_id)");
-    expect(migration).toContain("where attempt_number = 1");
-    expect(migration).toMatch(
-      /status in \('queued', 'generating', 'fidelity_check', 'rescoring'\)/
+  it("derives every per-photo key from user, product, request key, and photo", () => {
+    expect(route).toContain(
+      "deriveBulkPhotoKey(user.id, productId, idempotencyKey, photo.id)"
     );
   });
+});
 
-  it("the shared queue primitive pre-checks AND atomically backstops that constraint", () => {
-    expect(queue).toContain('.eq("attempt_number", 1)');
-    expect(queue).toContain("active_root_conflict");
-    expect(queue).toContain("generation_jobs_one_active_root_per_photo");
-    // The pre-check happens before the insert (fast path); the constraint
-    // name is also checked inside the 23505 handler (atomic backstop).
-    const preCheckIdx = queue.indexOf("Concurrency guard (Codex finding 1)");
-    const insertIdx = queue.indexOf(".insert({");
-    const raceHandlerIdx = queue.indexOf(
-      'message.includes("generation_jobs_one_active_root_per_photo")'
-    );
-    expect(preCheckIdx).toBeGreaterThan(-1);
-    expect(preCheckIdx).toBeLessThan(insertIdx);
-    expect(raceHandlerIdx).toBeGreaterThan(insertIdx);
+describe("generation budget and workflow concurrency", () => {
+  it("manual and bulk generation consume the same weighted daily user budget", () => {
+    expect(queue).toContain('key: `gen-day:u:${userId}`');
+    expect(singleRoute).toContain("consumeGenerationDailyBudget(user.id, 1, idempotencyKey)");
+    expect(route).toContain("consumeGenerationDailyBudget(");
+    expect(route).not.toContain("gen-bulk-day:u:");
+    expect(singleRoute).not.toContain('rateLimit(`gen-day:u:');
   });
 
-  it("bulk_generation_requests itself is idempotency-key unique, serializing duplicate bulk clicks", () => {
-    expect(migration).toContain("idempotency_key text not null unique");
+  it("validates manual-generation keys and edit payloads before charging the budget", () => {
+    expect(singleRoute).toContain("idempotencyKey.length > 80");
+    expect(singleRoute).not.toContain("idempotencyKey.slice");
+    const editValidation = singleRoute.indexOf(
+      "rawInstruction.length > MAX_EDIT_INSTRUCTION_LEN * 4"
+    );
+    const budget = singleRoute.indexOf(
+      "consumeGenerationDailyBudget(user.id, 1, idempotencyKey)"
+    );
+    expect(editValidation).toBeGreaterThan(-1);
+    expect(budget).toBeGreaterThan(editValidation);
+  });
+
+  it("charges only frozen pending photos, excluding already-active photos", () => {
+    expect(route).toContain("pending.length");
+    expect(route).toContain("alreadyActive: activePhotoIds.has(photo.id)");
+    const budget = route.indexOf("await consumeGenerationDailyBudget(");
+    const loop = route.indexOf("for (const item of pending)");
+    expect(budget).toBeGreaterThan(-1);
+    expect(budget).toBeLessThan(loop);
+  });
+
+  it("serializes every active workflow attempt, not only attempt-1 roots", () => {
+    expect(migration).toContain("enforce_one_active_generation_workflow");
+    expect(migration).toContain("before insert or update of status, workflow_id, photo_id");
+    expect(migration).toContain("coalesce(g.workflow_id, g.id)");
+    expect(migration).not.toContain("where attempt_number = 1");
+  });
+
+  it("preflights conflicting production rows instead of silently deleting jobs", () => {
+    expect(migration).toContain("conflicting_active_generation_workflows_exist");
+    expect(migration).not.toMatch(/delete from public\.generation_jobs/);
+    expect(migration).not.toMatch(/update public\.generation_jobs[\s\S]{0,100}status/);
+  });
+
+  it("resolves uniqueness and trigger races from authoritative rows", () => {
+    expect(queue).toContain('createErr?.code === "23505"');
+    expect(queue).toContain('includes("active_generation_workflow_exists")');
+    expect(queue).toContain('.eq("idempotency_key", idempotencyKey)');
+    expect(queue).toContain('.eq("photo_id", photoId)');
   });
 });
 
-describe("bulk_generation_requests durability (Codex finding 3)", () => {
-  it("is RLS-scoped to the owner with no client write policy, same shape as generation_jobs", () => {
-    expect(migration).toContain("enable row level security");
+describe("0029 permissions and scope", () => {
+  it("gives clients read-only own-row policies and service-role-only freeze execution", () => {
     expect(migration).toContain('"bulk_generation_requests_select_own"');
-    expect(migration).toContain("for select using (user_id = auth.uid())");
-    expect(migration).not.toMatch(/bulk_generation_requests_insert_own/);
+    expect(migration).toContain('"bulk_generation_request_items_select_own"');
+    expect(migration).not.toMatch(/for insert|for update|for delete/);
+    expect(migration).toContain(
+      "revoke all on function public.freeze_bulk_generation_request(uuid, uuid, text, jsonb)"
+    );
+    expect(migration).toContain("to service_role");
   });
 
-  it("stores the frozen per-photo roster as jsonb", () => {
-    expect(migration).toContain("roster          jsonb not null default '[]'::jsonb");
-  });
-});
-
-describe("Slice 4b does not touch the UI, deployment, or migrations (scope discipline)", () => {
-  it("no dashboard/product-workspace component references the bulk endpoint yet", () => {
+  it("does not wire a Fix-all button into the product UI in this backend slice", () => {
     const workspace = readFileSync(
       path.resolve("src/components/dashboard/product-workspace.tsx"),
       "utf8"

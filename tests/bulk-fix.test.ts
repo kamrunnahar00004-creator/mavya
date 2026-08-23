@@ -65,13 +65,23 @@ describe("deriveBulkPhotoKey", () => {
 describe("classifyPhotoForBulkFix", () => {
   it("no current audit is a stale_audit skip", () => {
     expect(
-      classifyPhotoForBulkFix({ hasCurrentAudit: false, bucket: null, alreadyImproved: false })
+      classifyPhotoForBulkFix({
+        hasCurrentAudit: false,
+        bucket: null,
+        alreadyImproved: false,
+        alreadyActive: false,
+      })
     ).toEqual({ eligible: false, reason: "stale_audit" });
   });
 
   it("a strong photo is skipped with reason strong", () => {
     expect(
-      classifyPhotoForBulkFix({ hasCurrentAudit: true, bucket: "strong", alreadyImproved: false })
+      classifyPhotoForBulkFix({
+        hasCurrentAudit: true,
+        bucket: "strong",
+        alreadyImproved: false,
+        alreadyActive: false,
+      })
     ).toEqual({ eligible: false, reason: "strong" });
   });
 
@@ -81,6 +91,7 @@ describe("classifyPhotoForBulkFix", () => {
         hasCurrentAudit: true,
         bucket: "not_generatable",
         alreadyImproved: false,
+        alreadyActive: false,
       })
     ).toEqual({ eligible: false, reason: "not_generatable" });
   });
@@ -91,6 +102,7 @@ describe("classifyPhotoForBulkFix", () => {
         hasCurrentAudit: true,
         bucket: "needs_work",
         alreadyImproved: true,
+        alreadyActive: false,
       })
     ).toEqual({ eligible: false, reason: "already_improved" });
     expect(
@@ -98,6 +110,7 @@ describe("classifyPhotoForBulkFix", () => {
         hasCurrentAudit: true,
         bucket: "acceptable",
         alreadyImproved: true,
+        alreadyActive: false,
       })
     ).toEqual({ eligible: false, reason: "already_improved" });
   });
@@ -108,6 +121,7 @@ describe("classifyPhotoForBulkFix", () => {
         hasCurrentAudit: true,
         bucket: "needs_work",
         alreadyImproved: false,
+        alreadyActive: false,
       })
     ).toEqual({ eligible: true });
     expect(
@@ -115,13 +129,30 @@ describe("classifyPhotoForBulkFix", () => {
         hasCurrentAudit: true,
         bucket: "acceptable",
         alreadyImproved: false,
+        alreadyActive: false,
       })
     ).toEqual({ eligible: true });
   });
 
+  it("an already-active workflow is skipped before bulk queueing", () => {
+    expect(
+      classifyPhotoForBulkFix({
+        hasCurrentAudit: true,
+        bucket: "needs_work",
+        alreadyImproved: false,
+        alreadyActive: true,
+      })
+    ).toEqual({ eligible: false, reason: "already_active" });
+  });
+
   it("a missing audit wins over already_improved: stale_audit is reported, not already_improved", () => {
     expect(
-      classifyPhotoForBulkFix({ hasCurrentAudit: false, bucket: null, alreadyImproved: true })
+      classifyPhotoForBulkFix({
+        hasCurrentAudit: false,
+        bucket: null,
+        alreadyImproved: true,
+        alreadyActive: true,
+      })
     ).toEqual({ eligible: false, reason: "stale_audit" });
   });
 });
@@ -160,19 +191,6 @@ describe("rosterEntryFromQueueOutcome", () => {
       status: "skipped",
       reason: "already_active",
       jobId: "j-active",
-    });
-  });
-
-  it("a same-key race (concurrent duplicate of this exact derived key) is still queued, with no jobId", () => {
-    const outcome: QueueGenerationOutcome = {
-      ok: true,
-      job: null,
-      origin: "same_key_race",
-      idempotencyKey: "hash",
-    };
-    expect(rosterEntryFromQueueOutcome("photo-1", outcome)).toEqual({
-      photoId: "photo-1",
-      status: "queued",
     });
   });
 

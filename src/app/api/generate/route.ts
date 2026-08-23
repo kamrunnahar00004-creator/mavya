@@ -12,7 +12,12 @@ import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
 import { generationDisabled } from "@/lib/usage";
 import { getEntitlement } from "@/lib/entitlements";
 import { runQueuedGenerationOnce, runQueuedRefinementChain } from "@/lib/refinement";
-import { queueGeneration, recoverIfStale, type JobRow } from "@/lib/generation-queue";
+import {
+  consumeGenerationDailyBudget,
+  queueGeneration,
+  recoverIfStale,
+  type JobRow,
+} from "@/lib/generation-queue";
 import {
   ACTIVE_JOB_STATUSES,
   type GenerationJobPayload,
@@ -243,9 +248,8 @@ export async function POST(req: NextRequest) {
   const ip = clientIp(req);
   const perMin = await rateLimit(`gen:u:${user.id}`, 2, 60_000);
   const perMinIp = await rateLimit(`gen:${ip}`, 4, 60_000);
-  const perDay = await rateLimit(`gen-day:u:${user.id}`, 40, 24 * 60 * 60 * 1000);
-  if (!perMin.ok || !perMinIp.ok || !perDay.ok) {
-    const reason = [perMin, perMinIp, perDay].find((r) => !r.ok)?.reason;
+  if (!perMin.ok || !perMinIp.ok) {
+    const reason = [perMin, perMinIp].find((r) => !r.ok)?.reason;
     if (reason === "missing_durable_store") {
       return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
     }
@@ -260,10 +264,12 @@ export async function POST(req: NextRequest) {
   }
 
   const photoId = typeof body.photoId === "string" ? body.photoId : "";
-  const idempotencyKey =
-    typeof body.idempotencyKey === "string" ? body.idempotencyKey.slice(0, 80) : "";
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : "";
   if (!photoId || !idempotencyKey) {
     return apiError("bad_request", "Missing photoId or idempotencyKey.");
+  }
+  if (idempotencyKey.length > 80) {
+    return apiError("bad_request", "Idempotency key too long.");
   }
   const rawInstruction =
     typeof body.editInstruction === "string" ? body.editInstruction : undefined;
@@ -285,6 +291,16 @@ export async function POST(req: NextRequest) {
     ? "retry"
     : "improve";
 
+  // Charge the shared manual/bulk daily budget only after the request is
+  // syntactically valid. Malformed edits must remain safe to correct and retry.
+  const daily = await consumeGenerationDailyBudget(user.id, 1, idempotencyKey);
+  if (!daily.ok) {
+    if (daily.reason === "missing_durable_store") {
+      return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
+    }
+    return apiError("rate_limited", "Generation rate limit hit. Try again tomorrow.");
+  }
+
   const supabase = await createSupabaseServerClient();
 
   const outcome = await queueGeneration({
@@ -301,14 +317,6 @@ export async function POST(req: NextRequest) {
   if (!outcome.ok) {
     return apiError(outcome.code, outcome.message);
   }
-  if (outcome.origin === "same_key_race") {
-    // Concurrent double-submit of the SAME key; tell the client to poll.
-    return NextResponse.json(
-      { ok: false, status: "queued", jobId: null, key: outcome.idempotencyKey },
-      { status: 202 }
-    );
-  }
-
   // Action-start latency span (no ids/paths; time from request entry to queue).
   console.log(
     JSON.stringify({ event: "perf", span: "generate.start", ms: Date.now() - requestStartedAt })

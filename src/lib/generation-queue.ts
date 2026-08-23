@@ -13,6 +13,24 @@ import {
 import { ACTIVE_JOB_STATUSES, type GenerationJobStatus } from "@/lib/generation-types";
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
+import { weightedRateLimitMany, type RateLimitResult } from "@/lib/rate-limit";
+
+const GENERATION_DAILY_MAX = 40;
+const GENERATION_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** One shared cost budget for manual and Fix-all generation. */
+export function consumeGenerationDailyBudget(
+  userId: string,
+  weight: number,
+  idempotencyToken: string
+): Promise<RateLimitResult> {
+  return weightedRateLimitMany(
+    [{ key: `gen-day:u:${userId}`, max: GENERATION_DAILY_MAX }],
+    weight,
+    GENERATION_DAILY_WINDOW_MS,
+    `gen-day:${userId}:${idempotencyToken}`
+  );
+}
 
 /**
  * The one generation_jobs row shape, shared by /api/generate and
@@ -57,11 +75,6 @@ export type QueueGenerationInput = {
 
 export type QueueGenerationOutcome =
   | { ok: true; job: JobRow; origin: "new" | "same_key" | "active_root_conflict" }
-  // Concurrent double-submit of the SAME idempotency key raced past the
-  // initial lookup and lost the insert to the other request. Matches the
-  // original /api/generate behavior exactly: tell the caller to poll by
-  // key rather than paying for an extra read here.
-  | { ok: true; job: null; origin: "same_key_race"; idempotencyKey: string }
   | { ok: false; code: ApiErrorCode; message: string };
 
 /**
@@ -112,11 +125,19 @@ export async function queueGeneration(
   //    re-run. Same params required, otherwise the key was reused for a
   //    genuinely different request.
   {
-    const { data: existing } = await supabase
+    const { data: existing, error: existingErr } = await supabase
       .from("generation_jobs")
       .select("*")
       .eq("idempotency_key", idempotencyKey)
       .maybeSingle();
+    if (existingErr) {
+      logEvent("generate.idempotency_lookup_failed", {
+        userId,
+        photoId,
+        error: existingErr.message,
+      });
+      return { ok: false, code: "internal_error", message: "Could not start generation. Try again." };
+    }
     if (existing) {
       const job = existing as JobRow;
       if (
@@ -217,24 +238,30 @@ export async function queueGeneration(
     };
   }
 
-  // 5. Concurrency guard (Codex finding 1): only one active ROOT workflow
-  //    may exist per photo at a time, no matter which idempotency key or
-  //    which route (manual single-photo, or bulk) is trying to create one.
-  //    This is a fast-path pre-check; the database partial unique index
-  //    (migration 0029) is the atomic backstop for the race between this
-  //    check and the insert below.
+  // 5. Fast-path concurrency check. Migration 0029's per-photo trigger is
+  //    the atomic backstop and covers every active attempt, including a
+  //    refinement whose root has already completed.
   {
-    const { data: activeRoot } = await supabase
+    const { data: activeJobs, error: activeErr } = await supabase
       .from("generation_jobs")
       .select("*")
       .eq("photo_id", photoId)
-      .eq("attempt_number", 1)
       .in("status", Array.from(ACTIVE_JOB_STATUSES))
-      .maybeSingle();
-    if (activeRoot) {
+      .order("attempt_number", { ascending: false })
+      .limit(1);
+    if (activeErr) {
+      logEvent("generate.active_workflow_lookup_failed", {
+        userId,
+        photoId,
+        error: activeErr.message,
+      });
+      return { ok: false, code: "internal_error", message: "Could not start generation. Try again." };
+    }
+    const activeJob = activeJobs?.[0];
+    if (activeJob) {
       return {
         ok: true,
-        job: await recoverIfStale(supabase, activeRoot as JobRow),
+        job: await recoverIfStale(supabase, activeJob as JobRow),
         origin: "active_root_conflict",
       };
     }
@@ -297,30 +324,45 @@ export async function queueGeneration(
     .single();
 
   if (createErr || !created) {
-    if (createErr?.code === "23505") {
-      const message = createErr.message ?? "";
-      // Lost the race for the active-root-per-photo slot: another request
-      // (manual or bulk) won it between our pre-check and this insert.
-      if (message.includes("generation_jobs_one_active_root_per_photo")) {
-        const { data: activeRoot } = await admin
-          .from("generation_jobs")
-          .select("*")
-          .eq("photo_id", photoId)
-          .eq("attempt_number", 1)
-          .in("status", Array.from(ACTIVE_JOB_STATUSES))
-          .maybeSingle();
-        if (activeRoot) {
+    // Do not depend on a database driver's constraint-name wording. Resolve
+    // every uniqueness/trigger race from authoritative rows.
+    if (createErr?.code === "23505" || createErr?.message?.includes("active_generation_workflow_exists")) {
+      const { data: sameKey, error: sameKeyErr } = await admin
+        .from("generation_jobs")
+        .select("*")
+        .eq("idempotency_key", idempotencyKey)
+        .maybeSingle();
+      if (!sameKeyErr && sameKey) {
+        const job = sameKey as JobRow;
+        if (
+          job.user_id !== userId ||
+          job.photo_id !== photoId ||
+          job.operation !== operation ||
+          (job.edit_instruction ?? null) !== (editInstruction ?? null)
+        ) {
           return {
-            ok: true,
-            job: await recoverIfStale(supabase, activeRoot as JobRow),
-            origin: "active_root_conflict",
+            ok: false,
+            code: "idempotency_conflict",
+            message: "This request key was already used with different parameters.",
           };
         }
+        return { ok: true, job: await recoverIfStale(supabase, job), origin: "same_key" };
       }
-      // Otherwise this is the idempotency_key unique constraint: a
-      // concurrent duplicate of the SAME key. Matches the original
-      // behavior exactly -- tell the client to poll, no extra read.
-      return { ok: true, job: null, origin: "same_key_race", idempotencyKey };
+
+      const { data: activeJobs, error: activeErr } = await admin
+        .from("generation_jobs")
+        .select("*")
+        .eq("photo_id", photoId)
+        .in("status", Array.from(ACTIVE_JOB_STATUSES))
+        .order("attempt_number", { ascending: false })
+        .limit(1);
+      if (!activeErr && activeJobs?.[0]) {
+        return {
+          ok: true,
+          job: await recoverIfStale(supabase, activeJobs[0] as JobRow),
+          origin: "active_root_conflict",
+        };
+      }
     }
     logEvent("generate.job_create_failed", { userId, error: createErr?.message });
     return { ok: false, code: "internal_error", message: "Could not start the generation. Try again." };

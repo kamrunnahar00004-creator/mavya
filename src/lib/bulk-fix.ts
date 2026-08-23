@@ -62,6 +62,9 @@ export type PhotoEligibilityInput = {
   /** photos.selected_generation_job_id is set: the seller already has an
    *  improved version selected for this photo. */
   alreadyImproved: boolean;
+  /** A queued/generating/fidelity/rescoring attempt from any workflow is
+   *  already using this photo. Exclude it before charging bulk capacity. */
+  alreadyActive: boolean;
 };
 
 export type PhotoEligibilityVerdict =
@@ -84,6 +87,7 @@ export function classifyPhotoForBulkFix(input: PhotoEligibilityInput): PhotoElig
     return { eligible: false, reason: input.bucket === "strong" ? "strong" : "not_generatable" };
   }
   if (input.alreadyImproved) return { eligible: false, reason: "already_improved" };
+  if (input.alreadyActive) return { eligible: false, reason: "already_active" };
   return { eligible: true };
 }
 
@@ -119,14 +123,6 @@ export function rosterEntryFromQueueOutcome(
     // Anything else (internal_error, idempotency_conflict, source_unavailable,
     // a genuine infra failure) is a real per-photo failure.
     return { photoId, status: "failed", reason: "queue_failed" };
-  }
-  if (outcome.job === null) {
-    // same_key_race: a concurrent duplicate of THIS photo's derived key lost
-    // the insert race to another in-flight request for the same key. The
-    // photo's fix genuinely is queued (by the winner); no jobId to report
-    // without an extra read, matching /api/generate's own same-key-race
-    // response shape.
-    return { photoId, status: "queued" };
   }
   if (outcome.origin === "active_root_conflict") {
     return { photoId, status: "skipped", reason: "already_active", jobId: outcome.job.id };

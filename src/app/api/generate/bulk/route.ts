@@ -1,19 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { rateLimit, weightedRateLimitMany } from "@/lib/rate-limit";
+import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent } from "@/lib/errors";
 import { generationDisabled } from "@/lib/usage";
 import { getEntitlement } from "@/lib/entitlements";
-import { queueGeneration } from "@/lib/generation-queue";
+import {
+  consumeGenerationDailyBudget,
+  queueGeneration,
+} from "@/lib/generation-queue";
+import { ACTIVE_JOB_STATUSES } from "@/lib/generation-types";
 import { computeFixEligibilityBucket } from "@/lib/fix-eligibility";
 import {
+  buildBulkSummary,
   classifyPhotoForBulkFix,
   deriveBulkPhotoKey,
   rosterEntryFromQueueOutcome,
-  buildBulkSummary,
   type BulkRosterEntry,
+  type BulkSkipReason,
 } from "@/lib/bulk-fix";
 import type { RubricJson } from "@/lib/rubric";
 
@@ -21,30 +26,82 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-/** Separate namespace and cap from the single-photo day limiter
- *  (gen-day:u:) -- a deliberately independent budget (Codex finding 2), not
- *  N repetitions of the per-minute single-photo limiter. */
-const BULK_DAILY_WEIGHT_MAX = 40;
-const BULK_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
-
 type BulkRequestRow = {
   id: string;
   user_id: string;
   product_id: string;
   idempotency_key: string;
-  roster: BulkRosterEntry[];
+  status: "processing" | "completed";
 };
 
+type BulkItemRow = {
+  request_id: string;
+  photo_id: string;
+  ordinal: number;
+  generation_key: string;
+  status: "pending" | "queued" | "skipped" | "failed";
+  reason: BulkSkipReason | null;
+  job_id: string | null;
+};
+
+type PhotoRow = {
+  id: string;
+  role: "main" | "supporting";
+  position: number;
+  created_at: string;
+  current_audit_id: string | null;
+  selected_generation_job_id: string | null;
+};
+
+function storedRoster(items: readonly BulkItemRow[]): BulkRosterEntry[] {
+  return items
+    .filter(
+      (item): item is BulkItemRow & { status: "queued" | "skipped" | "failed" } =>
+        item.status !== "pending"
+    )
+    .map((item) => ({
+      photoId: item.photo_id,
+      status: item.status,
+      ...(item.reason ? { reason: item.reason } : {}),
+      ...(item.job_id ? { jobId: item.job_id } : {}),
+    }));
+}
+
+function sortPhotos(photos: readonly PhotoRow[]): PhotoRow[] {
+  return [...photos].sort((a, b) => {
+    const roleOrder = (a.role === "main" ? 0 : 1) - (b.role === "main" ? 0 : 1);
+    if (roleOrder !== 0) return roleOrder;
+    if (a.position !== b.position) return a.position - b.position;
+    const createdOrder = a.created_at.localeCompare(b.created_at);
+    return createdOrder !== 0 ? createdOrder : a.id.localeCompare(b.id);
+  });
+}
+
+async function loadRequestItems(
+  admin: ReturnType<typeof createSupabaseAdminClient>,
+  requestId: string
+): Promise<{ items: BulkItemRow[]; error: string | null }> {
+  const { data, error } = await admin
+    .from("bulk_generation_request_items")
+    .select("request_id, photo_id, ordinal, generation_key, status, reason, job_id")
+    .eq("request_id", requestId)
+    .order("ordinal", { ascending: true });
+  return { items: (data as BulkItemRow[] | null) ?? [], error: error?.message ?? null };
+}
+
+function bulkResponse(requestId: string, items: readonly BulkItemRow[], status = 200) {
+  const roster = storedRoster(items);
+  return NextResponse.json(
+    { ok: true, requestId, summary: buildBulkSummary(roster), photos: roster },
+    { status }
+  );
+}
+
 /**
- * POST: queue the existing per-photo One-click fix independently for every
- * qualifying photo on a product -- not a joint operation, not a joint check
- * afterward (Codex architecture review, Slice 4b, 2026-08-23).
- *
- * Body (JSON): { productId, idempotencyKey }. Never accepts client photo
- * IDs, scores, or buckets -- the eligible roster is entirely server-derived
- * and frozen into bulk_generation_requests (migration 0029) so a retry of
- * the same key resumes the exact same request rather than re-deriving
- * eligibility against possibly-changed current state.
+ * POST: durably freeze, then independently queue, the existing One-click fix
+ * for every eligible photo on one product. The frozen roster is written
+ * before any generation job, so a lost response or process death resumes the
+ * same photos with the same per-photo keys.
  */
 export async function POST(req: NextRequest) {
   if (generationDisabled()) {
@@ -62,24 +119,7 @@ export async function POST(req: NextRequest) {
         "Your payment did not go through. Update it in billing to keep improving photos. Your saved results are safe."
       );
     }
-    return apiError(
-      "subscription_required",
-      "AI photo improvement is part of the Mavya Founding Beta subscription."
-    );
-  }
-
-  // Request-level anti-spam guard against repeatedly clicking "Fix all"
-  // itself. Deliberately separate from, and much smaller than, the weighted
-  // per-photo cost budget below -- this just rate-limits the CLICK.
-  const ip = clientIp(req);
-  const perMin = await rateLimit(`gen-bulk:u:${user.id}`, 5, 60_000);
-  const perMinIp = await rateLimit(`gen-bulk:ip:${ip}`, 8, 60_000);
-  if (!perMin.ok || !perMinIp.ok) {
-    const reason = [perMin, perMinIp].find((r) => !r.ok)?.reason;
-    if (reason === "missing_durable_store") {
-      return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
-    }
-    return apiError("rate_limited", "Fix-all rate limit hit. Wait a minute.");
+    return apiError("subscription_required", "AI photo improvement is part of your Mavya plan.");
   }
 
   let body: Record<string, unknown>;
@@ -89,209 +129,276 @@ export async function POST(req: NextRequest) {
     return apiError("bad_request", "Invalid request body.");
   }
   const productId = typeof body.productId === "string" ? body.productId : "";
-  const idempotencyKey =
-    typeof body.idempotencyKey === "string" ? body.idempotencyKey.slice(0, 80) : "";
-  if (!productId || !idempotencyKey) {
+  const idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : "";
+  if (!productId || !idempotencyKey || idempotencyKey.length > 80) {
     return apiError("bad_request", "Missing productId or idempotencyKey.");
   }
 
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
 
-  // Idempotency: a retry of the SAME key resumes the exact frozen roster,
-  // never a fresh eligibility computation and never a second charge against
-  // the weighted daily budget below.
-  {
-    const { data: existing, error: existingErr } = await supabase
-      .from("bulk_generation_requests")
-      .select("*")
-      .eq("idempotency_key", idempotencyKey)
-      .maybeSingle();
-    if (existingErr) {
-      logEvent("generate.bulk_lookup_failed", { userId: user.id, error: existingErr.message });
-      return apiError("internal_error", "Could not start Fix all. Try again.");
-    }
-    if (existing) {
-      const row = existing as BulkRequestRow;
-      if (row.product_id !== productId) {
-        return apiError(
-          "idempotency_conflict",
-          "This request key was already used with a different product."
-        );
-      }
-      return NextResponse.json(
-        {
-          ok: true,
-          requestId: row.id,
-          summary: buildBulkSummary(row.roster),
-          photos: row.roster,
-        },
-        { status: 200 }
-      );
-    }
-  }
-
-  // Ownership: RLS scopes products to the owner; a foreign productId
-  // returns null.
-  const { data: product, error: productErr } = await supabase
-    .from("products")
-    .select("id")
-    .eq("id", productId)
+  // Replays are looked up before request-level anti-spam. Completed requests
+  // return immediately; interrupted requests resume their pending items.
+  const { data: existing, error: existingErr } = await admin
+    .from("bulk_generation_requests")
+    .select("id, user_id, product_id, idempotency_key, status")
+    .eq("user_id", user.id)
+    .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
-  if (productErr) {
-    logEvent("generate.bulk_product_lookup_failed", {
-      userId: user.id,
-      productId,
-      error: productErr.message,
-    });
-    return apiError("internal_error", "Could not start Fix all. Try again.");
-  }
-  if (!product) return apiError("source_unavailable", "Product not found.");
-
-  // Every photo on the product, RLS-scoped via the same ownership check.
-  const { data: photos, error: photosErr } = await supabase
-    .from("photos")
-    .select("id, role, current_audit_id, selected_generation_job_id")
-    .eq("product_id", productId);
-  if (photosErr) {
-    logEvent("generate.bulk_photos_lookup_failed", {
-      userId: user.id,
-      productId,
-      error: photosErr.message,
-    });
+  if (existingErr) {
+    logEvent("generate.bulk_lookup_failed", { userId: user.id, error: existingErr.message });
     return apiError("internal_error", "Could not start Fix all. Try again.");
   }
 
-  const currentAuditIds = (photos ?? [])
-    .map((p) => p.current_audit_id)
-    .filter((id): id is string => Boolean(id));
-  const auditsById = new Map<string, { rubric: RubricJson; score_cache_id: string | null }>();
-  if (currentAuditIds.length > 0) {
-    const { data: audits, error: auditsErr } = await supabase
-      .from("audits")
-      .select("id, rubric, score_cache_id")
-      .in("id", currentAuditIds);
-    if (auditsErr) {
-      logEvent("generate.bulk_audits_lookup_failed", {
+  let requestRow = existing as BulkRequestRow | null;
+  if (requestRow && requestRow.product_id !== productId) {
+    return apiError(
+      "idempotency_conflict",
+      "This request key was already used with a different product."
+    );
+  }
+  if (requestRow?.status === "completed") {
+    const loaded = await loadRequestItems(admin, requestRow.id);
+    if (loaded.error) {
+      logEvent("generate.bulk_items_lookup_failed", {
+        requestId: requestRow.id,
+        error: loaded.error,
+      });
+      return apiError("internal_error", "Could not load the Fix-all request. Try again.");
+    }
+    return bulkResponse(requestRow.id, loaded.items);
+  }
+
+  if (!requestRow) {
+    const ip = clientIp(req);
+    const perMin = await rateLimit(`gen-bulk:u:${user.id}`, 5, 60_000);
+    const perMinIp = await rateLimit(`gen-bulk:ip:${ip}`, 8, 60_000);
+    if (!perMin.ok || !perMinIp.ok) {
+      const reason = [perMin, perMinIp].find((result) => !result.ok)?.reason;
+      if (reason === "missing_durable_store") {
+        return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
+      }
+      return apiError("rate_limited", "Fix-all rate limit hit. Wait a minute.");
+    }
+
+    const { data: product, error: productErr } = await supabase
+      .from("products")
+      .select("id")
+      .eq("id", productId)
+      .maybeSingle();
+    if (productErr) {
+      logEvent("generate.bulk_product_lookup_failed", {
         userId: user.id,
         productId,
-        error: auditsErr.message,
+        error: productErr.message,
       });
       return apiError("internal_error", "Could not start Fix all. Try again.");
     }
-    for (const a of audits ?? []) {
-      auditsById.set(a.id, { rubric: a.rubric as RubricJson, score_cache_id: a.score_cache_id });
-    }
-  }
+    if (!product) return apiError("source_unavailable", "Product not found.");
 
-  // Classify every photo server-side. Nothing here is client-supplied.
-  const roster: BulkRosterEntry[] = [];
-  const eligiblePhotoIds: string[] = [];
-  for (const photo of photos ?? []) {
-    const audit = photo.current_audit_id ? auditsById.get(photo.current_audit_id) : undefined;
-    const hasCurrentAudit = Boolean(audit?.rubric && audit?.score_cache_id);
-    const bucket = hasCurrentAudit
-      ? computeFixEligibilityBucket(audit!.rubric, photo.role === "main" ? "main" : "supporting")
-      : null;
-    const verdict = classifyPhotoForBulkFix({
-      hasCurrentAudit,
-      bucket,
-      alreadyImproved: Boolean(photo.selected_generation_job_id),
-    });
-    if (verdict.eligible) {
-      eligiblePhotoIds.push(photo.id);
-    } else {
-      roster.push({ photoId: photo.id, status: "skipped", reason: verdict.reason });
+    const { data: photoData, error: photosErr } = await supabase
+      .from("photos")
+      .select("id, role, position, created_at, current_audit_id, selected_generation_job_id")
+      .eq("product_id", productId);
+    if (photosErr) {
+      logEvent("generate.bulk_photos_lookup_failed", {
+        userId: user.id,
+        productId,
+        error: photosErr.message,
+      });
+      return apiError("internal_error", "Could not start Fix all. Try again.");
     }
-  }
+    const photos = sortPhotos((photoData as PhotoRow[] | null) ?? []);
+    const photoIds = photos.map((photo) => photo.id);
+    const currentAuditIds = photos
+      .map((photo) => photo.current_audit_id)
+      .filter((id): id is string => Boolean(id));
 
-  // Weighted daily cost budget, charged ONCE for the whole batch (Codex
-  // finding 2) -- never the single-photo per-minute limiter run N times.
-  if (eligiblePhotoIds.length > 0) {
-    const weighted = await weightedRateLimitMany(
-      [{ key: `gen-bulk-day:u:${user.id}`, max: BULK_DAILY_WEIGHT_MAX }],
-      eligiblePhotoIds.length,
-      BULK_DAILY_WINDOW_MS,
-      `${user.id}:${idempotencyKey}`
-    );
-    if (!weighted.ok) {
-      if (weighted.reason === "missing_durable_store") {
-        return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
+    const auditsById = new Map<string, { rubric: RubricJson; score_cache_id: string | null }>();
+    if (currentAuditIds.length > 0) {
+      const { data: audits, error: auditsErr } = await supabase
+        .from("audits")
+        .select("id, rubric, score_cache_id")
+        .in("id", currentAuditIds);
+      if (auditsErr) {
+        logEvent("generate.bulk_audits_lookup_failed", {
+          userId: user.id,
+          productId,
+          error: auditsErr.message,
+        });
+        return apiError("internal_error", "Could not start Fix all. Try again.");
       }
+      for (const audit of audits ?? []) {
+        auditsById.set(audit.id, {
+          rubric: audit.rubric as RubricJson,
+          score_cache_id: audit.score_cache_id,
+        });
+      }
+    }
+
+    const activePhotoIds = new Set<string>();
+    if (photoIds.length > 0) {
+      const { data: activeJobs, error: activeErr } = await supabase
+        .from("generation_jobs")
+        .select("photo_id")
+        .in("photo_id", photoIds)
+        .in("status", Array.from(ACTIVE_JOB_STATUSES));
+      if (activeErr) {
+        logEvent("generate.bulk_active_lookup_failed", {
+          userId: user.id,
+          productId,
+          error: activeErr.message,
+        });
+        return apiError("internal_error", "Could not start Fix all. Try again.");
+      }
+      for (const job of activeJobs ?? []) {
+        if (job.photo_id) activePhotoIds.add(job.photo_id);
+      }
+    }
+
+    const frozenItems = photos.map((photo, ordinal) => {
+      const audit = photo.current_audit_id ? auditsById.get(photo.current_audit_id) : undefined;
+      const hasCurrentAudit = Boolean(audit?.rubric && audit?.score_cache_id);
+      const bucket = hasCurrentAudit
+        ? computeFixEligibilityBucket(
+            audit!.rubric,
+            photo.role === "main" ? "main" : "supporting"
+          )
+        : null;
+      const verdict = classifyPhotoForBulkFix({
+        hasCurrentAudit,
+        bucket,
+        alreadyImproved: Boolean(photo.selected_generation_job_id),
+        alreadyActive: activePhotoIds.has(photo.id),
+      });
+      return {
+        photoId: photo.id,
+        ordinal,
+        generationKey: deriveBulkPhotoKey(user.id, productId, idempotencyKey, photo.id),
+        status: verdict.eligible ? "pending" : "skipped",
+        ...(!verdict.eligible ? { reason: verdict.reason } : {}),
+      };
+    });
+
+    const { data: frozen, error: freezeErr } = await admin.rpc(
+      "freeze_bulk_generation_request",
+      {
+        p_user: user.id,
+        p_product: productId,
+        p_idempotency_key: idempotencyKey,
+        p_items: frozenItems,
+      }
+    );
+    const freezeResult = Array.isArray(frozen) ? frozen[0] : frozen;
+    if (freezeErr || !freezeResult?.request_id) {
+      logEvent("generate.bulk_request_freeze_failed", {
+        userId: user.id,
+        productId,
+        error: freezeErr?.message,
+      });
+      return apiError("internal_error", "Could not save the Fix-all request. Try again.");
+    }
+    if (freezeResult.product_conflict) {
       return apiError(
-        "rate_limited",
-        "Today's Fix-all capacity is used up. Try again tomorrow, or fix photos individually."
+        "idempotency_conflict",
+        "This request key was already used with a different product."
       );
     }
+    const { data: claimed, error: claimedErr } = await admin
+      .from("bulk_generation_requests")
+      .select("id, user_id, product_id, idempotency_key, status")
+      .eq("id", freezeResult.request_id)
+      .single();
+    if (claimedErr || !claimed) {
+      logEvent("generate.bulk_claim_lookup_failed", {
+        requestId: freezeResult.request_id,
+        error: claimedErr?.message,
+      });
+      return apiError("internal_error", "Could not load the Fix-all request. Try again.");
+    }
+    requestRow = claimed as BulkRequestRow;
   }
 
-  // Process every eligible photo independently. One photo failing never
-  // blocks or rolls back the others (Codex finding 5).
-  for (const photoId of eligiblePhotoIds) {
-    const photoKey = deriveBulkPhotoKey(user.id, productId, idempotencyKey, photoId);
+  const loaded = await loadRequestItems(admin, requestRow.id);
+  if (loaded.error) {
+    logEvent("generate.bulk_items_lookup_failed", {
+      requestId: requestRow.id,
+      error: loaded.error,
+    });
+    return apiError("internal_error", "Could not load the Fix-all request. Try again.");
+  }
+  const pending = loaded.items.filter((item) => item.status === "pending");
+
+  if (pending.length > 0) {
+    const daily = await consumeGenerationDailyBudget(
+      user.id,
+      pending.length,
+      `bulk:${idempotencyKey}`
+    );
+    if (!daily.ok) {
+      if (daily.reason === "missing_durable_store") {
+        return apiError("rate_limit_not_configured", "Rate limiting is not configured.");
+      }
+      return apiError("rate_limited", "Today's generation capacity is used up. Try again tomorrow.");
+    }
+  }
+
+  for (const item of pending) {
     const outcome = await queueGeneration({
       supabase,
       userId: user.id,
-      photoId,
-      idempotencyKey: photoKey,
+      photoId: item.photo_id,
+      idempotencyKey: item.generation_key,
       operation: "improve",
     });
-    roster.push(rosterEntryFromQueueOutcome(photoId, outcome));
-  }
-
-  // Freeze the roster. A concurrent duplicate of this exact key racing past
-  // the lookup above loses this insert; its response defers to whichever
-  // request actually won (never two different rosters for one key).
-  const { data: created, error: createErr } = await admin
-    .from("bulk_generation_requests")
-    .insert({
-      user_id: user.id,
-      product_id: productId,
-      idempotency_key: idempotencyKey,
-      roster,
-    })
-    .select()
-    .single();
-
-  if (createErr || !created) {
-    if (createErr?.code === "23505") {
-      const { data: existing } = await admin
-        .from("bulk_generation_requests")
-        .select("*")
-        .eq("idempotency_key", idempotencyKey)
-        .maybeSingle();
-      if (existing) {
-        const row = existing as BulkRequestRow;
-        if (row.user_id !== user.id || row.product_id !== productId) {
-          return apiError(
-            "idempotency_conflict",
-            "This request key was already used with different parameters."
-          );
-        }
-        return NextResponse.json(
-          {
-            ok: true,
-            requestId: row.id,
-            summary: buildBulkSummary(row.roster),
-            photos: row.roster,
-          },
-          { status: 200 }
-        );
-      }
+    const entry = rosterEntryFromQueueOutcome(item.photo_id, outcome);
+    const { error: itemErr } = await admin
+      .from("bulk_generation_request_items")
+      .update({
+        status: entry.status,
+        reason: entry.reason ?? null,
+        job_id: entry.jobId ?? null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("request_id", requestRow.id)
+      .eq("photo_id", item.photo_id);
+    if (itemErr) {
+      logEvent("generate.bulk_item_update_failed", {
+        requestId: requestRow.id,
+        photoId: item.photo_id,
+        error: itemErr.message,
+      });
+      return apiError("internal_error", "Could not save Fix-all progress. Try again.");
     }
-    logEvent("generate.bulk_request_create_failed", { userId: user.id, error: createErr?.message });
-    return apiError("internal_error", "Could not save the Fix-all request. Try again.");
   }
-  const row = created as BulkRequestRow;
 
+  const final = await loadRequestItems(admin, requestRow.id);
+  if (final.error) {
+    logEvent("generate.bulk_items_lookup_failed", {
+      requestId: requestRow.id,
+      error: final.error,
+    });
+    return apiError("internal_error", "Could not load the Fix-all request. Try again.");
+  }
+  if (!final.items.some((item) => item.status === "pending")) {
+    const { error: completeErr } = await admin
+      .from("bulk_generation_requests")
+      .update({ status: "completed", updated_at: new Date().toISOString() })
+      .eq("id", requestRow.id);
+    if (completeErr) {
+      logEvent("generate.bulk_complete_failed", {
+        requestId: requestRow.id,
+        error: completeErr.message,
+      });
+      return apiError("internal_error", "Could not finish the Fix-all request. Try again.");
+    }
+  }
+
+  const roster = storedRoster(final.items);
   logEvent("generate.bulk_queued", {
-    requestId: row.id,
+    requestId: requestRow.id,
     productId,
     summary: buildBulkSummary(roster),
   });
-
-  return NextResponse.json(
-    { ok: true, requestId: row.id, summary: buildBulkSummary(roster), photos: roster },
-    { status: 202 }
-  );
+  return bulkResponse(requestRow.id, final.items, existing ? 200 : 202);
 }

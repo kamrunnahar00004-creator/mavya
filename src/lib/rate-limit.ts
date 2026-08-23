@@ -1,6 +1,6 @@
 import { Redis } from "@upstash/redis";
 
-type RateLimitResult = {
+export type RateLimitResult = {
   ok: boolean;
   reason?: "limited" | "missing_durable_store" | "store_error";
 };
