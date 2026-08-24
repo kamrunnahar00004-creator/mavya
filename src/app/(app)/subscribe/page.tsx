@@ -131,9 +131,10 @@ function SubscribeInner() {
   const [authState, setAuthState] = useState<"checking" | "in" | "out">("checking");
   const [authOpen, setAuthOpen] = useState(false);
   const [status, setStatus] = useState<BillingStatus | null>(null);
-  const [busy, setBusy] = useState<"checkout" | "portal" | null>(null);
+  const [busy, setBusy] = useState<
+    { kind: "checkout"; plan: PurchasablePlanKey } | { kind: "portal" } | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedPlan, setSelectedPlan] = useState<PurchasablePlanKey>("shop");
   const [cadence, setCadence] = useState<BillingCadence>("monthly");
 
   useEffect(() => {
@@ -161,42 +162,45 @@ function SubscribeInner() {
     };
   }, []);
 
-  const startCheckout = useCallback(async () => {
-    if (busy) return;
-    setError(null);
-    if (authState !== "in") {
-      setAuthOpen(true);
-      return;
-    }
-    setBusy("checkout");
-    try {
-      const res = await fetch("/api/billing/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ planKey: selectedPlan, cadence }),
-      });
-      const body = (await res.json().catch(() => null)) as
-        | { url?: string | null; alreadySubscribed?: boolean; error?: string }
-        | null;
-      if (!res.ok) throw new Error(body?.error || "Checkout could not be started.");
-      if (body?.alreadySubscribed) {
-        window.location.href = body.url || "/subscribe";
+  const startCheckout = useCallback(
+    async (planKey: PurchasablePlanKey) => {
+      if (busy) return;
+      setError(null);
+      if (authState !== "in") {
+        setAuthOpen(true);
         return;
       }
-      if (body?.url) {
-        window.location.href = body.url;
-        return;
+      setBusy({ kind: "checkout", plan: planKey });
+      try {
+        const res = await fetch("/api/billing/checkout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ planKey, cadence }),
+        });
+        const body = (await res.json().catch(() => null)) as
+          | { url?: string | null; alreadySubscribed?: boolean; error?: string }
+          | null;
+        if (!res.ok) throw new Error(body?.error || "Checkout could not be started.");
+        if (body?.alreadySubscribed) {
+          window.location.href = body.url || "/subscribe";
+          return;
+        }
+        if (body?.url) {
+          window.location.href = body.url;
+          return;
+        }
+        throw new Error("Checkout could not be started.");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Checkout could not be started.");
+        setBusy(null);
       }
-      throw new Error("Checkout could not be started.");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Checkout could not be started.");
-      setBusy(null);
-    }
-  }, [busy, authState, selectedPlan, cadence]);
+    },
+    [busy, authState, cadence]
+  );
 
   const openPortal = useCallback(async () => {
     if (busy) return;
-    setBusy("portal");
+    setBusy({ kind: "portal" });
     setError(null);
     try {
       const res = await fetch("/api/billing/portal", { method: "POST" });
@@ -220,8 +224,6 @@ function SubscribeInner() {
   const billingConfigurationIssue =
     status?.reason === "wrong_plan" || status?.reason === "expired";
 
-  const selectedDisplay = PLAN_DISPLAY[selectedPlan];
-  const selectedPriceCents = cadence === "monthly" ? selectedDisplay.monthlyCents : selectedDisplay.annualCents;
   const activePlanLabel = useMemo(() => {
     if (!status?.planKey) return null;
     if (status.planKey === "legacy") return "Founding";
@@ -229,7 +231,7 @@ function SubscribeInner() {
   }, [status?.planKey]);
 
   return (
-    <main className="mx-auto max-w-[880px] px-6 pb-20 pt-12 sm:pt-16">
+    <main className="mx-auto max-w-[1080px] px-6 pb-20 pt-12 sm:pt-16">
       <h1 className="font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
         See exactly what&apos;s costing your Etsy listing clicks
       </h1>
@@ -253,7 +255,7 @@ function SubscribeInner() {
       )}
 
       {active && status ? (
-        <div className="mt-8 overflow-hidden rounded-[var(--radius-2xl)] border-2 border-[var(--color-primary)] bg-white shadow-[var(--shadow-soft)]">
+        <div className="mt-8 max-w-[560px] overflow-hidden rounded-[var(--radius-2xl)] border-2 border-[var(--color-primary)] bg-white shadow-[var(--shadow-soft)]">
           <div className="flex items-center justify-center bg-[var(--color-primary)] px-6 py-3">
             <span className="text-[13px] font-semibold text-white">
               {activePlanLabel ?? "Active plan"}
@@ -288,7 +290,7 @@ function SubscribeInner() {
                 disabled={busy !== null}
                 className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[15px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60 sm:flex-none"
               >
-                {busy === "portal" && (
+                {busy?.kind === "portal" && (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                 )}
                 Manage billing
@@ -316,43 +318,38 @@ function SubscribeInner() {
               </button>
             ))}
           </div>
-          {cadence === "annual" && (
-            <p className="mt-2 text-[12.5px] text-[var(--color-ink-soft)]">
-              2 months free compared to paying monthly.
-            </p>
-          )}
-
-          {/* Plan cards -- select one, one shared CTA acts on the selection */}
-          <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {/* Plan cards -- each fully self-contained: its own badge, price,
+              feature list, and its own button that acts on THAT tier
+              directly. No shared "select a card, then act below" step. */}
+          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
             {(Object.keys(PLAN_DISPLAY) as PurchasablePlanKey[]).map((planKey) => {
               const plan = PLAN_DISPLAY[planKey];
               const priceCents = cadence === "monthly" ? plan.monthlyCents : plan.annualCents;
-              const isSelected = selectedPlan === planKey;
+              const emphasized = plan.highlight || plan.bestValue;
+              const checkingOutThis = busy?.kind === "checkout" && busy.plan === planKey;
               return (
-                <button
+                <div
                   key={planKey}
-                  type="button"
-                  onClick={() => setSelectedPlan(planKey)}
-                  aria-pressed={isSelected}
                   className={cn(
-                    "flex flex-col items-start gap-1.5 rounded-[var(--radius-2xl)] border-2 bg-white p-5 text-left shadow-[var(--shadow-soft)] transition-all",
-                    isSelected
+                    "relative flex flex-col rounded-[var(--radius-2xl)] border-2 bg-white p-5 pt-6 text-left shadow-[var(--shadow-soft)]",
+                    plan.highlight
                       ? "border-[var(--color-primary)]"
-                      : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
+                      : plan.bestValue
+                      ? "border-[var(--color-ink)]"
+                      : "border-[var(--color-border)]"
                   )}
                 >
-                  {(plan.highlight || plan.bestValue) && (
+                  {emphasized && (
                     <span
                       className={cn(
-                        "mb-1 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em]",
-                        plan.highlight
-                          ? "bg-[var(--color-tint)] text-[var(--color-primary)]"
-                          : "bg-[var(--color-page-deep)] text-[var(--color-ink-soft)]"
+                        "absolute -top-3 left-1/2 inline-flex -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-white shadow-[var(--shadow-soft)]",
+                        plan.highlight ? "bg-[var(--color-primary)]" : "bg-[var(--color-ink)]"
                       )}
                     >
                       {plan.highlight ? "Most popular" : "Best value"}
                     </span>
                   )}
+
                   <span className="flex items-center gap-2">
                     <span className="text-[15px] font-bold text-[var(--color-ink)]">{plan.name}</span>
                     {cadence === "annual" && (
@@ -361,65 +358,76 @@ function SubscribeInner() {
                       </span>
                     )}
                   </span>
-                  <span className="font-display text-[28px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
+                  <span className="mt-1.5 font-display text-[28px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
                     {formatWholeDollars(priceCents)}
                     <span className="text-[14px] font-semibold text-[var(--color-ink-muted)]">
                       /{cadence === "monthly" ? "mo" : "yr"}
                     </span>
                   </span>
+                  {cadence === "annual" && (
+                    <span className="mt-0.5 text-[12px] text-[var(--color-ink-soft)]">
+                      {formatWholeDollars(plan.annualCents)} billed annually
+                    </span>
+                  )}
                   <span className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
                     {plan.activeListingLimit} active listings
                   </span>
-                </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void startCheckout(planKey)}
+                    disabled={busy !== null || authState === "checking"}
+                    className={cn(
+                      "mt-4 inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14.5px] font-semibold transition-all disabled:opacity-60",
+                      plan.highlight
+                        ? "bg-[var(--color-primary)] text-white shadow-[0_4px_14px_rgba(232,107,57,0.35)] hover:bg-[var(--color-primary-hover)]"
+                        : "border border-[var(--color-border-strong)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-page-deep)]"
+                    )}
+                  >
+                    {checkingOutThis && (
+                      <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                    )}
+                    Subscribe
+                  </button>
+
+                  <p className="mb-2 mt-5 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
+                    {planKey === "starter" ? "What's included" : `Everything in ${planKey === "shop" ? "Starter" : "Shop"} +`}
+                  </p>
+                  <ul className="space-y-2">
+                    {PLAN_FEATURES[planKey].map((feature) => (
+                      <li key={feature} className="flex items-start gap-2.5">
+                        <Check
+                          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary)]"
+                          aria-hidden="true"
+                        />
+                        <span className="text-[14px] text-[var(--color-ink)]">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               );
             })}
           </div>
 
-          {/* Selected tier's own feature list -- "Everything in X +" for
-              Shop/Power, so escalating value is legible without repeating
-              one shared list three times. */}
-          <ul className="mt-6 space-y-2.5">
-            {PLAN_FEATURES[selectedPlan].map((feature) => (
-              <li key={feature} className="flex items-start gap-3">
-                <Check className="mt-0.5 h-4.5 w-4.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
-                <span className="text-[14.5px] text-[var(--color-ink)]">{feature}</span>
-              </li>
-            ))}
-          </ul>
-
-          <div className="mt-6">
+          {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
             <button
               type="button"
-              onClick={() => void startCheckout()}
-              disabled={busy !== null || authState === "checking"}
-              className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-6 py-3.5 text-[16px] font-semibold text-white shadow-[0_4px_14px_rgba(232,107,57,0.35)] transition-all hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+              onClick={() => void openPortal()}
+              disabled={busy !== null}
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
             >
-              {busy === "checkout" && (
+              {busy?.kind === "portal" && (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               )}
-              Subscribe to {selectedDisplay.name} · {formatWholeDollars(selectedPriceCents)}/
-              {cadence === "monthly" ? "mo" : "yr"}
+              Manage billing
             </button>
-            {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
-              <button
-                type="button"
-                onClick={() => void openPortal()}
-                disabled={busy !== null}
-                className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
-              >
-                {busy === "portal" && (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                )}
-                Manage billing
-              </button>
-            )}
-            <p className="mt-4 text-center text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
-              Ratings reflect how buyers see your photo. They do not guarantee
-              clicks or sales. Always review AI-improved photos and verify
-              labels, text, patterns, personalization, measurements, colors,
-              and included pieces before using them.
-            </p>
-          </div>
+          )}
+          <p className="mt-6 text-center text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
+            Ratings reflect how buyers see your photo. They do not guarantee
+            clicks or sales. Always review AI-improved photos and verify
+            labels, text, patterns, personalization, measurements, colors,
+            and included pieces before using them.
+          </p>
         </div>
       )}
 

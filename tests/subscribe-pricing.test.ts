@@ -55,9 +55,16 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).not.toContain("—");
   });
 
-  it("each tier's own feature list is shown, not one shared list repeated three times", () => {
-    expect(subscribePage).toContain("PLAN_FEATURES[selectedPlan]");
+  it("each tier's own feature list is shown inside its own card, not one shared list repeated three times", () => {
+    expect(subscribePage).toContain("PLAN_FEATURES[planKey]");
+    expect(subscribePage).not.toContain("PLAN_FEATURES[selectedPlan]");
     expect(subscribePage).toContain('"Everything in Starter"');
     expect(subscribePage).toContain('"Everything in Shop"');
+  });
+
+  it("each card has its own Subscribe button that acts on that exact tier, not a shared bottom CTA", () => {
+    expect(subscribePage).toContain("onClick={() => void startCheckout(planKey)}");
+    expect(subscribePage).not.toMatch(/onClick=\{\(\) => void startCheckout\(\)\}/);
+    expect(subscribePage).not.toContain("setSelectedPlan");
   });
 });
