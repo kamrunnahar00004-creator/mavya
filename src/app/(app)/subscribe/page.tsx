@@ -109,35 +109,35 @@ function annualSavingsCents(plan: { monthlyCents: number; annualCents: number })
 const FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "How does Mavya work?",
-    a: "Upload your product photos. Mavya scores each one on how it's likely to perform with buyers, flags what's weakening it, and you can fix any photo, or your whole listing at once, in one click.",
+    a: "Upload your product photos and Mavya scores how likely each one is to perform with buyers, flags what may be holding it back, and lets you improve one photo or your whole listing in one click.",
   },
   {
     q: "Is there a free trial?",
-    a: "Not right now. Mavya is a paid-only beta: every plan works from day one, with no free tier.",
+    a: "Not right now. Mavya is currently a paid-only beta, so every plan includes full access from day one.",
   },
   {
     q: "What do I get with annual billing?",
-    a: "About two months free compared to paying monthly, for the same features and limits, charged once a year instead of every month.",
+    a: "You get the same features and limits as monthly billing, but save about the cost of two months by paying once a year.",
   },
   {
     q: "Do unused photo fixes roll over?",
-    a: "No. Your daily fix allowance resets every 24 hours. It doesn't carry over, so there's nothing to save up.",
+    a: "No. Your daily photo fix allowance resets every 24 hours and does not carry over.",
   },
   {
     q: "Can I use the improved photos on my listings?",
-    a: "Yes. Once you download an improved photo, it's yours to use on Etsy or anywhere else you sell, just verify labels, text, and measurements first.",
+    a: "Yes. Once you download an improved photo, you can use it on Etsy or anywhere else you sell. Just double-check any labels, text, measurements, or product details before publishing.",
   },
   {
     q: "Are my photos used to train AI models?",
-    a: "No. Your photos are sent to our AI provider only to generate your score and results, not to train any model.",
+    a: "No. Your photos are only sent to our AI provider to generate your scores and results. They are not used to train AI models.",
   },
   {
     q: "How do I cancel?",
-    a: "From Settings, open Manage billing, any time. You keep full access until the end of your current billing period.",
+    a: "Go to Settings and select Manage billing. You can cancel at any time and keep access until the end of your current billing period.",
   },
   {
     q: "Do you offer refunds?",
-    a: "We don't have an automatic refund policy yet. If something's wrong, reach out and we'll take a look.",
+    a: "We do not currently offer automatic refunds. If something goes wrong, contact us and we will review it with you.",
   },
 ];
 
@@ -477,9 +477,12 @@ function SubscribeInner() {
         <h2 className="text-center font-display text-[24px] font-bold text-[var(--color-ink)]">
           Frequently asked questions
         </h2>
-        <div className="mt-6 divide-y divide-[var(--color-border)] rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white">
+        <div className="mt-6 flex flex-col gap-2">
           {FAQ_ITEMS.map((item) => (
-            <details key={item.q} className="group p-5">
+            <details
+              key={item.q}
+              className="group rounded-[var(--radius-xl)] bg-[var(--color-border-strong)] p-5 transition-colors hover:bg-[#CBC3B6]"
+            >
               <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-[var(--color-ink)] marker:content-none [&::-webkit-details-marker]:hidden">
                 {item.q}
                 <ChevronDown
