@@ -107,11 +107,11 @@ export default async function DashboardPage() {
     }
 
     return (
-      <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pb-20 text-center">
+      <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pt-12 pb-20 text-center">
         <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-tint)] text-[var(--color-primary)] shadow-[var(--shadow-soft)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
           <ImageUp className="h-7 w-7" strokeWidth={1.7} aria-hidden="true" />
         </span>
-        <h1 className="mt-8 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
+        <h1 className="mt-5 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
           Get More Etsy Clicks in 4 Simple Steps
         </h1>
         <ol className="mt-6 flex max-w-[440px] flex-col gap-3 text-left text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
