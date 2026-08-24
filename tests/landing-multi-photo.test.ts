@@ -105,7 +105,7 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
 
   it("the landing headline states the current price and the real product (listing photos, not just a thumbnail)", () => {
     expect(uploadWorkspace).toContain(
-      "listing photos decide how much you sell"
+      "photos decide how much you sell on"
     );
     expect(uploadWorkspace).toContain("Starter price: $29/month");
     expect(uploadWorkspace).toContain("Score every photo in your listing");
