@@ -82,7 +82,7 @@ export default function FeedbackPage() {
           Send feedback
         </h1>
         <p className="mt-1.5 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
-          Bug, complaint, or idea — tell us. We read every message.
+          Bug, complaint, or idea? Tell us. We read every message.
         </p>
 
         {authState === "out" ? (
