@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { generationDailyMax } from "@/lib/generation-queue";
+import { generationDailyMax } from "@/lib/generation-policy";
 
 const route = readFileSync(path.resolve("src/app/api/generate/bulk/route.ts"), "utf8");
 const singleRoute = readFileSync(path.resolve("src/app/api/generate/route.ts"), "utf8");

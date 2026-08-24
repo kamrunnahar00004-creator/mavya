@@ -10,6 +10,7 @@ import {
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "@/components/auth-modal";
 import { cn } from "@/lib/utils";
+import { generationDailyMax } from "@/lib/generation-policy";
 
 type PurchasablePlanKey = "starter" | "shop" | "power";
 type BillingCadence = "monthly" | "annual";
@@ -32,11 +33,8 @@ type BillingStatus = {
  * real Stripe price and limit independently via resolveCheckoutPlan();
  * nothing here is trusted for billing.
  *
- * dailyFixes mirrors GENERATION_DAILY_MAX_BY_PLAN in
- * src/lib/generation-queue.ts (2026-08-24) -- kept as a literal here rather
- * than imported since that module pulls in server-only generation
- * machinery this client component must never bundle. tests/subscribe-pricing.test.ts
- * asserts the two stay in sync; update both together.
+ * Daily fixes come from the dependency-light shared generation policy, so
+ * customer-facing copy and server enforcement cannot drift.
  */
 const PLAN_DISPLAY: Record<
   PurchasablePlanKey,
@@ -55,14 +53,14 @@ const PLAN_DISPLAY: Record<
     monthlyCents: 2900,
     annualCents: 29000,
     activeListingLimit: 5,
-    dailyFixes: 25,
+    dailyFixes: generationDailyMax("starter"),
   },
   shop: {
     name: "Shop",
     monthlyCents: 5900,
     annualCents: 59000,
     activeListingLimit: 15,
-    dailyFixes: 80,
+    dailyFixes: generationDailyMax("shop"),
     highlight: true,
   },
   power: {
@@ -70,39 +68,24 @@ const PLAN_DISPLAY: Record<
     monthlyCents: 9900,
     annualCents: 99000,
     activeListingLimit: 40,
-    dailyFixes: 200,
+    dailyFixes: generationDailyMax("power"),
     bestValue: true,
   },
 };
 
-/**
- * Per-tier feature list ("Everything in [prior tier] +" pattern). Every
- * feature here is real and live today -- no invented capabilities, no
- * "unlimited" wording anywhere: concrete numbers (real ones, matching
- * generation-queue.ts) are more credible than a vague claim, and every
- * plan genuinely differs mainly by listing capacity and daily fix
- * headroom, not by feature-gating what a seller can do.
- */
-const PLAN_FEATURES: Record<PurchasablePlanKey, string[]> = {
-  starter: [
-    "Score every photo on 5 active listings",
+/** Every card renders the complete feature set. Numeric copy is derived from
+ * PLAN_DISPLAY so it cannot drift from the values shown elsewhere in the card. */
+function planFeatures(planKey: PurchasablePlanKey): string[] {
+  const plan = PLAN_DISPLAY[planKey];
+  return [
+    `Score every photo on ${plan.activeListingLimit} active listings`,
     "Fix any weak photo in one click",
     "Fix your whole listing at once",
-    "25 photo fixes a day",
+    `${plan.dailyFixes} photo fixes a day`,
     "Full-resolution downloads",
     "Cancel anytime",
-  ],
-  shop: [
-    "Everything in Starter",
-    "15 active listings",
-    "80 photo fixes a day",
-  ],
-  power: [
-    "Everything in Shop",
-    "40 active listings",
-    "200 photo fixes a day",
-  ],
-};
+  ];
+}
 
 function formatWholeDollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
@@ -149,12 +132,13 @@ function SubscribeInner() {
         setAuthState("out");
         return;
       }
-      setAuthState("in");
       try {
         const res = await fetch("/api/billing/status");
         if (res.ok && alive) setStatus((await res.json()) as BillingStatus);
       } catch {
         // Status is informative; checkout still works without it.
+      } finally {
+        if (alive) setAuthState("in");
       }
     })();
     return () => {
@@ -391,10 +375,10 @@ function SubscribeInner() {
                   </button>
 
                   <p className="mb-2 mt-5 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
-                    {planKey === "starter" ? "What's included" : `Everything in ${planKey === "shop" ? "Starter" : "Shop"} +`}
+                    What&apos;s included
                   </p>
                   <ul className="space-y-2">
-                    {PLAN_FEATURES[planKey].map((feature) => (
+                    {planFeatures(planKey).map((feature) => (
                       <li key={feature} className="flex items-start gap-2.5">
                         <Check
                           className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary)]"

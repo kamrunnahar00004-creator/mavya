@@ -1,38 +1,26 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { generationDailyMax } from "@/lib/generation-queue";
+import { generationDailyMax } from "@/lib/generation-policy";
 
 const subscribePage = readFileSync(
   path.resolve("src/app/(app)/subscribe/page.tsx"),
   "utf8"
 );
 
-/** Pulls the literal PLAN_DISPLAY object text out of the page source and
- *  extracts each tier's dailyFixes value with a small regex -- this page is
- *  a client component and can't import generation-queue.ts directly (it
- *  would pull server-only generation machinery into the browser bundle),
- *  so its numbers are a hand-kept literal that this test guards against
- *  drifting from the real, live cap. */
-function displayedDailyFixes(tier: "starter" | "shop" | "power"): number {
-  const tierStart = subscribePage.indexOf(`${tier}: {`);
-  const tierEnd = subscribePage.indexOf("},", tierStart);
-  const block = subscribePage.slice(tierStart, tierEnd);
-  const match = block.match(/dailyFixes:\s*(\d+)/);
-  if (!match) throw new Error(`dailyFixes not found for ${tier} in subscribe page.tsx`);
-  return Number(match[1]);
-}
-
 describe("subscribe page pricing display matches the real, live generation budget", () => {
-  it("Starter/Shop/Power dailyFixes copy equals generationDailyMax() for that plan", () => {
-    expect(displayedDailyFixes("starter")).toBe(generationDailyMax("starter"));
-    expect(displayedDailyFixes("shop")).toBe(generationDailyMax("shop"));
-    expect(displayedDailyFixes("power")).toBe(generationDailyMax("power"));
+  it("reads Starter/Shop/Power dailyFixes from the shared client-safe enforcement policy", () => {
+    expect(subscribePage).toContain('dailyFixes: generationDailyMax("starter")');
+    expect(subscribePage).toContain('dailyFixes: generationDailyMax("shop")');
+    expect(subscribePage).toContain('dailyFixes: generationDailyMax("power")');
+    expect(generationDailyMax("starter")).toBe(25);
+    expect(generationDailyMax("shop")).toBe(80);
+    expect(generationDailyMax("power")).toBe(200);
   });
 
   it("never claims unlimited generation in the actual customer-facing copy -- concrete numbers only", () => {
-    const featuresStart = subscribePage.indexOf("const PLAN_FEATURES");
-    const featuresEnd = subscribePage.indexOf("\n};", featuresStart);
+    const featuresStart = subscribePage.indexOf("function planFeatures");
+    const featuresEnd = subscribePage.indexOf("\n}", featuresStart);
     const featuresBlock = subscribePage.slice(featuresStart, featuresEnd);
     expect(featuresBlock.length).toBeGreaterThan(0);
     expect(featuresBlock.toLowerCase()).not.toContain("unlimited");
@@ -55,16 +43,30 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).not.toContain("—");
   });
 
-  it("each tier's own feature list is shown inside its own card, not one shared list repeated three times", () => {
-    expect(subscribePage).toContain("PLAN_FEATURES[planKey]");
-    expect(subscribePage).not.toContain("PLAN_FEATURES[selectedPlan]");
-    expect(subscribePage).toContain('"Everything in Starter"');
-    expect(subscribePage).toContain('"Everything in Shop"');
+  it("each tier's complete feature list is shown inside its own card without duplicated inheritance shorthand", () => {
+    expect(subscribePage).toContain("planFeatures(planKey)");
+    expect(subscribePage).not.toContain("PLAN_FEATURES");
+    expect(subscribePage).not.toContain('"Everything in Starter"');
+    expect(subscribePage).not.toContain('"Everything in Shop"');
+    expect(subscribePage).toContain(
+      "`Score every photo on ${plan.activeListingLimit} active listings`"
+    );
+    expect(subscribePage).toContain("`${plan.dailyFixes} photo fixes a day`");
   });
 
   it("each card has its own Subscribe button that acts on that exact tier, not a shared bottom CTA", () => {
     expect(subscribePage).toContain("onClick={() => void startCheckout(planKey)}");
     expect(subscribePage).not.toMatch(/onClick=\{\(\) => void startCheckout\(\)\}/);
     expect(subscribePage).not.toContain("setSelectedPlan");
+  });
+
+  it("keeps checkout disabled until an authenticated user's billing status check settles", () => {
+    const billingFetch = subscribePage.indexOf('fetch("/api/billing/status")');
+    const finallyBlock = subscribePage.indexOf("finally", billingFetch);
+    const signedIn = subscribePage.indexOf('setAuthState("in")', billingFetch);
+    expect(billingFetch).toBeGreaterThan(-1);
+    expect(finallyBlock).toBeGreaterThan(billingFetch);
+    expect(signedIn).toBeGreaterThan(finallyBlock);
+    expect(subscribePage).toContain('disabled={busy !== null || authState === "checking"}');
   });
 });
