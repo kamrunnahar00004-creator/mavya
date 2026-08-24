@@ -31,27 +31,87 @@ type BillingStatus = {
  * identity to checkout, only { planKey, cadence }. The server resolves the
  * real Stripe price and limit independently via resolveCheckoutPlan();
  * nothing here is trusted for billing.
+ *
+ * dailyFixes mirrors GENERATION_DAILY_MAX_BY_PLAN in
+ * src/lib/generation-queue.ts (2026-08-24) -- kept as a literal here rather
+ * than imported since that module pulls in server-only generation
+ * machinery this client component must never bundle. tests/subscribe-pricing.test.ts
+ * asserts the two stay in sync; update both together.
  */
 const PLAN_DISPLAY: Record<
   PurchasablePlanKey,
-  { name: string; monthlyCents: number; annualCents: number; activeListingLimit: number; highlight?: boolean }
+  {
+    name: string;
+    monthlyCents: number;
+    annualCents: number;
+    activeListingLimit: number;
+    dailyFixes: number;
+    highlight?: boolean;
+    bestValue?: boolean;
+  }
 > = {
-  starter: { name: "Starter", monthlyCents: 2900, annualCents: 29000, activeListingLimit: 5 },
-  shop: { name: "Shop", monthlyCents: 5900, annualCents: 59000, activeListingLimit: 15, highlight: true },
-  power: { name: "Power", monthlyCents: 9900, annualCents: 99000, activeListingLimit: 40 },
+  starter: {
+    name: "Starter",
+    monthlyCents: 2900,
+    annualCents: 29000,
+    activeListingLimit: 5,
+    dailyFixes: 25,
+  },
+  shop: {
+    name: "Shop",
+    monthlyCents: 5900,
+    annualCents: 59000,
+    activeListingLimit: 15,
+    dailyFixes: 80,
+    highlight: true,
+  },
+  power: {
+    name: "Power",
+    monthlyCents: 9900,
+    annualCents: 99000,
+    activeListingLimit: 40,
+    dailyFixes: 200,
+    bestValue: true,
+  },
 };
 
-const FEATURES = [
-  "Full listing-photo ratings",
-  "Clear improvement recommendations",
-  "Enhanced main and supporting photos",
-  "Product-preserving checks on every enhancement",
-  "Full-resolution downloads",
-  "Cancel anytime",
-];
+/**
+ * Per-tier feature list ("Everything in [prior tier] +" pattern). Every
+ * feature here is real and live today -- no invented capabilities, no
+ * "unlimited" wording anywhere: concrete numbers (real ones, matching
+ * generation-queue.ts) are more credible than a vague claim, and every
+ * plan genuinely differs mainly by listing capacity and daily fix
+ * headroom, not by feature-gating what a seller can do.
+ */
+const PLAN_FEATURES: Record<PurchasablePlanKey, string[]> = {
+  starter: [
+    "Score every photo on 5 active listings",
+    "Fix any weak photo in one click",
+    "Fix your whole listing at once",
+    "25 photo fixes a day",
+    "Full-resolution downloads",
+    "Cancel anytime",
+  ],
+  shop: [
+    "Everything in Starter",
+    "15 active listings",
+    "80 photo fixes a day",
+  ],
+  power: [
+    "Everything in Shop",
+    "40 active listings",
+    "200 photo fixes a day",
+  ],
+};
 
 function formatWholeDollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
+}
+
+/** Real annual savings vs paying monthly all year -- never a fabricated
+ *  "was $X" figure, just the honest math already priced into Stripe. */
+function annualSavingsCents(plan: { monthlyCents: number; annualCents: number }): number {
+  return plan.monthlyCents * 12 - plan.annualCents;
 }
 
 function formatDate(iso: string | null): string {
@@ -281,12 +341,26 @@ function SubscribeInner() {
                       : "border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
                   )}
                 >
-                  {plan.highlight && (
-                    <span className="mb-1 inline-flex rounded-full bg-[var(--color-tint)] px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-[var(--color-primary)]">
-                      Most popular
+                  {(plan.highlight || plan.bestValue) && (
+                    <span
+                      className={cn(
+                        "mb-1 inline-flex rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-[0.06em]",
+                        plan.highlight
+                          ? "bg-[var(--color-tint)] text-[var(--color-primary)]"
+                          : "bg-[var(--color-page-deep)] text-[var(--color-ink-soft)]"
+                      )}
+                    >
+                      {plan.highlight ? "Most popular" : "Best value"}
                     </span>
                   )}
-                  <span className="text-[15px] font-bold text-[var(--color-ink)]">{plan.name}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="text-[15px] font-bold text-[var(--color-ink)]">{plan.name}</span>
+                    {cadence === "annual" && (
+                      <span className="rounded-full bg-[var(--color-tint)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary)]">
+                        Save {formatWholeDollars(annualSavingsCents(plan))}/year
+                      </span>
+                    )}
+                  </span>
                   <span className="font-display text-[28px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
                     {formatWholeDollars(priceCents)}
                     <span className="text-[14px] font-semibold text-[var(--color-ink-muted)]">
@@ -301,9 +375,11 @@ function SubscribeInner() {
             })}
           </div>
 
-          {/* Shared feature list, applies to every tier */}
+          {/* Selected tier's own feature list -- "Everything in X +" for
+              Shop/Power, so escalating value is legible without repeating
+              one shared list three times. */}
           <ul className="mt-6 space-y-2.5">
-            {FEATURES.map((feature) => (
+            {PLAN_FEATURES[selectedPlan].map((feature) => (
               <li key={feature} className="flex items-start gap-3">
                 <Check className="mt-0.5 h-4.5 w-4.5 shrink-0 text-[var(--color-primary)]" aria-hidden="true" />
                 <span className="text-[14.5px] text-[var(--color-ink)]">{feature}</span>
@@ -321,7 +397,7 @@ function SubscribeInner() {
               {busy === "checkout" && (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
               )}
-              Subscribe to {selectedDisplay.name} -- {formatWholeDollars(selectedPriceCents)}/
+              Subscribe to {selectedDisplay.name} · {formatWholeDollars(selectedPriceCents)}/
               {cadence === "monthly" ? "mo" : "yr"}
             </button>
             {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
