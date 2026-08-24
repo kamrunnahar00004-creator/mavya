@@ -19,11 +19,10 @@ describe("subscribe page pricing display matches the real, live generation budge
   });
 
   it("never claims unlimited generation in the actual customer-facing copy -- concrete numbers only", () => {
-    const featuresStart = subscribePage.indexOf("function planFeatures");
-    const featuresEnd = subscribePage.indexOf("\n}", featuresStart);
-    const featuresBlock = subscribePage.slice(featuresStart, featuresEnd);
-    expect(featuresBlock.length).toBeGreaterThan(0);
-    expect(featuresBlock.toLowerCase()).not.toContain("unlimited");
+    // "Unlimited rescoring" is a real, separate claim (rating has no
+    // daily/monthly cap) -- only generation must never say "unlimited".
+    expect(subscribePage).toContain("Unlimited rescoring");
+    expect(subscribePage).not.toMatch(/unlimited (generation|fixes|photo fixes)/i);
   });
 
   it("the annual Save pill is real math (monthly x12 minus the actual annual price), never a fabricated original price", () => {
@@ -43,15 +42,25 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).not.toContain("—");
   });
 
-  it("each tier's complete feature list is shown inside its own card without duplicated inheritance shorthand", () => {
-    expect(subscribePage).toContain("planFeatures(planKey)");
+  it("heroes the real differentiators (listing count, daily fixes) as stats instead of burying them in a repeated bullet list", () => {
+    expect(subscribePage).not.toContain("planFeatures(");
     expect(subscribePage).not.toContain("PLAN_FEATURES");
     expect(subscribePage).not.toContain('"Everything in Starter"');
     expect(subscribePage).not.toContain('"Everything in Shop"');
-    expect(subscribePage).toContain(
-      "`Score every photo on ${plan.activeListingLimit} active listings`"
-    );
-    expect(subscribePage).toContain("`${plan.dailyFixes} photo fixes a day`");
+    expect(subscribePage).toContain("{plan.activeListingLimit}");
+    expect(subscribePage).toContain("{plan.dailyFixes}");
+    expect(subscribePage).toContain("active listings");
+    expect(subscribePage).toContain("photo fixes / day");
+  });
+
+  it("shows ancillary benefits once, shared below the cards, not repeated per card", () => {
+    expect(subscribePage).toContain("const SHARED_BENEFITS =");
+    expect(subscribePage).toContain("Every plan includes");
+    expect(subscribePage).toContain("SHARED_BENEFITS.join(");
+    // Exactly one render site for the shared list (below the grid), not
+    // one per card.
+    const renderCount = (subscribePage.match(/SHARED_BENEFITS\.join/g) ?? []).length;
+    expect(renderCount).toBe(1);
   });
 
   it("each card has its own Subscribe button that acts on that exact tier, not a shared bottom CTA", () => {

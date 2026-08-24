@@ -2,11 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import {
-  AlertCircle,
-  Check,
-  Loader2,
-} from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "@/components/auth-modal";
 import { cn } from "@/lib/utils";
@@ -40,6 +36,7 @@ const PLAN_DISPLAY: Record<
   PurchasablePlanKey,
   {
     name: string;
+    tagline: string;
     monthlyCents: number;
     annualCents: number;
     activeListingLimit: number;
@@ -50,6 +47,7 @@ const PLAN_DISPLAY: Record<
 > = {
   starter: {
     name: "Starter",
+    tagline: "For new and growing shops",
     monthlyCents: 2900,
     annualCents: 29000,
     activeListingLimit: 5,
@@ -57,6 +55,7 @@ const PLAN_DISPLAY: Record<
   },
   shop: {
     name: "Shop",
+    tagline: "For active Etsy sellers",
     monthlyCents: 5900,
     annualCents: 59000,
     activeListingLimit: 15,
@@ -65,6 +64,7 @@ const PLAN_DISPLAY: Record<
   },
   power: {
     name: "Power",
+    tagline: "For high-volume shops",
     monthlyCents: 9900,
     annualCents: 99000,
     activeListingLimit: 40,
@@ -73,19 +73,12 @@ const PLAN_DISPLAY: Record<
   },
 };
 
-/** Every card renders the complete feature set. Numeric copy is derived from
- * PLAN_DISPLAY so it cannot drift from the values shown elsewhere in the card. */
-function planFeatures(planKey: PurchasablePlanKey): string[] {
-  const plan = PLAN_DISPLAY[planKey];
-  return [
-    `Score every photo on ${plan.activeListingLimit} active listings`,
-    "Fix any weak photo in one click",
-    "Fix your whole listing at once",
-    `${plan.dailyFixes} photo fixes a day`,
-    "Full-resolution downloads",
-    "Cancel anytime",
-  ];
-}
+/** Shared across every tier -- shown once below the cards, not repeated on
+ *  each one. Score/Fix/Fix-all are already covered by the page's own
+ *  subhead, so this is only the ancillary stuff. "Unlimited rescoring" is
+ *  real: /api/score/jobs has no daily/monthly cap, only a 6/min anti-spam
+ *  throttle -- verified against the route directly, not assumed. */
+const SHARED_BENEFITS = ["Unlimited rescoring", "Full-resolution downloads", "Cancel anytime"];
 
 function formatWholeDollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
@@ -217,11 +210,11 @@ function SubscribeInner() {
   return (
     <main className="mx-auto max-w-[1080px] px-6 pb-20 pt-12 sm:pt-16">
       <h1 className="font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
-        See exactly what&apos;s costing your Etsy listing clicks
+        See what&apos;s costing your Etsy listing clicks
       </h1>
       <p className="mt-2.5 max-w-[520px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-        Mavya scores your product photos, shows you what&apos;s weakening them,
-        and creates stronger versions in seconds.
+        Score every product photo, spot what&apos;s weakening your listing, and
+        create stronger versions in seconds.
       </p>
 
       {pastDue && (
@@ -303,9 +296,11 @@ function SubscribeInner() {
             ))}
           </div>
           {/* Plan cards -- each fully self-contained: its own badge, price,
-              feature list, and its own button that acts on THAT tier
-              directly. No shared "select a card, then act below" step. */}
-          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-3">
+              hero stats, and its own button that acts on THAT tier
+              directly. No shared "select a card, then act below" step.
+              The listing/fix counts ARE the differentiators, so they're the
+              visual focus -- not one more bullet among six identical ones. */}
+          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:items-start">
             {(Object.keys(PLAN_DISPLAY) as PurchasablePlanKey[]).map((planKey) => {
               const plan = PLAN_DISPLAY[planKey];
               const priceCents = cadence === "monthly" ? plan.monthlyCents : plan.annualCents;
@@ -315,12 +310,12 @@ function SubscribeInner() {
                 <div
                   key={planKey}
                   className={cn(
-                    "relative flex flex-col rounded-[var(--radius-2xl)] border-2 bg-white p-5 pt-6 text-left shadow-[var(--shadow-soft)]",
+                    "relative flex flex-col rounded-[var(--radius-2xl)] border bg-white p-6 text-left transition-all",
                     plan.highlight
-                      ? "border-[var(--color-primary)]"
+                      ? "border-2 border-[var(--color-primary)] shadow-[0_12px_32px_rgba(232,107,57,0.16)] sm:-translate-y-2"
                       : plan.bestValue
-                      ? "border-[var(--color-ink)]"
-                      : "border-[var(--color-border)]"
+                      ? "border-2 border-[var(--color-ink)] shadow-[var(--shadow-soft)]"
+                      : "border-[var(--color-border)] shadow-[var(--shadow-soft)]"
                   )}
                 >
                   {emphasized && (
@@ -342,9 +337,9 @@ function SubscribeInner() {
                       </span>
                     )}
                   </span>
-                  <span className="mt-1.5 font-display text-[28px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
+                  <span className="mt-2 font-display text-[34px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
                     {formatWholeDollars(priceCents)}
-                    <span className="text-[14px] font-semibold text-[var(--color-ink-muted)]">
+                    <span className="text-[15px] font-semibold text-[var(--color-ink-muted)]">
                       /{cadence === "monthly" ? "mo" : "yr"}
                     </span>
                   </span>
@@ -353,16 +348,14 @@ function SubscribeInner() {
                       {formatWholeDollars(plan.annualCents)} billed annually
                     </span>
                   )}
-                  <span className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
-                    {plan.activeListingLimit} active listings
-                  </span>
+                  <span className="mt-2 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
 
                   <button
                     type="button"
                     onClick={() => void startCheckout(planKey)}
                     disabled={busy !== null || authState === "checking"}
                     className={cn(
-                      "mt-4 inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14.5px] font-semibold transition-all disabled:opacity-60",
+                      "mt-5 inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14.5px] font-semibold transition-all disabled:opacity-60",
                       plan.highlight
                         ? "bg-[var(--color-primary)] text-white shadow-[0_4px_14px_rgba(232,107,57,0.35)] hover:bg-[var(--color-primary-hover)]"
                         : "border border-[var(--color-border-strong)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-page-deep)]"
@@ -371,26 +364,41 @@ function SubscribeInner() {
                     {checkingOutThis && (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     )}
-                    Subscribe
+                    Choose {plan.name}
                   </button>
 
-                  <p className="mb-2 mt-5 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
-                    What&apos;s included
-                  </p>
-                  <ul className="space-y-2">
-                    {planFeatures(planKey).map((feature) => (
-                      <li key={feature} className="flex items-start gap-2.5">
-                        <Check
-                          className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-primary)]"
-                          aria-hidden="true"
-                        />
-                        <span className="text-[14px] text-[var(--color-ink)]">{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {/* Hero stats -- the actual differentiators between tiers. */}
+                  <div className="mt-5 grid grid-cols-2 gap-3 rounded-[var(--radius-lg)] bg-[var(--color-page)] p-3.5">
+                    <div>
+                      <div className="text-[21px] font-bold leading-none text-[var(--color-ink)]">
+                        {plan.activeListingLimit}
+                      </div>
+                      <div className="mt-1 text-[11.5px] leading-tight text-[var(--color-ink-muted)]">
+                        active listings
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[21px] font-bold leading-none text-[var(--color-ink)]">
+                        {plan.dailyFixes}
+                      </div>
+                      <div className="mt-1 text-[11.5px] leading-tight text-[var(--color-ink-muted)]">
+                        photo fixes / day
+                      </div>
+                    </div>
+                  </div>
                 </div>
               );
             })}
+          </div>
+
+          {/* Shared across every tier -- shown once, not repeated per card. */}
+          <div className="mt-8 text-center">
+            <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
+              Every plan includes
+            </p>
+            <p className="mt-1.5 text-[13.5px] text-[var(--color-ink-muted)]">
+              {SHARED_BENEFITS.join("  ·  ")}
+            </p>
           </div>
 
           {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
