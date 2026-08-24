@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { generationDailyMax } from "@/lib/generation-queue";
 
 const route = readFileSync(path.resolve("src/app/api/generate/bulk/route.ts"), "utf8");
 const singleRoute = readFileSync(path.resolve("src/app/api/generate/route.ts"), "utf8");
@@ -91,10 +92,28 @@ describe("POST /api/generate/bulk: server-derived deterministic roster", () => {
 describe("generation budget and workflow concurrency", () => {
   it("manual and bulk generation consume the same weighted daily user budget", () => {
     expect(queue).toContain('key: `gen-day:u:${userId}`');
-    expect(singleRoute).toContain("consumeGenerationDailyBudget(user.id, 1, idempotencyKey)");
+    expect(singleRoute).toContain("consumeGenerationDailyBudget(user.id, 1, idempotencyKey, entitlement.planKey)");
     expect(route).toContain("consumeGenerationDailyBudget(");
     expect(route).not.toContain("gen-bulk-day:u:");
     expect(singleRoute).not.toContain('rateLimit(`gen-day:u:');
+  });
+
+  it("scales the daily generation budget by the caller's ALREADY-RESOLVED plan tier, never re-fetching entitlement itself", () => {
+    // Both call sites pass their own getEntitlement() result through --
+    // consumeGenerationDailyBudget never looks up billing state on its own.
+    expect(route).toContain("entitlement.planKey");
+    expect(singleRoute).toContain("entitlement.planKey");
+    expect(queue).not.toContain('from "@/lib/entitlements"');
+  });
+
+  it("generationDailyMax: Starter never regresses below the old flat 40; Shop and Power scale up; an unresolved plan falls back to Starter, never a silent expansion", () => {
+    expect(generationDailyMax("starter")).toBe(40);
+    expect(generationDailyMax("legacy")).toBe(40);
+    expect(generationDailyMax(null)).toBe(40);
+    expect(generationDailyMax("shop")).toBe(80);
+    expect(generationDailyMax("power")).toBe(200);
+    expect(generationDailyMax("shop")).toBeGreaterThan(generationDailyMax("starter"));
+    expect(generationDailyMax("power")).toBeGreaterThan(generationDailyMax("shop"));
   });
 
   it("validates manual-generation keys and edit payloads before charging the budget", () => {
@@ -104,7 +123,7 @@ describe("generation budget and workflow concurrency", () => {
       "rawInstruction.length > MAX_EDIT_INSTRUCTION_LEN * 4"
     );
     const budget = singleRoute.indexOf(
-      "consumeGenerationDailyBudget(user.id, 1, idempotencyKey)"
+      "consumeGenerationDailyBudget(user.id, 1, idempotencyKey, entitlement.planKey)"
     );
     expect(editValidation).toBeGreaterThan(-1);
     expect(budget).toBeGreaterThan(editValidation);

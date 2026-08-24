@@ -333,7 +333,8 @@ export async function POST(req: NextRequest) {
     const daily = await consumeGenerationDailyBudget(
       user.id,
       pending.length,
-      `bulk:${idempotencyKey}`
+      `bulk:${idempotencyKey}`,
+      entitlement.planKey
     );
     if (!daily.ok) {
       if (daily.reason === "missing_durable_store") {

@@ -293,7 +293,7 @@ export async function POST(req: NextRequest) {
 
   // Charge the shared manual/bulk daily budget only after the request is
   // syntactically valid. Malformed edits must remain safe to correct and retry.
-  const daily = await consumeGenerationDailyBudget(user.id, 1, idempotencyKey);
+  const daily = await consumeGenerationDailyBudget(user.id, 1, idempotencyKey, entitlement.planKey);
   if (!daily.ok) {
     if (daily.reason === "missing_durable_store") {
       return apiError("rate_limit_not_configured", "Rate limiting is not configured.");

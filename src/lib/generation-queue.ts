@@ -14,18 +14,43 @@ import { ACTIVE_JOB_STATUSES, type GenerationJobStatus } from "@/lib/generation-
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import { weightedRateLimitMany, type RateLimitResult } from "@/lib/rate-limit";
+import type { PlanKey } from "@/lib/plans";
 
-const GENERATION_DAILY_MAX = 40;
 const GENERATION_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
-/** One shared cost budget for manual and Fix-all generation. */
+/**
+ * Daily generation budget, scaled by active-listing tier (founder decision,
+ * 2026-08-24): the old flat 40/day applied identically regardless of plan,
+ * so a Power seller running Fix-all across many more listings than a
+ * Starter seller hit the exact same ceiling -- undermining any "unlimited
+ * generation" claim on the pricing page for the tier it matters most for.
+ * Starter keeps the original 40 (no one's daily budget regresses); Shop and
+ * Power scale up with their listing capacity. legacy (the old $19 flat
+ * tier, no longer sold) and an unresolved plan both fall back to Starter's
+ * number -- the conservative default, never a silent expansion.
+ */
+const GENERATION_DAILY_MAX_BY_PLAN: Record<Exclude<PlanKey, "legacy"> | "legacy", number> = {
+  legacy: 40,
+  starter: 40,
+  shop: 80,
+  power: 200,
+};
+
+export function generationDailyMax(planKey: PlanKey | null): number {
+  return planKey ? GENERATION_DAILY_MAX_BY_PLAN[planKey] : GENERATION_DAILY_MAX_BY_PLAN.starter;
+}
+
+/** One shared cost budget for manual and Fix-all generation, scaled by the
+ *  caller's already-resolved plan tier (never re-fetched here -- the caller
+ *  already called getEntitlement() to get this far). */
 export function consumeGenerationDailyBudget(
   userId: string,
   weight: number,
-  idempotencyToken: string
+  idempotencyToken: string,
+  planKey: PlanKey | null
 ): Promise<RateLimitResult> {
   return weightedRateLimitMany(
-    [{ key: `gen-day:u:${userId}`, max: GENERATION_DAILY_MAX }],
+    [{ key: `gen-day:u:${userId}`, max: generationDailyMax(planKey) }],
     weight,
     GENERATION_DAILY_WINDOW_MS,
     `gen-day:${userId}:${idempotencyToken}`
