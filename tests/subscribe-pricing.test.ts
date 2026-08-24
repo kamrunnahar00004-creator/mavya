@@ -80,15 +80,16 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).toContain('disabled={busy !== null || authState === "checking"}');
   });
 
-  it("shows Manage billing as a contextual hint alongside the plan cards -- never hides the cards themselves", () => {
-    // Founder call: hiding pricing entirely for past_due/wrong_plan left the
-    // page looking broken (nothing but a bare Manage billing box). The
-    // cards must always render; Manage billing is additive, not a gate.
-    expect(subscribePage).toContain("const needsBillingManagement =");
+  it("never duplicates a standalone Manage billing panel on this page -- Settings already has one, and choosing any plan already redirects an existing subscriber to the portal server-side", () => {
+    // Founder call: a bespoke "review your subscription" box here is dead
+    // weight. /settings shows Manage billing unconditionally for any
+    // status.reason !== "no_subscription" (src/app/(app)/settings/page.tsx,
+    // hasBilling), and /api/billing/checkout already redirects an existing
+    // Stripe subscriber to the portal regardless of which plan they click
+    // (the alreadySubscribed branch). Neither gate nor duplicate that here.
+    expect(subscribePage).not.toContain("needsBillingManagement");
     expect(subscribePage).not.toContain("planSelectionBlocked");
-    expect(subscribePage).toContain("{needsBillingManagement && (");
-    expect(subscribePage).toContain("onClick={() => void openPortal()}");
-    expect(subscribePage).toContain("Use Manage billing below");
+    expect(subscribePage).not.toContain("Review your existing subscription");
     // The plan cards grid itself must never sit behind any condition.
     expect(subscribePage).toContain(
       'sm:grid-cols-3 sm:items-stretch">\n            {(Object.keys(PLAN_DISPLAY) as PurchasablePlanKey[]).map((planKey) => {'

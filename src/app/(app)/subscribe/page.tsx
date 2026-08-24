@@ -249,11 +249,6 @@ function SubscribeInner() {
 
   const pastDue = status?.reason === "past_due";
   const active = Boolean(status?.active);
-  const needsBillingManagement =
-    pastDue ||
-    status?.reason === "wrong_plan" ||
-    status?.reason === "expired" ||
-    status?.reason === "inactive";
 
   // Real math, not a fabricated marketing figure: annual price is exactly
   // 10x the monthly price on every tier, i.e. 2 free months -- identical
@@ -276,8 +271,9 @@ function SubscribeInner() {
 
       {pastDue && (
         <Banner tone="weak">
-          Your payment did not go through. Use Manage billing below to update
-          your payment method. Your saved results are safe.
+          Your payment did not go through. Choose any plan below to update
+          your payment method and keep using Mavya, or manage billing from
+          Settings. Your saved results are safe.
         </Banner>
       )}
 
@@ -334,26 +330,6 @@ function SubscribeInner() {
         </div>
       ) : (
         <div className="mt-8">
-          {needsBillingManagement && (
-            <div className="mb-8 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-soft)]">
-              <p className="text-[13.5px] leading-relaxed text-[var(--color-ink-muted)]">
-                Review your existing subscription, update your payment method,
-                or cancel through Stripe billing management.
-              </p>
-              <button
-                type="button"
-                onClick={() => void openPortal()}
-                disabled={busy !== null}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60 sm:w-auto"
-              >
-                {busy?.kind === "portal" && (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                )}
-                Manage billing
-              </button>
-            </div>
-          )}
-
           {/* Monthly / annual cadence toggle. The yearly-savings figure is
               the same across every tier (verified: exactly 2 months, real
               math via annualSavingsCents), so it's shown once here instead
