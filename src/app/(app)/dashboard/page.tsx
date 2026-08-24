@@ -108,26 +108,31 @@ export default async function DashboardPage() {
 
     return (
       <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pb-20 text-center">
-        <h1 className="font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
+        <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-tint)] text-[var(--color-primary)] shadow-[var(--shadow-soft)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
+          <ImageUp className="h-7 w-7" strokeWidth={1.7} aria-hidden="true" />
+        </span>
+        <h1 className="mt-6 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
           Get More Etsy Clicks in 4 Simple Steps
         </h1>
-        <ul className="mt-4 flex max-w-[440px] flex-col gap-2 text-left text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
+        <ol className="mt-6 flex max-w-[440px] flex-col gap-3 text-left text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
           {[
             "Upload all photos from the same Etsy listing, or add them one by one.",
             "See how every photo scores and what is hurting clicks.",
             "Fix weak photos in one click.",
             "Improve the full listing with stronger, more clickable images.",
-          ].map((step) => (
-            <li key={step} className="flex gap-2.5">
+          ].map((step, i) => (
+            <li key={step} className="flex items-start gap-3">
               <span
-                className="mt-2.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--color-primary)]"
+                className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-tint)] text-[13px] font-bold text-[var(--color-primary)]"
                 aria-hidden="true"
-              />
-              {step}
+              >
+                {i + 1}
+              </span>
+              <span>{step}</span>
             </li>
           ))}
-        </ul>
-        <div className="mt-9 w-full max-w-[520px]">
+        </ol>
+        <div className="mt-8 w-full max-w-[520px]">
           <AddProductCard variant="dropzone" />
         </div>
       </main>
