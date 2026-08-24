@@ -34,6 +34,9 @@ import {
   type BatchSubmissionIdentity,
   type BatchRole,
 } from "@/lib/photo-batch-client";
+import { savePendingPhotos, type PendingPhotoItem } from "@/lib/pending-photos";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { trackClientEvent } from "@/lib/track-client";
 import { cn } from "@/lib/utils";
 import { AnalyzingState } from "@/components/analyzing-state";
 
@@ -61,11 +64,31 @@ type PendingBatchFinalization = {
  * unchanged (immediate submit to /api/score/jobs). Selecting 2-10 files
  * opens a preview grid instead: choose the main photo, remove or reorder,
  * then submit the whole batch through /api/photos/batch/*.
+ *
+ * Auth-aware (optional, opt-in via onGateFailed): when supplied, this is
+ * the SAME dropzone the landing page uses for signed-out visitors -- picking
+ * photos is free, but submitting them checks session + entitlement FIRST and
+ * stashes the pick (never uploads or scores anything) instead of calling any
+ * API when either gate fails. Omitted entirely inside the dashboard, where a
+ * session and entitlement are already guaranteed, so existing behavior there
+ * is untouched byte-for-byte.
  */
 export function AddProductCard({
   variant = "tile",
+  onGateFailed,
+  resumeSelection,
+  onResumed,
 }: {
   variant?: "tile" | "hero" | "dropzone";
+  /** Fires instead of any submit when the visitor cannot proceed yet. The
+   *  pick is already stashed by the time this fires. */
+  onGateFailed?: (reason: "unauthenticated" | "subscription_required") => void;
+  /** Photos recovered from a pre-auth stash (main first), fed back through
+   *  the exact same chooseFiles() path a live pick uses -- 1 photo submits
+   *  immediately, 2+ show the same review grid a live multi-pick would.
+   *  Consumed once; the parent owns clearing this after onResumed fires. */
+  resumeSelection?: PendingPhotoItem[] | null;
+  onResumed?: () => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -137,6 +160,20 @@ export function AddProductCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Photos recovered from a pre-auth stash (landing page only, via
+  // resumeSelection). Consumed exactly once, through the SAME chooseFiles()
+  // path a live pick uses -- recovery can never diverge from what a live
+  // pick would do with the same files in the same order (1 submits
+  // immediately, 2+ show the same review grid).
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (!resumeSelection || resumeSelection.length === 0 || resumedRef.current) return;
+    resumedRef.current = true;
+    void chooseFiles(resumeSelection.map((item) => item.file));
+    onResumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resumeSelection]);
+
   function reset() {
     setName("");
     setPreviewUrl((old) => {
@@ -204,6 +241,52 @@ export function AddProductCard({
       setError("Choose an image file (JPG or PNG).");
       return;
     }
+
+    // Gate the paid work, not the pick (landing-page use only, via
+    // onGateFailed). Nothing here uploads or scores anything -- a failed
+    // gate stashes the pick and hands off to the parent, before
+    // prepareUploadImage or any API call runs.
+    if (onGateFailed) {
+      const supabase = createSupabaseBrowserClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) {
+        const kept = images.length > MAX_BATCH_FILES ? images.slice(0, MAX_BATCH_FILES) : images;
+        const items: PendingPhotoItem[] = kept.map((file, i) => ({
+          file,
+          role: i === 0 ? "main" : "supporting",
+        }));
+        const { durable } = await savePendingPhotos(items);
+        setError(
+          durable
+            ? null
+            : "Private browsing cannot keep your photos through sign-in. You may need to select them again afterward."
+        );
+        onGateFailed("unauthenticated");
+        return;
+      }
+      try {
+        const res = await fetch("/api/billing/status");
+        const body = res.ok ? ((await res.json()) as { active?: boolean }) : null;
+        if (!body || body.active !== true) {
+          setError(null);
+          onGateFailed("subscription_required");
+          return;
+        }
+      } catch {
+        setError("Billing status could not be checked. Try again.");
+        return;
+      }
+    }
+
+    // Landing-flow-only funnel signal (onGateFailed presence marks this
+    // instance as the pre-auth landing dropzone): fires once we know a real
+    // submit is about to happen -- a live already-entitled pick, or a
+    // recovered pick resuming after sign-in/checkout. Never fires for the
+    // authenticated dashboard's own product-add flow.
+    if (onGateFailed) trackClientEvent("photo_uploaded");
+
     if (images.length === 1) {
       setError(null);
       setPreviewUrl((old) => {
@@ -534,14 +617,14 @@ export function AddProductCard({
               </span>
               <span>
                 <span className="block text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
-                  Drop your listing photos here
+                  Drop all your listing photos here
                 </span>
                 <span className="mt-1.5 block text-[13.5px] text-[var(--color-ink-muted)]">
-                  Add 1 photo, or up to 10 at once. JPG or PNG.
+                  Up to 10 photos. All photos must be from the same listing.
                 </span>
               </span>
               <span className="rounded-full bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
-                Score listing photos
+                Choose files
               </span>
             </div>
           ) : (

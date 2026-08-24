@@ -11,13 +11,7 @@ import { AnalyzingState } from "@/components/analyzing-state";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { InvalidUploadState } from "@/components/invalid-upload-state";
 import { DEMO_STATES, VERIFY_AMBER_DEMO } from "@/data/demo-states";
-import { trackClientEvent } from "@/lib/track-client";
-import { prepareUploadImage } from "@/lib/client-image";
-import {
-  savePendingPhoto,
-  loadPendingPhoto,
-  clearPendingPhoto,
-} from "@/lib/pending-photo";
+import { loadPendingPhotos, clearPendingPhotos, type PendingPhotoItem } from "@/lib/pending-photos";
 
 type Mode = "upload" | "analyzing" | "invalid" | "weak" | "strong" | "verify";
 
@@ -33,23 +27,25 @@ const KEY_MAP: Record<string, Mode> = {
 
 /** Demo keyboard shortcuts + ?state= routes are development/marketing tooling. */
 const DEMO_ENABLED =
-  process.env.NODE_ENV !== "production" ||
-  process.env.NEXT_PUBLIC_ENABLE_DEMO === "1";
+  process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ENABLE_DEMO === "1";
 
 /**
- * Landing page. PAID-ONLY BETA: picking a photo is free, but the scan requires
- * a signed-in user with an active subscription (verified server-side). The
- * picked photo is stashed in IndexedDB so it survives sign-in and Stripe
- * Checkout, then the assessment starts automatically. The workspace engine is
- * src/components/dashboard/product-workspace.tsx.
+ * Landing page. PAID-ONLY: picking listing photos is free, submitting them
+ * requires a signed-in user with an active subscription (verified
+ * server-side). The dropzone (UploadWorkspace -> AddProductCard's
+ * "dropzone" variant) is the EXACT same component the signed-in dashboard
+ * uses (src/app/(app)/dashboard/page.tsx) -- there is no separate
+ * landing-only upload implementation. Picking here only stashes the pick in
+ * IndexedDB (src/lib/pending-photos.ts) so it survives sign-in and Stripe
+ * Checkout, then hands the SAME files back to that same dropzone once
+ * entitlement is confirmed.
  */
 export default function Page() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("upload");
   const [staticRender, setStaticRender] = useState(false);
-  const [pendingUrl, setPendingUrl] = useState<string | undefined>(undefined);
-  const [scoreError, setScoreError] = useState<string | null>(null);
   const [authOpen, setAuthOpen] = useState(false);
+  const [resumeSelection, setResumeSelection] = useState<PendingPhotoItem[] | null>(null);
 
   // Hidden demo routes (?state=weak|strong|invalid|verify) for screenshots.
   useEffect(() => {
@@ -85,152 +81,55 @@ export default function Page() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  /**
-   * Persist the upload and queue a durable assessment. The pending stash is
-   * cleared only after the server confirms the product/photo/job exist.
-   */
-  const runAssessment = useCallback(
-    async (file: File) => {
-      const url = URL.createObjectURL(file);
-      setPendingUrl(url);
-      setMode("analyzing");
-      trackClientEvent("photo_uploaded");
-
-      try {
-        const form = new FormData();
-        form.set("image", file);
-        form.set("request_id", crypto.randomUUID());
-        form.set("role", "main");
-        const res = await fetch("/api/score/jobs", { method: "POST", body: form });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as
-            | { error?: string; code?: string }
-            | null;
-          if (body?.code === "unauthenticated") {
-            setMode("upload");
-            setAuthOpen(true);
-            return;
-          }
-          if (
-            body?.code === "subscription_required" ||
-            body?.code === "subscription_past_due"
-          ) {
-            router.push("/subscribe");
-            return;
-          }
-          if (body?.code === "insufficient_credits") {
-            throw new Error("Your rating credit ran out");
-          }
-          throw new Error(body?.error || `Score request failed (${res.status})`);
-        }
-        const queued = (await res.json()) as { productId?: string };
-        if (!queued.productId) {
-          throw new Error("Your photo could not be saved. Try again.");
-        }
-
-        // Persist as a new product. Failures are VISIBLE — never a silent
-        await clearPendingPhoto();
-        router.refresh();
-        router.push("/dashboard");
-      } catch (err) {
-        console.error("[landing] score/persist failed", err);
-        setScoreError(
-          err instanceof Error ? err.message : "Score failed. Try again."
-        );
-        setMode("upload");
+  /** Gate the paid work, not the pick: a signed-out visitor gets the auth
+   *  modal, a signed-in but unsubscribed one goes to checkout. The dropzone
+   *  has already stashed the pick by the time either of these fires. */
+  const handleGateFailed = useCallback(
+    (reason: "unauthenticated" | "subscription_required") => {
+      if (reason === "subscription_required") {
+        router.push("/subscribe");
+        return;
       }
+      setAuthOpen(true);
     },
     [router]
   );
 
-  /** Entitlement check via the server (never a client-side plan flag). */
-  const checkEntitled = useCallback(async (): Promise<boolean | null> => {
-    try {
-      const res = await fetch("/api/billing/status");
-      if (!res.ok) return null;
-      const body = (await res.json()) as { active?: boolean };
-      return Boolean(body.active);
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const handleFirstFile = useCallback(
-    async (inputFile: File) => {
-      if (!inputFile.type.startsWith("image/")) {
-        setMode("invalid");
-        return;
-      }
-      setScoreError(null);
-
-      // Compress locally, then stash BEFORE any auth/payment redirect so the
-      // photo survives Google OAuth, Stripe Checkout, and a closed browser.
-      const file = await prepareUploadImage(inputFile);
-      const { durable } = await savePendingPhoto(file);
-
-      // Gate the paid work, not the pick: signed-out users get the auth modal.
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session?.user) {
-        setScoreError(
-          durable
-            ? "Your photo is saved. Create your account to rate it."
-            : "Private browsing cannot keep your photo through sign-in. You may need to select it again afterward."
-        );
-        setAuthOpen(true);
-        return;
-      }
-
-      // Paid-only beta: no active subscription means Stripe Checkout first.
-      // The stashed photo is recovered automatically after payment.
-      const entitled = await checkEntitled();
-      if (entitled === false) {
-        router.push("/subscribe");
-        return;
-      }
-      if (entitled === null) {
-        setScoreError("Billing status could not be checked. Try again.");
-        return;
-      }
-
-      await runAssessment(file);
-    },
-    [router, runAssessment, checkEntitled]
-  );
-
-  // Pending-photo recovery: after sign-in, after Stripe, or after reopening
-  // the browser, a valid stashed photo resumes the journey automatically once
-  // entitlement is confirmed server-side.
+  // Pending-photos recovery: after sign-in, after Stripe, or after reopening
+  // the browser, a valid stash resumes automatically once entitlement is
+  // confirmed server-side -- fed back into the dropzone via resumeSelection,
+  // never a separate recovery upload path.
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const file = await loadPendingPhoto();
-      if (!file || cancelled) return;
+      const items = await loadPendingPhotos();
+      if (!items || cancelled) return;
       const supabase = createSupabaseBrowserClient();
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.user || cancelled) return;
-      const entitled = await checkEntitled();
-      if (cancelled) return;
-      if (entitled) {
-        await runAssessment(file);
-      } else if (entitled === false) {
-        setScoreError(
-          "Your photo is saved. Finish subscribing to rate it."
-        );
+      try {
+        const res = await fetch("/api/billing/status");
+        const body = res.ok ? ((await res.json()) as { active?: boolean }) : null;
+        if (!cancelled && body?.active === true) {
+          setResumeSelection(items);
+        }
+      } catch {
+        // The durable stash survives; the visitor can just try again.
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [runAssessment, checkEntitled]);
+  }, []);
+
+  const handleResumed = useCallback(() => {
+    setResumeSelection(null);
+    void clearPendingPhotos();
+  }, []);
 
   const reset = useCallback(() => {
-    setPendingUrl(undefined);
-    setScoreError(null);
     setMode("upload");
   }, []);
 
@@ -241,26 +140,20 @@ export default function Page() {
       {mode === "upload" && (
         <>
           <UploadWorkspace
-            onFile={(f) => void handleFirstFile(f)}
-            errorBanner={scoreError ?? undefined}
+            onGateFailed={handleGateFailed}
+            resumeSelection={resumeSelection}
+            onResumed={handleResumed}
           />
           <ProductProofSection />
         </>
       )}
 
       {mode === "analyzing" && (
-        <AnalyzingState
-          imageSrc={pendingUrl ?? DEMO_STATES.weak.imageSrc}
-          imageAlt=""
-        />
+        <AnalyzingState imageSrc={DEMO_STATES.weak.imageSrc} imageAlt="" />
       )}
 
       {mode === "weak" && (
-        <AuditWorkspace
-          state={DEMO_STATES.weak}
-          animate={!staticRender}
-          onCta={() => undefined}
-        />
+        <AuditWorkspace state={DEMO_STATES.weak} animate={!staticRender} onCta={() => undefined} />
       )}
       {mode === "strong" && (
         <AuditWorkspace state={DEMO_STATES.strong} animate={!staticRender} onCta={reset} />

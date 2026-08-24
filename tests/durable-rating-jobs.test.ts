@@ -44,7 +44,14 @@ describe("durable rating jobs", () => {
   });
 
   it("routes every browser rating entry point through the durable API", () => {
-    expect(landing).toContain('fetch("/api/score/jobs"');
+    // The landing page no longer fetches directly (Fix-all UI slice,
+    // 2026-08-24): it delegates its whole dropzone to AddProductCard, the
+    // SAME component the dashboard uses, whose own durable-API call is
+    // checked below. Two implementations of "upload a photo" would be the
+    // real risk this test guards against, not which file the fetch call
+    // physically lives in.
+    expect(landing).toContain("<UploadWorkspace");
+    expect(read("src/components/upload-workspace.tsx")).toContain("<AddProductCard");
     expect(addProduct).toContain('fetch("/api/score/jobs"');
     expect(workspace).toContain('fetch("/api/score/jobs"');
     expect(addProduct).not.toContain('fetch("/api/score"');

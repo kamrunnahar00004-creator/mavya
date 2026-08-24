@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import { loadPendingPhoto } from "@/lib/pending-photo";
+import { loadPendingPhotos } from "@/lib/pending-photos";
 import { cn } from "@/lib/utils";
 
 /**
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 async function postAuthDestination(): Promise<string> {
   let hasPendingPhoto = false;
   try {
-    hasPendingPhoto = Boolean(await loadPendingPhoto());
+    hasPendingPhoto = Boolean(await loadPendingPhotos());
   } catch {
     // Stash unavailable: billing routing decides alone.
   }
@@ -77,7 +77,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
       // callback back to the landing so the stash resumes automatically.
       let redirectTo = `${window.location.origin}/auth/callback`;
       try {
-        if (await loadPendingPhoto()) {
+        if (await loadPendingPhotos()) {
           redirectTo += `?next=${encodeURIComponent("/")}`;
         }
       } catch {
