@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "@/components/auth-modal";
 import { cn } from "@/lib/utils";
@@ -73,12 +73,23 @@ const PLAN_DISPLAY: Record<
   },
 };
 
-/** Shared across every tier -- shown once below the cards, not repeated on
- *  each one. Score/Fix/Fix-all are already covered by the page's own
- *  subhead, so this is only the ancillary stuff. "Unlimited rescoring" is
- *  real: /api/score/jobs has no daily/monthly cap, only a 6/min anti-spam
- *  throttle -- verified against the route directly, not assumed. */
-const SHARED_BENEFITS = ["Unlimited rescoring", "Full-resolution downloads", "Cancel anytime"];
+/** Every card shows its own complete list -- repetition across tiers is
+ *  deliberate (founder call): a spacious, fully-stocked card reads as more
+ *  generous than a thin one, even when three of the six lines repeat.
+ *  "Unlimited rescoring" is real: /api/score/jobs has no daily/monthly
+ *  cap, only a 6/min anti-spam throttle -- verified against the route
+ *  directly, not assumed. */
+function planFeatures(plan: (typeof PLAN_DISPLAY)[PurchasablePlanKey]): string[] {
+  return [
+    `${plan.activeListingLimit} active listings`,
+    `${plan.dailyFixes} photo fixes a day`,
+    "Score every photo, fix any photo in one click",
+    "Fix your whole listing at once",
+    "Unlimited rescoring",
+    "Full-resolution downloads",
+    "Cancel anytime",
+  ];
+}
 
 function formatWholeDollars(cents: number): string {
   return `$${Math.round(cents / 100)}`;
@@ -295,12 +306,14 @@ function SubscribeInner() {
               </button>
             ))}
           </div>
-          {/* Plan cards -- each fully self-contained: its own badge, price,
-              hero stats, and its own button that acts on THAT tier
-              directly. No shared "select a card, then act below" step.
-              The listing/fix counts ARE the differentiators, so they're the
-              visual focus -- not one more bullet among six identical ones. */}
-          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:items-start">
+          {/* Plan cards -- each fully self-contained and deliberately
+              spacious: a full, repeated feature list (not trimmed to only
+              the differences) with room to breathe, a flexible gap before
+              the button, and its own button that acts on THAT tier
+              directly. Generous, not sparse -- founder call: the card
+              should read as "a lot is included here," even with real
+              whitespace inside it. */}
+          <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:items-stretch">
             {(Object.keys(PLAN_DISPLAY) as PurchasablePlanKey[]).map((planKey) => {
               const plan = PLAN_DISPLAY[planKey];
               const priceCents = cadence === "monthly" ? plan.monthlyCents : plan.annualCents;
@@ -310,12 +323,12 @@ function SubscribeInner() {
                 <div
                   key={planKey}
                   className={cn(
-                    "relative flex flex-col rounded-[var(--radius-2xl)] border bg-white p-6 text-left transition-all",
+                    "relative flex min-h-[640px] flex-col rounded-[var(--radius-2xl)] border p-8 text-left transition-all",
                     plan.highlight
-                      ? "border-2 border-[var(--color-primary)] shadow-[0_12px_32px_rgba(232,107,57,0.16)] sm:-translate-y-2"
+                      ? "border-2 border-[var(--color-primary)] bg-[var(--color-tint)] shadow-[0_16px_40px_rgba(232,107,57,0.20)] sm:-translate-y-2"
                       : plan.bestValue
-                      ? "border-2 border-[var(--color-ink)] shadow-[var(--shadow-soft)]"
-                      : "border-[var(--color-border)] shadow-[var(--shadow-soft)]"
+                      ? "border-2 border-[var(--color-ink)] bg-white shadow-[var(--shadow-soft)]"
+                      : "border-[var(--color-border)] bg-white shadow-[var(--shadow-soft)]"
                   )}
                 >
                   {emphasized && (
@@ -330,32 +343,55 @@ function SubscribeInner() {
                   )}
 
                   <span className="flex items-center gap-2">
-                    <span className="text-[15px] font-bold text-[var(--color-ink)]">{plan.name}</span>
+                    <span className="text-[16px] font-bold text-[var(--color-ink)]">{plan.name}</span>
                     {cadence === "annual" && (
-                      <span className="rounded-full bg-[var(--color-tint)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary)]">
+                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary)] shadow-[var(--shadow-soft)]">
                         Save {formatWholeDollars(annualSavingsCents(plan))}/year
                       </span>
                     )}
                   </span>
-                  <span className="mt-2 font-display text-[34px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
+                  <span className="mt-3 font-display text-[36px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
                     {formatWholeDollars(priceCents)}
                     <span className="text-[15px] font-semibold text-[var(--color-ink-muted)]">
                       /{cadence === "monthly" ? "mo" : "yr"}
                     </span>
                   </span>
                   {cadence === "annual" && (
-                    <span className="mt-0.5 text-[12px] text-[var(--color-ink-soft)]">
+                    <span className="mt-1 text-[12px] text-[var(--color-ink-soft)]">
                       {formatWholeDollars(plan.annualCents)} billed annually
                     </span>
                   )}
                   <span className="mt-2 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
+
+                  <p className="mb-3 mt-7 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
+                    This includes
+                  </p>
+                  <ul className="space-y-3">
+                    {planFeatures(plan).map((feature) => (
+                      <li key={feature} className="flex items-start gap-2.5">
+                        <CheckCircle
+                          className={cn(
+                            "mt-0.5 h-[18px] w-[18px] shrink-0",
+                            plan.highlight ? "text-[var(--color-primary)]" : "text-[var(--color-ink-soft)]"
+                          )}
+                          aria-hidden="true"
+                        />
+                        <span className="text-[14.5px] leading-snug text-[var(--color-ink)]">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {/* Deliberate empty space -- pushes the button to the
+                      bottom so every card ends at the same place and feels
+                      like it has room, not like content stops early. */}
+                  <div className="flex-1" />
 
                   <button
                     type="button"
                     onClick={() => void startCheckout(planKey)}
                     disabled={busy !== null || authState === "checking"}
                     className={cn(
-                      "mt-5 inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-[14.5px] font-semibold transition-all disabled:opacity-60",
+                      "mt-7 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[14.5px] font-semibold transition-all disabled:opacity-60",
                       plan.highlight
                         ? "bg-[var(--color-primary)] text-white shadow-[0_4px_14px_rgba(232,107,57,0.35)] hover:bg-[var(--color-primary-hover)]"
                         : "border border-[var(--color-border-strong)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-page-deep)]"
@@ -366,39 +402,12 @@ function SubscribeInner() {
                     )}
                     Choose {plan.name}
                   </button>
-
-                  {/* Hero stats -- the actual differentiators between tiers. */}
-                  <div className="mt-5 grid grid-cols-2 gap-3 rounded-[var(--radius-lg)] bg-[var(--color-page)] p-3.5">
-                    <div>
-                      <div className="text-[21px] font-bold leading-none text-[var(--color-ink)]">
-                        {plan.activeListingLimit}
-                      </div>
-                      <div className="mt-1 text-[11.5px] leading-tight text-[var(--color-ink-muted)]">
-                        active listings
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[21px] font-bold leading-none text-[var(--color-ink)]">
-                        {plan.dailyFixes}
-                      </div>
-                      <div className="mt-1 text-[11.5px] leading-tight text-[var(--color-ink-muted)]">
-                        photo fixes / day
-                      </div>
-                    </div>
-                  </div>
+                  <p className="mt-3 text-center text-[11.5px] leading-relaxed text-[var(--color-ink-soft)]">
+                    Renews automatically. Cancel anytime in Settings.
+                  </p>
                 </div>
               );
             })}
-          </div>
-
-          {/* Shared across every tier -- shown once, not repeated per card. */}
-          <div className="mt-8 text-center">
-            <p className="text-[11.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
-              Every plan includes
-            </p>
-            <p className="mt-1.5 text-[13.5px] text-[var(--color-ink-muted)]">
-              {SHARED_BENEFITS.join("  ·  ")}
-            </p>
           </div>
 
           {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (

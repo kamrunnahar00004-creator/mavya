@@ -42,25 +42,26 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).not.toContain("—");
   });
 
-  it("heroes the real differentiators (listing count, daily fixes) as stats instead of burying them in a repeated bullet list", () => {
-    expect(subscribePage).not.toContain("planFeatures(");
+  it("each card renders its own full, repeated feature list -- founder call: repetition across tiers is deliberate, not a bug", () => {
+    expect(subscribePage).toContain("function planFeatures(plan:");
+    expect(subscribePage).toContain("planFeatures(plan).map(");
     expect(subscribePage).not.toContain("PLAN_FEATURES");
     expect(subscribePage).not.toContain('"Everything in Starter"');
     expect(subscribePage).not.toContain('"Everything in Shop"');
-    expect(subscribePage).toContain("{plan.activeListingLimit}");
-    expect(subscribePage).toContain("{plan.dailyFixes}");
-    expect(subscribePage).toContain("active listings");
-    expect(subscribePage).toContain("photo fixes / day");
+    expect(subscribePage).toContain("`${plan.activeListingLimit} active listings`");
+    expect(subscribePage).toContain("`${plan.dailyFixes} photo fixes a day`");
   });
 
-  it("shows ancillary benefits once, shared below the cards, not repeated per card", () => {
-    expect(subscribePage).toContain("const SHARED_BENEFITS =");
-    expect(subscribePage).toContain("Every plan includes");
-    expect(subscribePage).toContain("SHARED_BENEFITS.join(");
-    // Exactly one render site for the shared list (below the grid), not
-    // one per card.
-    const renderCount = (subscribePage.match(/SHARED_BENEFITS\.join/g) ?? []).length;
-    expect(renderCount).toBe(1);
+  it("cards are deliberately spacious -- a tall min-height plus a flexible spacer pushes the button down, leaving real empty room, not cramming content tight", () => {
+    expect(subscribePage).toMatch(/min-h-\[\d+px\]/);
+    expect(subscribePage).toContain('<div className="flex-1" />');
+    // The spacer must sit between the feature list and the button, not
+    // somewhere unrelated.
+    const listIdx = subscribePage.indexOf("planFeatures(plan).map(");
+    const spacerIdx = subscribePage.indexOf('<div className="flex-1" />', listIdx);
+    const buttonIdx = subscribePage.indexOf("onClick={() => void startCheckout(planKey)}", spacerIdx);
+    expect(spacerIdx).toBeGreaterThan(listIdx);
+    expect(buttonIdx).toBeGreaterThan(spacerIdx);
   });
 
   it("each card has its own Subscribe button that acts on that exact tier, not a shared bottom CTA", () => {
