@@ -111,10 +111,22 @@ export default async function DashboardPage() {
         <h1 className="font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
           Get More Etsy Clicks in 4 Simple Steps
         </h1>
-        <p className="mt-3 max-w-[480px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-          Upload your Etsy thumbnail. Get an honest score. Fix it in one click.
-          Then improve every supporting photo in your listing.
-        </p>
+        <ul className="mt-4 flex max-w-[440px] flex-col gap-2 text-left text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
+          {[
+            "Upload all photos from the same Etsy listing, or add them one by one.",
+            "See how every photo scores and what is hurting clicks.",
+            "Fix weak photos in one click.",
+            "Improve the full listing with stronger, more clickable images.",
+          ].map((step) => (
+            <li key={step} className="flex gap-2.5">
+              <span
+                className="mt-2.5 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[var(--color-primary)]"
+                aria-hidden="true"
+              />
+              {step}
+            </li>
+          ))}
+        </ul>
         <div className="mt-9 w-full max-w-[520px]">
           <AddProductCard variant="dropzone" />
         </div>
