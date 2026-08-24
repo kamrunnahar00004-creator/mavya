@@ -16,6 +16,7 @@ import {
   type BillingCadence,
   type PlanKey,
 } from "@/lib/plans";
+import { generationDailyMax } from "@/lib/generation-policy";
 
 type BillingStatus = {
   active: boolean;
@@ -37,7 +38,9 @@ const PLAN_NAMES: Record<Exclude<PlanKey, "legacy">, string> = {
 };
 
 function formatPrice(cents: number, cadence: "monthly" | "annual"): string {
-  return `$${(cents / 100).toFixed(2)}/${cadence === "annual" ? "yr" : "mo"}`;
+  const dollars = cents / 100;
+  const amount = dollars.toFixed(Number.isInteger(dollars) ? 0 : 2);
+  return `$${amount}/${cadence === "annual" ? "yr" : "mo"}`;
 }
 
 function formatDate(iso: string | null): string {
@@ -74,7 +77,7 @@ function planLabel(status: BillingStatus | null): {
 
 function planPriceLabel(status: BillingStatus | null): string | null {
   if (!status?.planKey || !status.cadence) return null;
-  if (status.planKey === "legacy") return "Founding — $19.00/mo";
+  if (status.planKey === "legacy") return "Founding — $19/mo";
   const policy = getPlanPolicy(status.planKey, status.cadence);
   if (!policy) return null;
   return `${PLAN_NAMES[status.planKey]} — ${formatPrice(
@@ -238,12 +241,28 @@ export default function SettingsPage() {
           </p>
         )}
 
+        {(status?.reason === "wrong_plan" || status?.reason === "expired") && (
+          <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
+            <AlertCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-weak)]"
+              aria-hidden="true"
+            />
+            Your current subscription needs attention. Use Manage billing
+            below to review it in Stripe.
+          </p>
+        )}
+
         {status?.active && (
           <div className="mt-4 space-y-1.5">
             {status.activeListingLimit != null && (
               <p className="text-[14px] text-[var(--color-ink)]">
                 {status.activeListingLimit} active listing
                 {status.activeListingLimit === 1 ? "" : "s"} included
+              </p>
+            )}
+            {status.planKey && (
+              <p className="text-[14px] text-[var(--color-ink)]">
+                {generationDailyMax(status.planKey)} photo fixes a day
               </p>
             )}
             {status.currentPeriodEnd && (
@@ -295,19 +314,24 @@ export default function SettingsPage() {
 
       {/* Sign out */}
       <section className="mt-5 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-soft)]">
-        <button
-          type="button"
-          onClick={() => void handleLogout()}
-          disabled={busy !== null}
-          className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
-        >
-          {busy === "logout" ? (
-            <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <LogOut className="h-4 w-4" aria-hidden="true" />
-          )}
-          Log out
-        </button>
+        <h2 className="text-[13px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
+          Session
+        </h2>
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => void handleLogout()}
+            disabled={busy !== null}
+            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
+          >
+            {busy === "logout" ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+            )}
+            Log out
+          </button>
+        </div>
       </section>
     </main>
   );
