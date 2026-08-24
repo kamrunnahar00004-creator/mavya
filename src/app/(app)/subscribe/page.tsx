@@ -254,7 +254,6 @@ function SubscribeInner() {
     status?.reason === "wrong_plan" ||
     status?.reason === "expired" ||
     status?.reason === "inactive";
-  const planSelectionBlocked = pastDue || status?.reason === "wrong_plan";
 
   // Real math, not a fabricated marketing figure: annual price is exactly
   // 10x the monthly price on every tier, i.e. 2 free months -- identical
@@ -355,8 +354,6 @@ function SubscribeInner() {
             </div>
           )}
 
-          {!planSelectionBlocked && (
-            <>
           {/* Monthly / annual cadence toggle. The yearly-savings figure is
               the same across every tier (verified: exactly 2 months, real
               math via annualSavingsCents), so it's shown once here instead
@@ -484,8 +481,6 @@ function SubscribeInner() {
           <p className="mt-6 text-center text-[12.5px] text-[var(--color-ink-soft)]">
             Renews automatically. Cancel anytime in Settings.
           </p>
-            </>
-          )}
           <p className="mt-6 text-center text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
             Ratings reflect how buyers see your photo. They do not guarantee
             clicks or sales. Always review AI-improved photos and verify

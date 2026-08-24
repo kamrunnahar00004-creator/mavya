@@ -80,15 +80,19 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).toContain('disabled={busy !== null || authState === "checking"}');
   });
 
-  it("shows an explicit billing-management path instead of disguising it as plan selection", () => {
+  it("shows Manage billing as a contextual hint alongside the plan cards -- never hides the cards themselves", () => {
+    // Founder call: hiding pricing entirely for past_due/wrong_plan left the
+    // page looking broken (nothing but a bare Manage billing box). The
+    // cards must always render; Manage billing is additive, not a gate.
     expect(subscribePage).toContain("const needsBillingManagement =");
-    expect(subscribePage).toContain("const planSelectionBlocked =");
+    expect(subscribePage).not.toContain("planSelectionBlocked");
     expect(subscribePage).toContain("{needsBillingManagement && (");
-    expect(subscribePage).toContain("{!planSelectionBlocked && (");
     expect(subscribePage).toContain("onClick={() => void openPortal()}");
     expect(subscribePage).toContain("Use Manage billing below");
-    expect(subscribePage).not.toContain("Choose any plan below to update");
-    expect(subscribePage).not.toContain("clicking any Choose");
+    // The plan cards grid itself must never sit behind any condition.
+    expect(subscribePage).toContain(
+      'sm:grid-cols-3 sm:items-stretch">\n            {(Object.keys(PLAN_DISPLAY) as PurchasablePlanKey[]).map((planKey) => {'
+    );
   });
 
   it("shows exact annual monthly equivalents without whole-dollar rounding", () => {
