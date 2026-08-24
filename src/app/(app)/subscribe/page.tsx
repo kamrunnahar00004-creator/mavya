@@ -249,8 +249,13 @@ function SubscribeInner() {
 
   const pastDue = status?.reason === "past_due";
   const active = Boolean(status?.active);
-  const billingConfigurationIssue =
-    status?.reason === "wrong_plan" || status?.reason === "expired";
+
+  // Real math, not a fabricated marketing figure: annual price is exactly
+  // 10x the monthly price on every tier, i.e. 2 free months -- identical
+  // across Starter/Shop/Power, so it's computed once from any one plan.
+  const yearlyMonthsFree = Math.round(
+    annualSavingsCents(PLAN_DISPLAY.starter) / PLAN_DISPLAY.starter.monthlyCents
+  );
 
   const activePlanLabel = useMemo(() => {
     if (!status?.planKey) return null;
@@ -266,8 +271,9 @@ function SubscribeInner() {
 
       {pastDue && (
         <Banner tone="weak">
-          Your payment did not go through. Update your payment method to keep
-          using Mavya. Your saved results are safe.
+          Your payment did not go through. Choose any plan below to update
+          your payment method and keep using Mavya. Your saved results are
+          safe.
         </Banner>
       )}
 
@@ -324,25 +330,31 @@ function SubscribeInner() {
         </div>
       ) : (
         <div className="mt-8">
-          {/* Monthly / annual cadence toggle */}
-          <div className="flex justify-center">
-          <div className="inline-flex rounded-full border border-[var(--color-border)] bg-white p-1">
-            {(["monthly", "annual"] as const).map((c) => (
-              <button
-                key={c}
-                type="button"
-                onClick={() => setCadence(c)}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-colors",
-                  cadence === c
-                    ? "bg-[var(--color-primary)] text-white"
-                    : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
-                )}
-              >
-                {c === "monthly" ? "Monthly" : "Annual"}
-              </button>
-            ))}
-          </div>
+          {/* Monthly / annual cadence toggle. The yearly-savings figure is
+              the same across every tier (verified: exactly 2 months, real
+              math via annualSavingsCents), so it's shown once here instead
+              of repeated as a per-card badge. */}
+          <div className="flex items-center justify-center gap-2">
+            <div className="inline-flex rounded-full border border-[var(--color-border)] bg-white p-1">
+              {(["monthly", "annual"] as const).map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCadence(c)}
+                  className={cn(
+                    "rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-colors",
+                    cadence === c
+                      ? "bg-[var(--color-primary)] text-white"
+                      : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                  )}
+                >
+                  {c === "monthly" ? "Monthly" : "Annual"}
+                </button>
+              ))}
+            </div>
+            <span className="rounded-full bg-amber-300 px-2.5 py-1 text-[11px] font-semibold text-amber-950">
+              Yearly: {yearlyMonthsFree} months free
+            </span>
           </div>
           {/* Plan cards -- each fully self-contained and deliberately
               spacious: a full, repeated feature list (not trimmed to only
@@ -384,14 +396,7 @@ function SubscribeInner() {
                     </span>
                   )}
 
-                  <span className="flex items-center gap-2">
-                    <span className="text-[16px] font-bold text-[var(--color-ink)]">{plan.name}</span>
-                    {cadence === "annual" && (
-                      <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary)] shadow-[var(--shadow-soft)]">
-                        Save {formatWholeDollars(annualSavingsCents(plan))}/year
-                      </span>
-                    )}
-                  </span>
+                  <span className="text-[16px] font-bold text-[var(--color-ink)]">{plan.name}</span>
                   <span className="mt-3 font-display text-[36px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
                     {formatWholeDollars(monthlyEquivalentCents)}
                     <span className="text-[15px] font-semibold text-[var(--color-ink-muted)]">
@@ -444,33 +449,21 @@ function SubscribeInner() {
                     )}
                     Choose {plan.name}
                   </button>
-                  <p className="mt-3 text-center text-[11.5px] leading-relaxed text-[var(--color-ink-soft)]">
-                    Renews automatically. Cancel anytime in Settings.
-                  </p>
                 </div>
               );
             })}
           </div>
 
-          {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
-            <div className="mx-auto mt-6 max-w-[420px] rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white p-5 text-center shadow-[var(--shadow-soft)]">
-              <p className="text-[13.5px] text-[var(--color-ink-muted)]">
-                Already have billing set up with us? Manage your payment method
-                or subscription here.
-              </p>
-              <button
-                type="button"
-                onClick={() => void openPortal()}
-                disabled={busy !== null}
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
-              >
-                {busy?.kind === "portal" && (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                )}
-                Manage billing
-              </button>
-            </div>
-          )}
+          {/* Shown once, not per card -- it's the same line for every
+              tier. Also doubles as the billing-management hint: for
+              past_due/billing-issue/inactive accounts, clicking any Choose
+              button above already opens the Stripe billing portal instead
+              of starting a new checkout (server-side, via the
+              alreadySubscribed branch in /api/billing/checkout) -- no
+              separate "Manage billing" control needed here. */}
+          <p className="mt-6 text-center text-[12.5px] text-[var(--color-ink-soft)]">
+            Renews automatically. Cancel anytime in Settings.
+          </p>
           <p className="mt-6 text-center text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
             Ratings reflect how buyers see your photo. They do not guarantee
             clicks or sales. Always review AI-improved photos and verify
