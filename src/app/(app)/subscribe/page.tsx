@@ -91,8 +91,9 @@ function planFeatures(plan: (typeof PLAN_DISPLAY)[PurchasablePlanKey]): string[]
   ];
 }
 
-function formatWholeDollars(cents: number): string {
-  return `$${Math.round(cents / 100)}`;
+function formatDollars(cents: number): string {
+  const dollars = cents / 100;
+  return `$${dollars.toFixed(Number.isInteger(dollars) ? 0 : 2)}`;
 }
 
 /** Real annual savings vs paying monthly all year -- never a fabricated
@@ -101,11 +102,10 @@ function annualSavingsCents(plan: { monthlyCents: number; annualCents: number })
   return plan.monthlyCents * 12 - plan.annualCents;
 }
 
-/** Honest, Mavya-specific FAQ copy -- no invented policy, no links to pages
- *  that don't exist. Two items (AI training data, refunds) state Mavya's
- *  actual current behavior/stance as best known; confirm both against the
- *  real OpenAI API data-usage terms and the founder's refund stance before
- *  treating them as a permanent policy. */
+/** Founder-dictated final copy (given verbatim) -- not a Claude-authored
+ *  draft. The AI-training and refund answers state Mavya's actual current
+ *  behavior/stance as the founder gave it; re-confirm with the founder
+ *  before changing either, don't silently soften or remove them. */
 const FAQ_ITEMS: { q: string; a: string }[] = [
   {
     q: "How does Mavya work?",
@@ -249,6 +249,12 @@ function SubscribeInner() {
 
   const pastDue = status?.reason === "past_due";
   const active = Boolean(status?.active);
+  const needsBillingManagement =
+    pastDue ||
+    status?.reason === "wrong_plan" ||
+    status?.reason === "expired" ||
+    status?.reason === "inactive";
+  const planSelectionBlocked = pastDue || status?.reason === "wrong_plan";
 
   // Real math, not a fabricated marketing figure: annual price is exactly
   // 10x the monthly price on every tier, i.e. 2 free months -- identical
@@ -271,9 +277,8 @@ function SubscribeInner() {
 
       {pastDue && (
         <Banner tone="weak">
-          Your payment did not go through. Choose any plan below to update
-          your payment method and keep using Mavya. Your saved results are
-          safe.
+          Your payment did not go through. Use Manage billing below to update
+          your payment method. Your saved results are safe.
         </Banner>
       )}
 
@@ -330,6 +335,28 @@ function SubscribeInner() {
         </div>
       ) : (
         <div className="mt-8">
+          {needsBillingManagement && (
+            <div className="mb-8 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white p-5 shadow-[var(--shadow-soft)]">
+              <p className="text-[13.5px] leading-relaxed text-[var(--color-ink-muted)]">
+                Review your existing subscription, update your payment method,
+                or cancel through Stripe billing management.
+              </p>
+              <button
+                type="button"
+                onClick={() => void openPortal()}
+                disabled={busy !== null}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border-strong)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60 sm:w-auto"
+              >
+                {busy?.kind === "portal" && (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                )}
+                Manage billing
+              </button>
+            </div>
+          )}
+
+          {!planSelectionBlocked && (
+            <>
           {/* Monthly / annual cadence toggle. The yearly-savings figure is
               the same across every tier (verified: exactly 2 months, real
               math via annualSavingsCents), so it's shown once here instead
@@ -370,7 +397,7 @@ function SubscribeInner() {
               // cadence that's the annual total divided by 12, with the
               // real annual charge shown as small subtext underneath.
               const monthlyEquivalentCents =
-                cadence === "monthly" ? plan.monthlyCents : Math.round(plan.annualCents / 12);
+                cadence === "monthly" ? plan.monthlyCents : plan.annualCents / 12;
               const emphasized = plan.highlight || plan.bestValue;
               const checkingOutThis = busy?.kind === "checkout" && busy.plan === planKey;
               return (
@@ -398,14 +425,14 @@ function SubscribeInner() {
 
                   <span className="text-[16px] font-bold text-[var(--color-ink)]">{plan.name}</span>
                   <span className="mt-3 font-display text-[36px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
-                    {formatWholeDollars(monthlyEquivalentCents)}
+                    {formatDollars(monthlyEquivalentCents)}
                     <span className="text-[15px] font-semibold text-[var(--color-ink-muted)]">
                       /mo
                     </span>
                   </span>
                   {cadence === "annual" && (
                     <span className="mt-1 text-[12px] text-[var(--color-ink-soft)]">
-                      Billed {formatWholeDollars(plan.annualCents)} annually
+                      Billed {formatDollars(plan.annualCents)} annually
                     </span>
                   )}
                   <span className="mt-2 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
@@ -454,16 +481,11 @@ function SubscribeInner() {
             })}
           </div>
 
-          {/* Shown once, not per card -- it's the same line for every
-              tier. Also doubles as the billing-management hint: for
-              past_due/billing-issue/inactive accounts, clicking any Choose
-              button above already opens the Stripe billing portal instead
-              of starting a new checkout (server-side, via the
-              alreadySubscribed branch in /api/billing/checkout) -- no
-              separate "Manage billing" control needed here. */}
           <p className="mt-6 text-center text-[12.5px] text-[var(--color-ink-soft)]">
             Renews automatically. Cancel anytime in Settings.
           </p>
+            </>
+          )}
           <p className="mt-6 text-center text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
             Ratings reflect how buyers see your photo. They do not guarantee
             clicks or sales. Always review AI-improved photos and verify
@@ -479,18 +501,15 @@ function SubscribeInner() {
         </h2>
         <div className="mt-6 flex flex-col gap-2">
           {FAQ_ITEMS.map((item) => (
-            <details
-              key={item.q}
-              className="group rounded-[var(--radius-xl)] bg-[var(--color-border-strong)] p-5 transition-colors hover:bg-[#CBC3B6]"
-            >
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-[var(--color-ink)] marker:content-none [&::-webkit-details-marker]:hidden">
+            <details key={item.q} className="group overflow-hidden rounded-[var(--radius-xl)]">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 bg-[var(--color-border-strong)] px-5 py-4 text-[15px] font-semibold text-[var(--color-ink)] transition-[filter] hover:brightness-95 marker:content-none [&::-webkit-details-marker]:hidden">
                 {item.q}
                 <ChevronDown
                   className="h-[18px] w-[18px] shrink-0 text-[var(--color-ink-soft)] transition-transform group-open:rotate-180"
                   aria-hidden="true"
                 />
               </summary>
-              <p className="mt-3 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
+              <p className="bg-white px-5 py-4 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
                 {item.a}
               </p>
             </details>

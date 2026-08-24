@@ -79,4 +79,40 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(signedIn).toBeGreaterThan(finallyBlock);
     expect(subscribePage).toContain('disabled={busy !== null || authState === "checking"}');
   });
+
+  it("shows an explicit billing-management path instead of disguising it as plan selection", () => {
+    expect(subscribePage).toContain("const needsBillingManagement =");
+    expect(subscribePage).toContain("const planSelectionBlocked =");
+    expect(subscribePage).toContain("{needsBillingManagement && (");
+    expect(subscribePage).toContain("{!planSelectionBlocked && (");
+    expect(subscribePage).toContain("onClick={() => void openPortal()}");
+    expect(subscribePage).toContain("Use Manage billing below");
+    expect(subscribePage).not.toContain("Choose any plan below to update");
+    expect(subscribePage).not.toContain("clicking any Choose");
+  });
+
+  it("shows exact annual monthly equivalents without whole-dollar rounding", () => {
+    expect(subscribePage).toContain("plan.annualCents / 12");
+    expect(subscribePage).toContain("formatDollars(monthlyEquivalentCents)");
+    expect(subscribePage).not.toContain("Math.round(plan.annualCents / 12)");
+    expect(subscribePage).not.toContain("function formatWholeDollars");
+  });
+
+  it("FAQ carries the founder's dictated copy verbatim, including the AI-training and refund answers", () => {
+    // Founder gave this wording directly and it must not be silently
+    // softened, reworded, or dropped by either Claude or Codex -- if the
+    // founder changes the policy, the founder changes this copy.
+    expect(subscribePage).toContain("how likely each one is to perform");
+    expect(subscribePage).toContain("only sent to our AI provider");
+    expect(subscribePage).toContain("We do not currently offer automatic refunds");
+  });
+
+  it("FAQ question bar hover actually darkens it -- brightness filter on the existing token, no raw hex, no lighter-on-hover regression", () => {
+    expect(subscribePage).toContain("bg-[var(--color-border-strong)] px-5 py-4 text-[15px] font-semibold text-[var(--color-ink)] transition-[filter] hover:brightness-95");
+    expect(subscribePage).not.toMatch(/#[0-9A-Fa-f]{6}/);
+  });
+
+  it("FAQ answer sits on a plain white area below the coloured question bar, not inside the same tinted block", () => {
+    expect(subscribePage).toContain('<p className="bg-white px-5 py-4 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">');
+  });
 });
