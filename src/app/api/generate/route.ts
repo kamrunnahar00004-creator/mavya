@@ -244,6 +244,10 @@ export async function POST(req: NextRequest) {
       "AI photo improvement is part of the Mavya Founding Beta subscription."
     );
   }
+  if (!entitlement.planKey) {
+    logEvent("generate.active_entitlement_missing_plan", { userId: user.id });
+    return apiError("internal_error", "Could not verify your plan. Try again.");
+  }
 
   const ip = clientIp(req);
   const perMin = await rateLimit(`gen:u:${user.id}`, 2, 60_000);

@@ -26,18 +26,18 @@ const GENERATION_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
  * generation" claim on the pricing page for the tier it matters most for.
  * Starter is 25 (founder-set, 2026-08-24); Shop and Power scale up with
  * their listing capacity. legacy (the old $19 flat tier, no longer sold)
- * and an unresolved plan both fall back to Starter's number -- the
- * conservative default, never a silent expansion.
+ * receives only a server-resolved PlanKey. Callers fail closed before this
+ * boundary if an active entitlement ever lacks a plan identity.
  */
-const GENERATION_DAILY_MAX_BY_PLAN: Record<Exclude<PlanKey, "legacy"> | "legacy", number> = {
+const GENERATION_DAILY_MAX_BY_PLAN: Record<PlanKey, number> = {
   legacy: 25,
   starter: 25,
   shop: 80,
   power: 200,
 };
 
-export function generationDailyMax(planKey: PlanKey | null): number {
-  return planKey ? GENERATION_DAILY_MAX_BY_PLAN[planKey] : GENERATION_DAILY_MAX_BY_PLAN.starter;
+export function generationDailyMax(planKey: PlanKey): number {
+  return GENERATION_DAILY_MAX_BY_PLAN[planKey];
 }
 
 /** One shared cost budget for manual and Fix-all generation, scaled by the
@@ -47,7 +47,7 @@ export function consumeGenerationDailyBudget(
   userId: string,
   weight: number,
   idempotencyToken: string,
-  planKey: PlanKey | null
+  planKey: PlanKey
 ): Promise<RateLimitResult> {
   return weightedRateLimitMany(
     [{ key: `gen-day:u:${userId}`, max: generationDailyMax(planKey) }],

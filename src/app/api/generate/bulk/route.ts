@@ -121,6 +121,10 @@ export async function POST(req: NextRequest) {
     }
     return apiError("subscription_required", "AI photo improvement is part of your Mavya plan.");
   }
+  if (!entitlement.planKey) {
+    logEvent("generate.bulk_active_entitlement_missing_plan", { userId: user.id });
+    return apiError("internal_error", "Could not verify your plan. Try again.");
+  }
 
   let body: Record<string, unknown>;
   try {

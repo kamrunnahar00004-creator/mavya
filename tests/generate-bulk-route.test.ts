@@ -106,14 +106,20 @@ describe("generation budget and workflow concurrency", () => {
     expect(queue).not.toContain('from "@/lib/entitlements"');
   });
 
-  it("generationDailyMax: Starter is 25/day; Shop and Power scale up; an unresolved plan falls back to Starter, never a silent expansion", () => {
+  it("generationDailyMax: Starter is 25/day; Shop and Power scale up; legacy stays at the conservative Starter cap", () => {
     expect(generationDailyMax("starter")).toBe(25);
     expect(generationDailyMax("legacy")).toBe(25);
-    expect(generationDailyMax(null)).toBe(25);
     expect(generationDailyMax("shop")).toBe(80);
     expect(generationDailyMax("power")).toBe(200);
     expect(generationDailyMax("shop")).toBeGreaterThan(generationDailyMax("starter"));
     expect(generationDailyMax("power")).toBeGreaterThan(generationDailyMax("shop"));
+  });
+
+  it("fails closed at both route boundaries if an active entitlement ever lacks its resolved plan identity", () => {
+    expect(singleRoute).toContain("if (!entitlement.planKey)");
+    expect(singleRoute).toContain("generate.active_entitlement_missing_plan");
+    expect(route).toContain("if (!entitlement.planKey)");
+    expect(route).toContain("generate.bulk_active_entitlement_missing_plan");
   });
 
   it("validates manual-generation keys and edit payloads before charging the budget", () => {
