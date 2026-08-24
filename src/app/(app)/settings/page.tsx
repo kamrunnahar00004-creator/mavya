@@ -98,6 +98,7 @@ export default function SettingsPage() {
   const [email, setEmail] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
   const [status, setStatus] = useState<BillingStatus | null>(null);
+  const [billingStatusUnavailable, setBillingStatusUnavailable] = useState(false);
   const [busy, setBusy] = useState<"portal" | "logout" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -115,11 +116,20 @@ export default function SettingsPage() {
           return;
         }
         setEmail(session.user.email ?? null);
-        setChecked(true);
-        const res = await fetch("/api/billing/status");
-        if (res.ok && alive) setStatus((await res.json()) as BillingStatus);
+        try {
+          const res = await fetch("/api/billing/status");
+          if (!res.ok) throw new Error("billing_status_unavailable");
+          if (alive) setStatus((await res.json()) as BillingStatus);
+        } catch {
+          if (alive) setBillingStatusUnavailable(true);
+        } finally {
+          if (alive) setChecked(true);
+        }
       } catch {
-        if (alive) setChecked(true);
+        if (alive) {
+          setBillingStatusUnavailable(true);
+          setChecked(true);
+        }
       }
     })();
     return () => {
@@ -161,7 +171,9 @@ export default function SettingsPage() {
     router.refresh();
   }, [busy, router]);
 
-  const label = planLabel(status);
+  const label = billingStatusUnavailable
+    ? { text: "Unavailable", tone: "weak" as const }
+    : planLabel(status);
   const hasBilling = Boolean(status && status.reason !== "no_subscription");
   const planPriceLine = planPriceLabel(status);
 
@@ -241,6 +253,17 @@ export default function SettingsPage() {
           </p>
         )}
 
+        {billingStatusUnavailable && (
+          <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
+            <AlertCircle
+              className="mt-0.5 h-4 w-4 shrink-0 text-[var(--color-weak)]"
+              aria-hidden="true"
+            />
+            We could not load your billing status. Refresh before choosing or
+            managing a plan.
+          </p>
+        )}
+
         {(status?.reason === "wrong_plan" || status?.reason === "expired") && (
           <p className="mt-2 flex items-start gap-2 text-[13px] leading-relaxed text-[var(--color-ink)]">
             <AlertCircle
@@ -276,7 +299,15 @@ export default function SettingsPage() {
         )}
 
         <div className="mt-5 flex flex-wrap gap-3">
-          {hasBilling ? (
+          {billingStatusUnavailable ? (
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
+            >
+              Refresh billing status
+            </button>
+          ) : hasBilling ? (
             <button
               type="button"
               onClick={() => void openPortal()}

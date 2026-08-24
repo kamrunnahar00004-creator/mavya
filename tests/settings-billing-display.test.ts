@@ -45,4 +45,26 @@ describe("settings page billing display matches the subscribe page's conventions
     expect(headingIdx).toBeGreaterThan(signOutIdx);
     expect(sessionIdx).toBeGreaterThan(headingIdx);
   });
+
+  it("fails closed when billing status cannot load instead of claiming the user has no plan", () => {
+    expect(settingsPage).toContain(
+      "const [billingStatusUnavailable, setBillingStatusUnavailable] = useState(false)"
+    );
+    expect(settingsPage).toContain('if (!res.ok) throw new Error("billing_status_unavailable")');
+    expect(settingsPage).toContain("setBillingStatusUnavailable(true)");
+    const billingFetch = settingsPage.indexOf('fetch("/api/billing/status")');
+    const billingFinally = settingsPage.indexOf("finally", billingFetch);
+    const checkedAfterBilling = settingsPage.indexOf("setChecked(true)", billingFinally);
+    expect(billingFetch).toBeGreaterThan(-1);
+    expect(billingFinally).toBeGreaterThan(billingFetch);
+    expect(checkedAfterBilling).toBeGreaterThan(billingFinally);
+    expect(settingsPage).toContain('text: "Unavailable"');
+    expect(settingsPage).toContain("We could not load your billing status");
+    expect(settingsPage).toContain("Refresh billing status");
+
+    const unavailableBranch = settingsPage.indexOf("{billingStatusUnavailable ? (");
+    const viewPlansBranch = settingsPage.indexOf('href="/subscribe"', unavailableBranch);
+    expect(unavailableBranch).toBeGreaterThan(-1);
+    expect(viewPlansBranch).toBeGreaterThan(unavailableBranch);
+  });
 });
