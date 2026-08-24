@@ -140,7 +140,9 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
     const notOk = authModal.indexOf("if (!res.ok)", fnStart);
     expect(fnStart).toBeGreaterThan(-1);
     expect(notOk).toBeGreaterThan(fnStart);
-    expect(authModal.slice(notOk, notOk + 40)).toContain('return "/dashboard"');
+    expect(authModal.slice(notOk, notOk + 100)).toContain(
+      'return hasPendingPhoto ? "/" : "/dashboard"',
+    );
   });
 
   it("auth-modal's post-auth routing uses the current plural pending-photos stash, not the removed single-photo module", () => {
@@ -154,6 +156,22 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
     expect(authModal).toContain("const redirectTo = await authCallbackUrl()");
     expect(authModal).toContain("const emailRedirectTo = await authCallbackUrl()");
     expect(authModal).toContain("emailRedirectTo,");
+  });
+
+  it("keeps a pending selection on the landing page when post-auth billing lookup fails", () => {
+    const destinationStart = authModal.indexOf("async function postAuthDestination()");
+    const destinationEnd = authModal.indexOf("async function authCallbackUrl()", destinationStart);
+    const destination = authModal.slice(destinationStart, destinationEnd);
+    const billingFetch = destination.indexOf('fetch("/api/billing/status")');
+    const billingFlow = destination.slice(billingFetch);
+    expect(billingFetch).toBeGreaterThanOrEqual(0);
+    expect(billingFlow).toContain(
+      'if (!res.ok) return hasPendingPhoto ? "/" : "/dashboard";',
+    );
+    expect(billingFlow).toMatch(
+      /catch\s*\{[\s\S]*?return hasPendingPhoto \? "\/" : "\/dashboard";/,
+    );
+    expect(billingFlow).not.toContain('if (!res.ok) return "/subscribe"');
   });
 
   it("keeps one-release compatibility with the old single-photo IndexedDB stash", () => {

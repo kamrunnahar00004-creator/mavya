@@ -27,16 +27,17 @@ async function postAuthDestination(): Promise<string> {
   try {
     const res = await fetch("/api/billing/status");
     // A failed check is retryable, never a subscription denial (same
-    // principle as add-product.tsx's chooseFiles gate) -- the dashboard's
-    // own server-side gate re-checks properly, same as the catch below.
-    if (!res.ok) return "/dashboard";
+    // principle as add-product.tsx's chooseFiles gate). Keep a pending pick
+    // on the landing page so its recovery loop can retry; otherwise the
+    // dashboard's own server-side gate re-checks access.
+    if (!res.ok) return hasPendingPhoto ? "/" : "/dashboard";
     const body = (await res.json()) as { active?: boolean; reason?: string };
     if (body.active) return hasPendingPhoto ? "/" : "/dashboard";
     if (body.reason === "past_due") return "/dashboard";
     return "/subscribe";
   } catch {
-    // Status unreachable: the dashboard's server gate re-checks anyway.
-    return "/dashboard";
+    // Preserve the same retry destination when fetch/JSON parsing throws.
+    return hasPendingPhoto ? "/" : "/dashboard";
   }
 }
 
