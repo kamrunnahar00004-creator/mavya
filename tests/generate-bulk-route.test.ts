@@ -106,10 +106,10 @@ describe("generation budget and workflow concurrency", () => {
     expect(queue).not.toContain('from "@/lib/entitlements"');
   });
 
-  it("generationDailyMax: Starter never regresses below the old flat 40; Shop and Power scale up; an unresolved plan falls back to Starter, never a silent expansion", () => {
-    expect(generationDailyMax("starter")).toBe(40);
-    expect(generationDailyMax("legacy")).toBe(40);
-    expect(generationDailyMax(null)).toBe(40);
+  it("generationDailyMax: Starter is 25/day; Shop and Power scale up; an unresolved plan falls back to Starter, never a silent expansion", () => {
+    expect(generationDailyMax("starter")).toBe(25);
+    expect(generationDailyMax("legacy")).toBe(25);
+    expect(generationDailyMax(null)).toBe(25);
     expect(generationDailyMax("shop")).toBe(80);
     expect(generationDailyMax("power")).toBe(200);
     expect(generationDailyMax("shop")).toBeGreaterThan(generationDailyMax("starter"));

@@ -24,14 +24,14 @@ const GENERATION_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
  * so a Power seller running Fix-all across many more listings than a
  * Starter seller hit the exact same ceiling -- undermining any "unlimited
  * generation" claim on the pricing page for the tier it matters most for.
- * Starter keeps the original 40 (no one's daily budget regresses); Shop and
- * Power scale up with their listing capacity. legacy (the old $19 flat
- * tier, no longer sold) and an unresolved plan both fall back to Starter's
- * number -- the conservative default, never a silent expansion.
+ * Starter is 25 (founder-set, 2026-08-24); Shop and Power scale up with
+ * their listing capacity. legacy (the old $19 flat tier, no longer sold)
+ * and an unresolved plan both fall back to Starter's number -- the
+ * conservative default, never a silent expansion.
  */
 const GENERATION_DAILY_MAX_BY_PLAN: Record<Exclude<PlanKey, "legacy"> | "legacy", number> = {
-  legacy: 40,
-  starter: 40,
+  legacy: 25,
+  starter: 25,
   shop: 80,
   power: 200,
 };
