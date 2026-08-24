@@ -2,7 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertCircle, CheckCircle, Loader2 } from "lucide-react";
+import { AlertCircle, CheckCircle, ChevronDown, Loader2 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "@/components/auth-modal";
 import { cn } from "@/lib/utils";
@@ -100,6 +100,46 @@ function formatWholeDollars(cents: number): string {
 function annualSavingsCents(plan: { monthlyCents: number; annualCents: number }): number {
   return plan.monthlyCents * 12 - plan.annualCents;
 }
+
+/** Honest, Mavya-specific FAQ copy -- no invented policy, no links to pages
+ *  that don't exist. Two items (AI training data, refunds) state Mavya's
+ *  actual current behavior/stance as best known; confirm both against the
+ *  real OpenAI API data-usage terms and the founder's refund stance before
+ *  treating them as a permanent policy. */
+const FAQ_ITEMS: { q: string; a: string }[] = [
+  {
+    q: "How does Mavya work?",
+    a: "Upload your product photos. Mavya scores each one on how it's likely to perform with buyers, flags what's weakening it, and you can fix any photo, or your whole listing at once, in one click.",
+  },
+  {
+    q: "Is there a free trial?",
+    a: "Not right now. Mavya is a paid-only beta: every plan works from day one, with no free tier.",
+  },
+  {
+    q: "What do I get with annual billing?",
+    a: "About two months free compared to paying monthly, for the same features and limits, charged once a year instead of every month.",
+  },
+  {
+    q: "Do unused photo fixes roll over?",
+    a: "No. Your daily fix allowance resets every 24 hours. It doesn't carry over, so there's nothing to save up.",
+  },
+  {
+    q: "Can I use the improved photos on my listings?",
+    a: "Yes. Once you download an improved photo, it's yours to use on Etsy or anywhere else you sell, just verify labels, text, and measurements first.",
+  },
+  {
+    q: "Are my photos used to train AI models?",
+    a: "No. Your photos are sent to our AI provider only to generate your score and results, not to train any model.",
+  },
+  {
+    q: "How do I cancel?",
+    a: "From Settings, open Manage billing, any time. You keep full access until the end of your current billing period.",
+  },
+  {
+    q: "Do you offer refunds?",
+    a: "We don't have an automatic refund policy yet. If something's wrong, reach out and we'll take a look.",
+  },
+];
 
 function formatDate(iso: string | null): string {
   if (!iso) return "";
@@ -220,13 +260,9 @@ function SubscribeInner() {
 
   return (
     <main className="mx-auto max-w-[1080px] px-6 pb-20 pt-12 sm:pt-16">
-      <h1 className="font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
-        See what&apos;s costing your Etsy listing clicks
+      <h1 className="text-center font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
+        Turn Etsy views into clicks
       </h1>
-      <p className="mt-2.5 max-w-[520px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-        Score every product photo, spot what&apos;s weakening your listing, and
-        create stronger versions in seconds.
-      </p>
 
       {pastDue && (
         <Banner tone="weak">
@@ -289,6 +325,7 @@ function SubscribeInner() {
       ) : (
         <div className="mt-8">
           {/* Monthly / annual cadence toggle */}
+          <div className="flex justify-center">
           <div className="inline-flex rounded-full border border-[var(--color-border)] bg-white p-1">
             {(["monthly", "annual"] as const).map((c) => (
               <button
@@ -306,6 +343,7 @@ function SubscribeInner() {
               </button>
             ))}
           </div>
+          </div>
           {/* Plan cards -- each fully self-contained and deliberately
               spacious: a full, repeated feature list (not trimmed to only
               the differences) with room to breathe, a flexible gap before
@@ -316,7 +354,11 @@ function SubscribeInner() {
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:items-stretch">
             {(Object.keys(PLAN_DISPLAY) as PurchasablePlanKey[]).map((planKey) => {
               const plan = PLAN_DISPLAY[planKey];
-              const priceCents = cadence === "monthly" ? plan.monthlyCents : plan.annualCents;
+              // Big number always reads as a per-month price -- on annual
+              // cadence that's the annual total divided by 12, with the
+              // real annual charge shown as small subtext underneath.
+              const monthlyEquivalentCents =
+                cadence === "monthly" ? plan.monthlyCents : Math.round(plan.annualCents / 12);
               const emphasized = plan.highlight || plan.bestValue;
               const checkingOutThis = busy?.kind === "checkout" && busy.plan === planKey;
               return (
@@ -325,7 +367,7 @@ function SubscribeInner() {
                   className={cn(
                     "relative flex min-h-[640px] flex-col rounded-[var(--radius-2xl)] border p-8 text-left transition-all",
                     plan.highlight
-                      ? "border-2 border-[var(--color-primary)] bg-[var(--color-tint)] shadow-[0_16px_40px_rgba(232,107,57,0.20)] sm:-translate-y-2"
+                      ? "border-2 border-[var(--color-primary)] bg-white shadow-[var(--shadow-soft)] sm:-translate-y-2"
                       : plan.bestValue
                       ? "border-2 border-[var(--color-ink)] bg-white shadow-[var(--shadow-soft)]"
                       : "border-[var(--color-border)] bg-white shadow-[var(--shadow-soft)]"
@@ -351,14 +393,14 @@ function SubscribeInner() {
                     )}
                   </span>
                   <span className="mt-3 font-display text-[36px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">
-                    {formatWholeDollars(priceCents)}
+                    {formatWholeDollars(monthlyEquivalentCents)}
                     <span className="text-[15px] font-semibold text-[var(--color-ink-muted)]">
-                      /{cadence === "monthly" ? "mo" : "yr"}
+                      /mo
                     </span>
                   </span>
                   {cadence === "annual" && (
                     <span className="mt-1 text-[12px] text-[var(--color-ink-soft)]">
-                      {formatWholeDollars(plan.annualCents)} billed annually
+                      Billed {formatWholeDollars(plan.annualCents)} annually
                     </span>
                   )}
                   <span className="mt-2 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
@@ -411,17 +453,23 @@ function SubscribeInner() {
           </div>
 
           {(pastDue || billingConfigurationIssue || status?.reason === "inactive") && (
-            <button
-              type="button"
-              onClick={() => void openPortal()}
-              disabled={busy !== null}
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
-            >
-              {busy?.kind === "portal" && (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              )}
-              Manage billing
-            </button>
+            <div className="mx-auto mt-6 max-w-[420px] rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white p-5 text-center shadow-[var(--shadow-soft)]">
+              <p className="text-[13.5px] text-[var(--color-ink-muted)]">
+                Already have billing set up with us? Manage your payment method
+                or subscription here.
+              </p>
+              <button
+                type="button"
+                onClick={() => void openPortal()}
+                disabled={busy !== null}
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
+              >
+                {busy?.kind === "portal" && (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                )}
+                Manage billing
+              </button>
+            </div>
           )}
           <p className="mt-6 text-center text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
             Ratings reflect how buyers see your photo. They do not guarantee
@@ -431,6 +479,28 @@ function SubscribeInner() {
           </p>
         </div>
       )}
+
+      <section className="mx-auto mt-16 max-w-[720px]">
+        <h2 className="text-center font-display text-[24px] font-bold text-[var(--color-ink)]">
+          Frequently asked questions
+        </h2>
+        <div className="mt-6 divide-y divide-[var(--color-border)] rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white">
+          {FAQ_ITEMS.map((item) => (
+            <details key={item.q} className="group p-5">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-4 text-[15px] font-semibold text-[var(--color-ink)] marker:content-none [&::-webkit-details-marker]:hidden">
+                {item.q}
+                <ChevronDown
+                  className="h-[18px] w-[18px] shrink-0 text-[var(--color-ink-soft)] transition-transform group-open:rotate-180"
+                  aria-hidden="true"
+                />
+              </summary>
+              <p className="mt-3 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
+                {item.a}
+              </p>
+            </details>
+          ))}
+        </div>
+      </section>
 
       {error && (
         <p className="mt-4 flex items-start justify-center gap-2 text-[13px] font-medium text-[var(--color-weak)]">
