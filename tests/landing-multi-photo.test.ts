@@ -22,18 +22,22 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
     expect(dashboardPage).toContain('<AddProductCard variant="dropzone" />');
   });
 
-  it("gates the pick (stash), never the pick itself -- the gate check is the first thing chooseFiles does after basic file validation, before prepareUploadImage or handleCreate/submitBatch run", () => {
+  it("durably stashes before auth, billing, image preparation, or upload work", () => {
     const chooseFilesStart = addProduct.indexOf("async function chooseFiles(");
     const gateStart = addProduct.indexOf("if (onGateFailed) {", chooseFilesStart);
     const stashCall = addProduct.indexOf("await savePendingPhotos(items)", gateStart);
+    const authClient = addProduct.indexOf("createSupabaseBrowserClient()", gateStart);
+    const sessionCall = addProduct.indexOf("await supabase.auth.getSession()", gateStart);
+    const billingCall = addProduct.indexOf('fetch("/api/billing/status")', gateStart);
     const prepareCall = addProduct.indexOf("await prepareUploadImage(", gateStart);
     const handleCreateCall = addProduct.indexOf("void handleCreate(images[0])", gateStart);
     const submitBatchDefined = addProduct.indexOf("async function submitBatch()", gateStart);
     expect(chooseFilesStart).toBeGreaterThan(-1);
     expect(gateStart).toBeGreaterThan(chooseFilesStart);
     expect(stashCall).toBeGreaterThan(gateStart);
-    // Everything that actually touches the network is strictly AFTER the
-    // gate check + stash inside chooseFiles's own body.
+    expect(stashCall).toBeLessThan(authClient);
+    expect(stashCall).toBeLessThan(sessionCall);
+    expect(stashCall).toBeLessThan(billingCall);
     expect(stashCall).toBeLessThan(prepareCall);
     expect(gateStart).toBeLessThan(handleCreateCall);
     expect(gateStart).toBeLessThan(submitBatchDefined);
@@ -42,6 +46,17 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
   it("never uploads or scores anything when a gate fails -- returns immediately after stashing", () => {
     expect(addProduct).toMatch(/onGateFailed\("unauthenticated"\);\s*\n\s*return;/);
     expect(addProduct).toMatch(/onGateFailed\("subscription_required"\);\s*\n\s*return;/);
+  });
+
+  it("does not confuse a billing-status failure with an unpaid subscription", () => {
+    const billingIdx = addProduct.indexOf('fetch("/api/billing/status")');
+    const responseGuard = addProduct.indexOf("if (!res.ok)", billingIdx);
+    const subscriptionGate = addProduct.indexOf('onGateFailed("subscription_required")', billingIdx);
+    expect(responseGuard).toBeGreaterThan(billingIdx);
+    expect(responseGuard).toBeLessThan(subscriptionGate);
+    expect(addProduct.slice(responseGuard, subscriptionGate)).toContain(
+      "Billing status could not be checked"
+    );
   });
 
   it("caps a pre-auth pick at MAX_BATCH_FILES and preserves main-first ordering for the stash", () => {
@@ -53,6 +68,27 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
 
   it("recovery replays through the exact same chooseFiles() path a live pick uses -- no separate resume implementation", () => {
     expect(addProduct).toContain("void chooseFiles(resumeSelection.map((item) => item.file));");
+    const resumeEffect = addProduct.slice(
+      addProduct.indexOf("const resumedRef"),
+      addProduct.indexOf("function reset()")
+    );
+    expect(resumeEffect).not.toContain("onResumed?.()");
+  });
+
+  it("clears the durable stash only after a server queue/finalize succeeds or the seller cancels", () => {
+    const singleQueued = addProduct.indexOf("const queued = parseRatingQueueResponse");
+    const singleSettled = addProduct.indexOf("onResumed?.()", singleQueued);
+    const singlePush = addProduct.indexOf("router.push", singleQueued);
+    expect(singleSettled).toBeGreaterThan(singleQueued);
+    expect(singleSettled).toBeLessThan(singlePush);
+
+    const finalizeStart = addProduct.indexOf("async function finishBatch");
+    const productGuard = addProduct.indexOf("if (!finalized.productId)", finalizeStart);
+    const batchSettled = addProduct.indexOf("onResumed?.()", productGuard);
+    const batchPush = addProduct.indexOf("router.push", productGuard);
+    expect(batchSettled).toBeGreaterThan(productGuard);
+    expect(batchSettled).toBeLessThan(batchPush);
+    expect(addProduct).toMatch(/function cancelBatchSelection\(\)[\s\S]*?clearBatch\(\);\s*onResumed\?\.\(\);/);
   });
 
   it("tracks the funnel signal only on the landing flow, never the authenticated dashboard's own add-product", () => {
@@ -96,9 +132,38 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
     expect(resumeIdx).toBeGreaterThan(billingIdx);
   });
 
+  it("a billing-status check failure post-auth is retryable, never treated as an active denial", () => {
+    // Same bug class as the chooseFiles gate: a failed check must send the
+    // visitor somewhere that re-verifies (the dashboard's own server-side
+    // gate), not straight to the paywall on a transient network blip.
+    const fnStart = authModal.indexOf("async function postAuthDestination()");
+    const notOk = authModal.indexOf("if (!res.ok)", fnStart);
+    expect(fnStart).toBeGreaterThan(-1);
+    expect(notOk).toBeGreaterThan(fnStart);
+    expect(authModal.slice(notOk, notOk + 40)).toContain('return "/dashboard"');
+  });
+
   it("auth-modal's post-auth routing uses the current plural pending-photos stash, not the removed single-photo module", () => {
     expect(authModal).toContain('from "@/lib/pending-photos"');
     expect(authModal).not.toContain('from "@/lib/pending-photo"');
     expect(authModal).toContain("loadPendingPhotos()");
+  });
+
+  it("preserves the landing return path for both Google OAuth and email confirmation", () => {
+    expect(authModal).toContain("async function authCallbackUrl()");
+    expect(authModal).toContain("const redirectTo = await authCallbackUrl()");
+    expect(authModal).toContain("const emailRedirectTo = await authCallbackUrl()");
+    expect(authModal).toContain("emailRedirectTo,");
+  });
+
+  it("keeps one-release compatibility with the old single-photo IndexedDB stash", () => {
+    const pendingPhotos = readFileSync(
+      path.resolve("src/lib/pending-photos.ts"),
+      "utf8"
+    );
+    expect(pendingPhotos).toContain('const LEGACY_STORE = "pending"');
+    expect(pendingPhotos).toContain('const LEGACY_KEY = "photo"');
+    expect(pendingPhotos).toContain("db.objectStoreNames.contains(LEGACY_STORE)");
+    expect(pendingPhotos).toContain('role: "main"');
   });
 });

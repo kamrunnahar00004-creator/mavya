@@ -2,7 +2,7 @@
 
 /**
  * Pending-PHOTOS preservation (plural): a visitor may pick up to 10 listing
- * photos BEFORE signing in or paying. The compressed files are stashed in
+ * photos BEFORE signing in or paying. The browser-selected files are stashed in
  * IndexedDB so they survive the Google OAuth redirect, the Stripe Checkout
  * round-trip, and a closed browser. After entitlement is confirmed the
  * photos are recovered and handed back to the SAME dropzone
@@ -10,9 +10,9 @@
  * exactly like a live pick (1 photo submits immediately, 2+ show the review
  * grid) -- never a separate, second implementation of that decision.
  *
- * Supersedes the older single-photo pending-photo.ts, which this file does
- * not read or migrate: nothing has gone to real traffic yet with a stashed
- * single photo, so there is nothing to migrate from.
+ * Supersedes the older single-photo pending-photo.ts. Its IndexedDB record is
+ * still read for one release so a visitor who began the old flow immediately
+ * before deployment does not lose that selection.
  *
  * Same honest-failure philosophy as pending-photo.ts:
  *  - Private browsing / IndexedDB unavailable: fall back to an in-memory
@@ -29,6 +29,8 @@ import type { BatchRole } from "@/lib/photo-batch-client";
 const DB_NAME = "mavya-pending";
 const STORE = "pending-photos";
 const KEY = "photos";
+const LEGACY_STORE = "pending";
+const LEGACY_KEY = "photo";
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 export const MAX_PENDING_PHOTOS = 10;
 
@@ -46,6 +48,13 @@ type PendingRecord = {
   savedAt: number;
 };
 
+type LegacyPendingRecord = {
+  blob: Blob;
+  name: string;
+  type: string;
+  savedAt: number;
+};
+
 let memoryFallback: PendingRecord | null = null;
 
 function openDb(): Promise<IDBDatabase> {
@@ -59,8 +68,8 @@ function openDb(): Promise<IDBDatabase> {
       if (!req.result.objectStoreNames.contains(STORE)) {
         req.result.createObjectStore(STORE);
       }
-      // The older single-photo store, if present from a prior schema
-      // version, is left alone -- pending-photo.ts still owns it.
+      // The older single-photo store, if present from schema v1, is retained
+      // temporarily so loadPendingPhotos can recover an in-flight visitor.
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error ?? new Error("indexeddb_open_failed"));
@@ -70,11 +79,12 @@ function openDb(): Promise<IDBDatabase> {
 function tx<T>(
   db: IDBDatabase,
   mode: IDBTransactionMode,
-  run: (store: IDBObjectStore) => IDBRequest<T>
+  run: (store: IDBObjectStore) => IDBRequest<T>,
+  storeName = STORE
 ): Promise<T> {
   return new Promise((resolve, reject) => {
-    const t = db.transaction(STORE, mode);
-    const req = run(t.objectStore(STORE));
+    const t = db.transaction(storeName, mode);
+    const req = run(t.objectStore(storeName));
     let result: T;
     req.onsuccess = () => {
       result = req.result;
@@ -92,12 +102,17 @@ function tx<T>(
 export async function savePendingPhotos(
   items: readonly PendingPhotoItem[]
 ): Promise<{ durable: boolean }> {
+  const capped = items.slice(0, MAX_PENDING_PHOTOS);
+  const declaredMain = capped.findIndex((item) => item.role === "main");
+  const mainFirst = declaredMain > 0
+    ? [capped[declaredMain], ...capped.filter((_, index) => index !== declaredMain)]
+    : capped;
   const record: PendingRecord = {
-    items: items.slice(0, MAX_PENDING_PHOTOS).map((item) => ({
+    items: mainFirst.map((item, index) => ({
       blob: item.file,
       name: item.file.name,
       type: item.file.type,
-      role: item.role,
+      role: index === 0 ? "main" : "supporting",
     })),
     savedAt: Date.now(),
   };
@@ -122,6 +137,25 @@ export async function loadPendingPhotos(): Promise<PendingPhotoItem[] | null> {
     try {
       const db = await openDb();
       record = ((await tx(db, "readonly", (s) => s.get(KEY))) as PendingRecord) ?? null;
+      if (!record && db.objectStoreNames.contains(LEGACY_STORE)) {
+        const legacy = (await tx(
+          db,
+          "readonly",
+          (s) => s.get(LEGACY_KEY),
+          LEGACY_STORE
+        )) as LegacyPendingRecord | undefined;
+        if (legacy) {
+          record = {
+            items: [{
+              blob: legacy.blob,
+              name: legacy.name,
+              type: legacy.type,
+              role: "main",
+            }],
+            savedAt: legacy.savedAt,
+          };
+        }
+      }
       db.close();
     } catch {
       return null;
@@ -172,6 +206,9 @@ export async function clearPendingPhotos(): Promise<void> {
   try {
     const db = await openDb();
     await tx(db, "readwrite", (s) => s.delete(KEY));
+    if (db.objectStoreNames.contains(LEGACY_STORE)) {
+      await tx(db, "readwrite", (s) => s.delete(LEGACY_KEY), LEGACY_STORE);
+    }
     db.close();
   } catch {
     // Nothing durable to clear.

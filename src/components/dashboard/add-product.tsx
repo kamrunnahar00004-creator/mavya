@@ -68,8 +68,8 @@ type PendingBatchFinalization = {
  * Auth-aware (optional, opt-in via onGateFailed): when supplied, this is
  * the SAME dropzone the landing page uses for signed-out visitors -- picking
  * photos is free, but submitting them checks session + entitlement FIRST and
- * stashes the pick (never uploads or scores anything) instead of calling any
- * API when either gate fails. Omitted entirely inside the dashboard, where a
+ * stashes the pick before checking either gate (never uploads or scores
+ * anything when a gate fails). Omitted entirely inside the dashboard, where a
  * session and entitlement are already guaranteed, so existing behavior there
  * is untouched byte-for-byte.
  */
@@ -86,8 +86,10 @@ export function AddProductCard({
   /** Photos recovered from a pre-auth stash (main first), fed back through
    *  the exact same chooseFiles() path a live pick uses -- 1 photo submits
    *  immediately, 2+ show the same review grid a live multi-pick would.
-   *  Consumed once; the parent owns clearing this after onResumed fires. */
+   *  Consumed once; the parent owns clearing this only after onResumed fires. */
   resumeSelection?: PendingPhotoItem[] | null;
+  /** Called only after the selection has become durable on the server, or the
+   *  seller explicitly cancels it. Never called merely because recovery began. */
   onResumed?: () => void;
 }) {
   const router = useRouter();
@@ -149,6 +151,7 @@ export function AddProductCard({
               ? `A previous batch was interrupted. ${pendingRequestIds.length} photo${pendingRequestIds.length === 1 ? "" : "s"} were not uploaded. Add them from the product.`
               : "A previous batch finished after the page was refreshed."
           );
+          onResumed?.();
           router.push(`/dashboard/product/${productId}`);
         } else {
           setResumeNotice("The previous batch did not save any photos. Select them again to retry.");
@@ -161,16 +164,19 @@ export function AddProductCard({
   }, []);
 
   // Photos recovered from a pre-auth stash (landing page only, via
-  // resumeSelection). Consumed exactly once, through the SAME chooseFiles()
+  // resumeSelection). Attempted once per recovered selection, through the SAME chooseFiles()
   // path a live pick uses -- recovery can never diverge from what a live
   // pick would do with the same files in the same order (1 submits
   // immediately, 2+ show the same review grid).
-  const resumedRef = useRef(false);
+  const resumedRef = useRef<PendingPhotoItem[] | null>(null);
   useEffect(() => {
-    if (!resumeSelection || resumeSelection.length === 0 || resumedRef.current) return;
-    resumedRef.current = true;
+    if (!resumeSelection || resumeSelection.length === 0) {
+      resumedRef.current = null;
+      return;
+    }
+    if (resumedRef.current === resumeSelection) return;
+    resumedRef.current = resumeSelection;
     void chooseFiles(resumeSelection.map((item) => item.file));
-    onResumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resumeSelection]);
 
@@ -195,6 +201,11 @@ export function AddProductCard({
     setBatchSubmitting(false);
     setBatchProgress({ done: 0, total: 0 });
     setPendingFinalization(null);
+  }
+
+  function cancelBatchSelection() {
+    clearBatch();
+    onResumed?.();
   }
 
   function close() {
@@ -226,6 +237,7 @@ export function AddProductCard({
       const queued = parseRatingQueueResponse(await res.json().catch(() => null));
       if (!queued.ok) throw new Error(queued.message);
 
+      onResumed?.();
       router.push(`/dashboard/product/${queued.productId}`);
     } catch (err) {
       setStep("idle");
@@ -243,34 +255,42 @@ export function AddProductCard({
     }
 
     // Gate the paid work, not the pick (landing-page use only, via
-    // onGateFailed). Nothing here uploads or scores anything -- a failed
-    // gate stashes the pick and hands off to the parent, before
-    // prepareUploadImage or any API call runs.
+    // onGateFailed). Stash before even reading auth so an expired session
+    // refresh, billing outage, OAuth redirect, or checkout round-trip cannot
+    // lose the files. Nothing uploads or scores until both gates pass.
     if (onGateFailed) {
+      const kept = images.length > MAX_BATCH_FILES ? images.slice(0, MAX_BATCH_FILES) : images;
+      const items: PendingPhotoItem[] = kept.map((file, i) => ({
+        file,
+        role: i === 0 ? "main" : "supporting",
+      }));
+      const { durable } = await savePendingPhotos(items);
+      const stashWarnings = [
+        images.length > MAX_BATCH_FILES
+          ? `Only the first ${MAX_BATCH_FILES} photos were kept.`
+          : null,
+        durable
+          ? null
+          : "Private browsing cannot keep your photos through sign-in. You may need to select them again afterward.",
+      ].filter(Boolean);
+      setError(stashWarnings.length > 0 ? stashWarnings.join(" ") : null);
+
       const supabase = createSupabaseBrowserClient();
       const {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session?.user) {
-        const kept = images.length > MAX_BATCH_FILES ? images.slice(0, MAX_BATCH_FILES) : images;
-        const items: PendingPhotoItem[] = kept.map((file, i) => ({
-          file,
-          role: i === 0 ? "main" : "supporting",
-        }));
-        const { durable } = await savePendingPhotos(items);
-        setError(
-          durable
-            ? null
-            : "Private browsing cannot keep your photos through sign-in. You may need to select them again afterward."
-        );
         onGateFailed("unauthenticated");
         return;
       }
       try {
         const res = await fetch("/api/billing/status");
-        const body = res.ok ? ((await res.json()) as { active?: boolean }) : null;
-        if (!body || body.active !== true) {
-          setError(null);
+        if (!res.ok) {
+          setError("Billing status could not be checked. Try again.");
+          return;
+        }
+        const body = (await res.json()) as { active?: boolean };
+        if (body.active !== true) {
           onGateFailed("subscription_required");
           return;
         }
@@ -406,6 +426,7 @@ export function AddProductCard({
       setError("None of these photos could be saved. Try again.");
       return;
     }
+    onResumed?.();
     router.push(`/dashboard/product/${finalized.productId}`);
   }
 
@@ -637,7 +658,7 @@ export function AddProductCard({
               onSetMain={setMain}
               onMove={moveItem}
               onSubmit={submitBatch}
-              onCancel={clearBatch}
+              onCancel={cancelBatchSelection}
             />
           )}
           <input
@@ -806,7 +827,7 @@ export function AddProductCard({
                     onSetMain={setMain}
                     onMove={moveItem}
                     onSubmit={submitBatch}
-                    onCancel={clearBatch}
+                    onCancel={cancelBatchSelection}
                   />
                 )}
                 <input

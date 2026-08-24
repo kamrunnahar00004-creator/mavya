@@ -26,7 +26,10 @@ async function postAuthDestination(): Promise<string> {
   }
   try {
     const res = await fetch("/api/billing/status");
-    if (!res.ok) return "/subscribe";
+    // A failed check is retryable, never a subscription denial (same
+    // principle as add-product.tsx's chooseFiles gate) -- the dashboard's
+    // own server-side gate re-checks properly, same as the catch below.
+    if (!res.ok) return "/dashboard";
     const body = (await res.json()) as { active?: boolean; reason?: string };
     if (body.active) return hasPendingPhoto ? "/" : "/dashboard";
     if (body.reason === "past_due") return "/dashboard";
@@ -35,6 +38,20 @@ async function postAuthDestination(): Promise<string> {
     // Status unreachable: the dashboard's server gate re-checks anyway.
     return "/dashboard";
   }
+}
+
+/** Preserve the browser-local landing selection through either OAuth or an
+ * email-confirmation redirect. The server callback still enforces billing. */
+async function authCallbackUrl(): Promise<string> {
+  let redirectTo = `${window.location.origin}/auth/callback`;
+  try {
+    if (await loadPendingPhotos()) {
+      redirectTo += `?next=${encodeURIComponent("/")}`;
+    }
+  } catch {
+    // Stash unavailable: default callback routing applies.
+  }
+  return redirectTo;
 }
 
 type Mode = "login" | "signup";
@@ -75,14 +92,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
     try {
       // A pending landing photo must survive the OAuth round-trip: send the
       // callback back to the landing so the stash resumes automatically.
-      let redirectTo = `${window.location.origin}/auth/callback`;
-      try {
-        if (await loadPendingPhotos()) {
-          redirectTo += `?next=${encodeURIComponent("/")}`;
-        }
-      } catch {
-        // Stash unavailable: default callback routing applies.
-      }
+      const redirectTo = await authCallbackUrl();
       const supabase = createSupabaseBrowserClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -121,11 +131,12 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
     try {
       const supabase = createSupabaseBrowserClient();
       if (isSignup) {
+        const emailRedirectTo = await authCallbackUrl();
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            emailRedirectTo,
             data: username.trim() ? { username: username.trim() } : undefined,
           },
         });
