@@ -59,15 +59,29 @@ describe("subscribe page pricing display matches the real, live generation budge
     // somewhere unrelated.
     const listIdx = subscribePage.indexOf("planFeatures(plan).map(");
     const spacerIdx = subscribePage.indexOf('<div className="flex-1" />', listIdx);
-    const buttonIdx = subscribePage.indexOf("onClick={() => void startCheckout(planKey)}", spacerIdx);
+    const buttonIdx = subscribePage.indexOf("hasLiveBillingSubscription", spacerIdx);
     expect(spacerIdx).toBeGreaterThan(listIdx);
     expect(buttonIdx).toBeGreaterThan(spacerIdx);
   });
 
-  it("each card has its own Subscribe button that acts on that exact tier, not a shared bottom CTA", () => {
-    expect(subscribePage).toContain("onClick={() => void startCheckout(planKey)}");
+  it("each card starts checkout for its exact tier only when there is no live Stripe subscription", () => {
+    expect(subscribePage).toContain("? openPortal(planKey)");
+    expect(subscribePage).toContain(": startCheckout(planKey)");
+    expect(subscribePage).toContain(
+      '{hasLiveBillingSubscription ? "Manage billing" : `Choose ${plan.name}`}'
+    );
     expect(subscribePage).not.toMatch(/onClick=\{\(\) => void startCheckout\(\)\}/);
     expect(subscribePage).not.toContain("setSelectedPlan");
+  });
+
+  it("treats raw active, trialing, and past_due Stripe states as billing-management states when local entitlement is inactive", () => {
+    expect(subscribePage).toContain(
+      '["active", "trialing", "past_due"].includes(status?.status ?? "")'
+    );
+    expect(subscribePage).toContain("!active &&");
+    expect(subscribePage).toContain('busy?.kind === "portal" && busy.plan === planKey');
+    expect(subscribePage).toContain("Use Manage billing below to update");
+    expect(subscribePage).not.toContain("Choose any plan below to update");
   });
 
   it("keeps checkout disabled until an authenticated user's billing status check settles", () => {
@@ -77,16 +91,17 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(billingFetch).toBeGreaterThan(-1);
     expect(finallyBlock).toBeGreaterThan(billingFetch);
     expect(signedIn).toBeGreaterThan(finallyBlock);
-    expect(subscribePage).toContain('disabled={busy !== null || authState === "checking"}');
+    expect(subscribePage).toContain('const billingStatusUnavailable = authState === "in" && status === null');
+    expect(subscribePage).toContain("billingStatusUnavailable");
+    expect(subscribePage).toContain("Refresh the page before");
   });
 
-  it("never duplicates a standalone Manage billing panel on this page -- Settings already has one, and choosing any plan already redirects an existing subscriber to the portal server-side", () => {
+  it("never duplicates a standalone Manage billing panel or hides the plan cards", () => {
     // Founder call: a bespoke "review your subscription" box here is dead
     // weight. /settings shows Manage billing unconditionally for any
     // status.reason !== "no_subscription" (src/app/(app)/settings/page.tsx,
-    // hasBilling), and /api/billing/checkout already redirects an existing
-    // Stripe subscriber to the portal regardless of which plan they click
-    // (the alreadySubscribed branch). Neither gate nor duplicate that here.
+    // hasBilling). This page keeps the cards visible, but their buttons call
+    // the portal directly when Stripe still has a live subscription.
     expect(subscribePage).not.toContain("needsBillingManagement");
     expect(subscribePage).not.toContain("planSelectionBlocked");
     expect(subscribePage).not.toContain("Review your existing subscription");

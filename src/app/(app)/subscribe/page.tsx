@@ -159,7 +159,9 @@ function SubscribeInner() {
   const [authOpen, setAuthOpen] = useState(false);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [busy, setBusy] = useState<
-    { kind: "checkout"; plan: PurchasablePlanKey } | { kind: "portal" } | null
+    | { kind: "checkout"; plan: PurchasablePlanKey }
+    | { kind: "portal"; plan?: PurchasablePlanKey }
+    | null
   >(null);
   const [error, setError] = useState<string | null>(null);
   const [cadence, setCadence] = useState<BillingCadence>("monthly");
@@ -226,9 +228,9 @@ function SubscribeInner() {
     [busy, authState, cadence]
   );
 
-  const openPortal = useCallback(async () => {
+  const openPortal = useCallback(async (plan?: PurchasablePlanKey) => {
     if (busy) return;
-    setBusy({ kind: "portal" });
+    setBusy({ kind: "portal", plan });
     setError(null);
     try {
       const res = await fetch("/api/billing/portal", { method: "POST" });
@@ -249,6 +251,9 @@ function SubscribeInner() {
 
   const pastDue = status?.reason === "past_due";
   const active = Boolean(status?.active);
+  const billingStatusUnavailable = authState === "in" && status === null;
+  const hasLiveBillingSubscription =
+    !active && ["active", "trialing", "past_due"].includes(status?.status ?? "");
 
   // Real math, not a fabricated marketing figure: annual price is exactly
   // 10x the monthly price on every tier, i.e. 2 free months -- identical
@@ -271,9 +276,22 @@ function SubscribeInner() {
 
       {pastDue && (
         <Banner tone="weak">
-          Your payment did not go through. Choose any plan below to update
-          your payment method and keep using Mavya, or manage billing from
-          Settings. Your saved results are safe.
+          Your payment did not go through. Use Manage billing below to update
+          your payment method. Your saved results are safe.
+        </Banner>
+      )}
+
+      {hasLiveBillingSubscription && !pastDue && (
+        <Banner tone="plain">
+          Your current subscription needs attention. Use Manage billing below
+          to review it in Stripe.
+        </Banner>
+      )}
+
+      {billingStatusUnavailable && (
+        <Banner tone="plain">
+          We could not load your billing status. Refresh the page before
+          choosing a plan.
         </Banner>
       )}
 
@@ -359,8 +377,11 @@ function SubscribeInner() {
           {/* Plan cards -- each fully self-contained and deliberately
               spacious: a full, repeated feature list (not trimmed to only
               the differences) with room to breathe, a flexible gap before
-              the button, and its own button that acts on THAT tier
-              directly. Generous, not sparse -- founder call: the card
+              the button. Customers without a live Stripe subscription can
+              start checkout for that exact tier. If Stripe still has a live
+              subscription, every card honestly opens billing management
+              instead of pretending that the selected tier will be applied.
+              Generous, not sparse -- founder call: the card
               should read as "a lot is included here," even with real
               whitespace inside it. */}
           <div className="mt-8 grid grid-cols-1 gap-6 sm:grid-cols-3 sm:items-stretch">
@@ -373,6 +394,8 @@ function SubscribeInner() {
                 cadence === "monthly" ? plan.monthlyCents : plan.annualCents / 12;
               const emphasized = plan.highlight || plan.bestValue;
               const checkingOutThis = busy?.kind === "checkout" && busy.plan === planKey;
+              const managingThis = busy?.kind === "portal" && busy.plan === planKey;
+              const cardActionBusy = checkingOutThis || managingThis;
               return (
                 <div
                   key={planKey}
@@ -435,8 +458,16 @@ function SubscribeInner() {
 
                   <button
                     type="button"
-                    onClick={() => void startCheckout(planKey)}
-                    disabled={busy !== null || authState === "checking"}
+                    onClick={() =>
+                      void (hasLiveBillingSubscription
+                        ? openPortal(planKey)
+                        : startCheckout(planKey))
+                    }
+                    disabled={
+                      busy !== null ||
+                      authState === "checking" ||
+                      billingStatusUnavailable
+                    }
                     className={cn(
                       "mt-7 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[14.5px] font-semibold transition-all disabled:opacity-60",
                       plan.highlight
@@ -444,10 +475,10 @@ function SubscribeInner() {
                         : "border border-[var(--color-border-strong)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-page-deep)]"
                     )}
                   >
-                    {checkingOutThis && (
+                    {cardActionBusy && (
                       <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     )}
-                    Choose {plan.name}
+                    {hasLiveBillingSubscription ? "Manage billing" : `Choose ${plan.name}`}
                   </button>
                 </div>
               );
