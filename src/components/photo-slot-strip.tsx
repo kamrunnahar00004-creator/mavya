@@ -28,7 +28,10 @@ export function PhotoSlotStrip({ slots, onSelect, onAdd }: Props) {
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-white px-4 py-3.5">
       <div className="eyebrow mb-3">Listing photos</div>
-      <div className="flex items-start gap-3 overflow-x-auto pb-1">
+      {/* Wraps to additional rows instead of shrinking tiles or scrolling
+          sideways -- the strip's own width never changes with photo count,
+          only its height does. */}
+      <div className="flex flex-wrap items-start gap-3">
         {slots.map((slot) => (
           <SlotTile key={slot.id} slot={slot} onSelect={onSelect} />
         ))}
@@ -61,11 +64,18 @@ function SlotTile({
       <button
         type="button"
         onClick={() => onSelect(slot.id)}
-        aria-label={`Select ${slot.label}`}
+        disabled={slot.status === "analyzing"}
+        aria-label={
+          slot.status === "analyzing"
+            ? `${slot.label} is still being rated`
+            : `Select ${slot.label}`
+        }
         aria-pressed={slot.active}
         className={cn(
           "relative h-16 w-16 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)] transition-all",
-          slot.active
+          slot.status === "analyzing"
+            ? "cursor-not-allowed border border-[var(--color-border)]"
+            : slot.active
             ? "border-2 border-[var(--color-primary)] shadow-[var(--shadow-soft)]"
             : "border border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
         )}
