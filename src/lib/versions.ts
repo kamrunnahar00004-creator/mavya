@@ -146,19 +146,29 @@ export const TAXONOMY_VERSION = 1;
 // is never silently compared against a different model's judgment.
 // supporting-v18 (2026-08-25, founder-reported bug): the LISTING RELEVANCE
 // wrong-product check only ever described the case that should trigger it
-// (a genuinely different product CATEGORY -- e.g. a mug shown in a towel
-// listing) but never told the model that a color/pattern/accessory variant
-// of the SAME item type is normal and must not be flagged. Result: almost
+// but never told the model that the same base item can have legitimate
+// color/pattern/finish/size/accessory options. Result: almost
 // every supporting photo of a single real listing (same crochet duck plush,
 // different hat colors) got misclassified unrelated_or_wrong_product ("
-// Different product") and tanked to near-zero. Added an explicit bullet
-// distinguishing "different category" (still wrong-product) from "different
-// color/pattern/accessory of the same item" (role: variation, scored
-// normally) -- the variation role already existed in the schema and UI
-// label map, it just had no instructions telling the model when to use it.
+// Different product") and tanked to near-zero. The revised relevance rule
+// compares base product identity rather than category alone: legitimate
+// variants are scored normally, same-category wrong products can still be
+// rejected, bundle items and staging props keep their real supporting role.
+// supporting-v19 (2026-08-25, founder follow-up on v18): founder's own
+// instruction -- "if there is 1% uncertainty then give benefit of the
+// doubt". v18 already reserved wrong-product for an "unmistakably
+// different base product", but this makes the bias explicit and
+// unambiguous: unrelated_or_wrong_product is used ONLY when the visual
+// evidence leaves no reasonable possibility the photo belongs to the
+// listing, any plausible chance it is a variant/included item/packaging/
+// staging/in-use view favors the seller, and ambiguous evidence never
+// gets the near-zero verdict. Bumped separately from v18 (not folded into
+// it) because the two are materially different prompt text and
+// score_cache is keyed on this exact string -- a photo cached under v18's
+// wording must never be silently treated as equivalent to v19's.
 // Bumped supporting only -- main-photo grading is untouched.
 export const RUBRIC_VERSION = "main-v22";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v18";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v19";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";

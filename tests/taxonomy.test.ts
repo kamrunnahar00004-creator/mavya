@@ -155,7 +155,11 @@ describe("canonical taxonomy", () => {
     // SAME item (role: variation, scored normally, never flagged) -- fixes
     // real listings' own color/style photos being misclassified as a
     // different product.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v18");
+    // v19 = founder follow-up: explicit "1% plausible chance -> benefit of
+    // the doubt" bias, ambiguous evidence never gets the near-zero
+    // wrong-product verdict. Bumped separately from v18 -- different prompt
+    // text, and score_cache is keyed on this exact string.
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v19");
   });
 });
 
