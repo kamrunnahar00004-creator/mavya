@@ -96,6 +96,20 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).toContain("Refresh the page before");
   });
 
+  it("gates the whole page behind authState settling -- an active subscriber must never see the pricing cards flash before their plan card renders", () => {
+    // Bug: status starts null, so `active` (Boolean(status?.active)) is
+    // false on first paint regardless of the real subscription -- without
+    // this gate, active && status ? ... always takes the pricing-cards
+    // branch first and only flips to the plan card once the billing fetch
+    // resolves. The gate must sit BEFORE that branch in source order.
+    const gateIdx = subscribePage.indexOf('if (authState === "checking") {');
+    const mainReturnIdx = subscribePage.indexOf("return (", gateIdx);
+    const ternaryIdx = subscribePage.indexOf("active && status ? (", mainReturnIdx);
+    expect(gateIdx).toBeGreaterThan(-1);
+    expect(mainReturnIdx).toBeGreaterThan(gateIdx);
+    expect(ternaryIdx).toBeGreaterThan(mainReturnIdx);
+  });
+
   it("never duplicates a standalone Manage billing panel or hides the plan cards", () => {
     // Founder call: a bespoke "review your subscription" box here is dead
     // weight. /settings shows Manage billing unconditionally for any

@@ -268,6 +268,24 @@ function SubscribeInner() {
     return PLAN_DISPLAY[status.planKey].name;
   }, [status?.planKey]);
 
+  // Without this gate, active is Boolean(status?.active) which is false
+  // while status is still null on first paint -- a signed-in active
+  // subscriber would see the pricing cards flash before the billing
+  // status fetch resolves and flips the view to their plan card. authState
+  // only leaves "checking" once that fetch has settled (see the effect
+  // above), so gating on it here covers both the session check and the
+  // billing lookup in one wait, matching the settings page's own gate.
+  if (authState === "checking") {
+    return (
+      <main className="mx-auto flex max-w-[1080px] items-center justify-center px-6 py-24">
+        <Loader2
+          className="h-6 w-6 animate-spin text-[var(--color-ink-soft)]"
+          aria-hidden="true"
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-[1080px] px-6 pb-20 pt-12 sm:pt-16">
       <h1 className="text-center font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
@@ -463,11 +481,7 @@ function SubscribeInner() {
                         ? openPortal(planKey)
                         : startCheckout(planKey))
                     }
-                    disabled={
-                      busy !== null ||
-                      authState === "checking" ||
-                      billingStatusUnavailable
-                    }
+                    disabled={busy !== null || billingStatusUnavailable}
                     className={cn(
                       "mt-7 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[14.5px] font-semibold transition-all disabled:opacity-60",
                       plan.highlight
