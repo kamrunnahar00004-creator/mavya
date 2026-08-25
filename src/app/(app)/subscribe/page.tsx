@@ -303,7 +303,7 @@ function SubscribeInner() {
       )}
 
       {active && status ? (
-        <div className="mt-8 max-w-[560px] overflow-hidden rounded-[var(--radius-2xl)] border-2 border-[var(--color-primary)] bg-white shadow-[var(--shadow-soft)]">
+        <div className="mx-auto mt-8 max-w-[560px] overflow-hidden rounded-[var(--radius-2xl)] border-2 border-[var(--color-primary)] bg-white shadow-[var(--shadow-soft)]">
           <div className="flex items-center justify-center bg-[var(--color-primary)] px-6 py-3">
             <span className="text-[13px] font-semibold text-white">
               {activePlanLabel ?? "Active plan"}
