@@ -150,7 +150,12 @@ describe("canonical taxonomy", () => {
     // only, no score penalty; keeps the v7 Accuracy gate.
     // v16 = answers_question_ids added (buyer-question coverage, slice 1).
     // v17 = model switched to gpt-5.6-sol.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v17");
+    // v18 = LISTING RELEVANCE now distinguishes a different product CATEGORY
+    // (still wrong-product) from a color/pattern/accessory variant of the
+    // SAME item (role: variation, scored normally, never flagged) -- fixes
+    // real listings' own color/style photos being misclassified as a
+    // different product.
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v18");
   });
 });
 

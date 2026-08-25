@@ -144,8 +144,21 @@ export const TAXONOMY_VERSION = 1;
 // customers at this point, there is no meaningful old-vs-new score
 // population to reconcile. Bumped anyway so any future cached/legacy score
 // is never silently compared against a different model's judgment.
+// supporting-v18 (2026-08-25, founder-reported bug): the LISTING RELEVANCE
+// wrong-product check only ever described the case that should trigger it
+// (a genuinely different product CATEGORY -- e.g. a mug shown in a towel
+// listing) but never told the model that a color/pattern/accessory variant
+// of the SAME item type is normal and must not be flagged. Result: almost
+// every supporting photo of a single real listing (same crochet duck plush,
+// different hat colors) got misclassified unrelated_or_wrong_product ("
+// Different product") and tanked to near-zero. Added an explicit bullet
+// distinguishing "different category" (still wrong-product) from "different
+// color/pattern/accessory of the same item" (role: variation, scored
+// normally) -- the variation role already existed in the schema and UI
+// label map, it just had no instructions telling the model when to use it.
+// Bumped supporting only -- main-photo grading is untouched.
 export const RUBRIC_VERSION = "main-v22";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v17";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v18";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 export const GENERATION_PROMPT_VERSION = "gen-v2";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
