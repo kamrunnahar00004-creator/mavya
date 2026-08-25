@@ -15,7 +15,7 @@ describe("settings page billing display matches the subscribe page's conventions
     );
     expect(settingsPage).not.toContain(".toFixed(2)}/");
     // The hardcoded legacy line must follow the same rule, not a stale literal.
-    expect(settingsPage).toContain('"Founding — $19/mo"');
+    expect(settingsPage).toContain('"Founding: $19/mo"');
     expect(settingsPage).not.toContain("$19.00/mo");
   });
 
@@ -66,5 +66,9 @@ describe("settings page billing display matches the subscribe page's conventions
     const viewPlansBranch = settingsPage.indexOf('href="/subscribe"', unavailableBranch);
     expect(unavailableBranch).toBeGreaterThan(-1);
     expect(viewPlansBranch).toBeGreaterThan(unavailableBranch);
+  });
+
+  it("never uses an em-dash anywhere on the page -- founder preference, comma/colon instead", () => {
+    expect(settingsPage).not.toContain("—");
   });
 });

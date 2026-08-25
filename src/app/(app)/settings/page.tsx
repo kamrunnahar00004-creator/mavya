@@ -63,7 +63,7 @@ function planLabel(status: BillingStatus | null): {
   if (!status) return { text: "Loading…", tone: "muted" };
   if (status.active && status.cancelAtPeriodEnd) {
     return {
-      text: `Active — ends ${formatDate(status.currentPeriodEnd)}`,
+      text: `Active, ends ${formatDate(status.currentPeriodEnd)}`,
       tone: "muted",
     };
   }
@@ -77,10 +77,10 @@ function planLabel(status: BillingStatus | null): {
 
 function planPriceLabel(status: BillingStatus | null): string | null {
   if (!status?.planKey || !status.cadence) return null;
-  if (status.planKey === "legacy") return "Founding — $19/mo";
+  if (status.planKey === "legacy") return "Founding: $19/mo";
   const policy = getPlanPolicy(status.planKey, status.cadence);
   if (!policy) return null;
-  return `${PLAN_NAMES[status.planKey]} — ${formatPrice(
+  return `${PLAN_NAMES[status.planKey]}: ${formatPrice(
     policy.priceCents,
     policy.cadence
   )}`;
@@ -88,7 +88,7 @@ function planPriceLabel(status: BillingStatus | null): string | null {
 
 /**
  * Signed-in account + billing hub. Billing management and cancellation happen
- * ONLY through the Stripe customer portal (the existing server endpoint) — no
+ * ONLY through the Stripe customer portal (the existing server endpoint), no
  * custom card or cancellation UI. Active-listing-slot language only
  * (2026-08-22, matches the subscribe page) -- the old per-period usage-balance
  * concept, internal or customer-facing, is intentionally absent here.
@@ -208,7 +208,7 @@ export default function SettingsPage() {
           </span>
           <div className="min-w-0">
             <p className="truncate text-[14.5px] font-semibold text-[var(--color-ink)]">
-              {email ?? "—"}
+              {email ?? ""}
             </p>
             <p className="text-[12.5px] text-[var(--color-ink-soft)]">
               Signed in with this email
