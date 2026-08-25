@@ -2,7 +2,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { scorePhoto, ScorePhotoError } from "@/lib/score-photo";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 import { hashImageBytes, hashText } from "@/lib/image-hash";
-import { rubricVersionFor } from "@/lib/versions";
+import { MAX_SUPPORTING_PHOTOS, rubricVersionFor } from "@/lib/versions";
 import { getVisionModel } from "@/lib/openai";
 import { getEntitlement } from "@/lib/entitlements";
 import { consumeAllowance, refundAllowance } from "@/lib/allowances";
@@ -100,9 +100,10 @@ async function waitForMainDependency(job: RatingJobRow): Promise<void> {
 }
 
 /** Requeue waiting supporting ratings whose current main audit is now ready. */
-export async function requeueReadyDependencyRatingJobs(
-  jobId?: string
-): Promise<number> {
+export async function requeueReadyDependencyRatingJobIds(
+  jobId?: string,
+  productId?: string
+): Promise<string[]> {
   const admin = createSupabaseAdminClient();
   let query = admin
     .from("rating_jobs")
@@ -111,9 +112,10 @@ export async function requeueReadyDependencyRatingJobs(
     .order("updated_at", { ascending: true })
     .limit(20);
   if (jobId) query = query.eq("id", jobId);
+  if (productId) query = query.eq("product_id", productId);
   const { data: waiting, error: scanError } = await query;
   if (scanError) throw new Error("rating_dependency_scan_failed");
-  let requeued = 0;
+  const requeued: string[] = [];
   for (const row of waiting ?? []) {
     const dependency = await supportingDependency(row.product_id);
     if (!dependency.ready) continue;
@@ -130,9 +132,16 @@ export async function requeueReadyDependencyRatingJobs(
       .select("id")
       .maybeSingle();
     if (updateError) throw new Error("rating_dependency_requeue_failed");
-    if (updated) requeued++;
+    if (updated) requeued.push(updated.id);
   }
   return requeued;
+}
+
+export async function requeueReadyDependencyRatingJobs(
+  jobId?: string,
+  productId?: string
+): Promise<number> {
+  return (await requeueReadyDependencyRatingJobIds(jobId, productId)).length;
 }
 
 /** Claim and finish one persisted rating. Safe under concurrent worker calls. */
@@ -396,11 +405,22 @@ export async function runQueuedRatingOnce(
     });
     if (mode === "main") {
       try {
-        await requeueReadyDependencyRatingJobs();
+        const unlockedJobIds = await requeueReadyDependencyRatingJobIds(
+          undefined,
+          job.product_id
+        );
+        const processedJobIds = await runQueuedRatingJobsById(unlockedJobIds, 3);
+        logEvent("rating.dependency_continuation", {
+          productId: job.product_id,
+          unlocked: unlockedJobIds.length,
+          processed: processedJobIds.length,
+        });
       } catch {
         // The main rating is already durably complete. Reconciliation is a
         // separate backstop and must never rewrite that success as a failure.
-        logEvent("rating.dependency_requeue_failed", {});
+        logEvent("rating.dependency_continuation_failed", {
+          productId: job.product_id,
+        });
       }
     }
     return job.id;
@@ -413,6 +433,53 @@ export async function runQueuedRatingOnce(
     );
     return job.id;
   }
+}
+
+/**
+ * Process a frozen rating-job roster with bounded concurrency. Explicit IDs
+ * keep this continuation scoped to the listing that just became ready; the
+ * queued->scoring compare-and-set in runQueuedRatingOnce remains authoritative.
+ */
+export async function runQueuedRatingJobsById(
+  jobIds: readonly string[],
+  concurrency = 3
+): Promise<string[]> {
+  const limit = MAX_SUPPORTING_PHOTOS + 1;
+  const uniqueIds = [...new Set(jobIds)].slice(0, limit);
+  const width = Math.max(1, Math.min(3, Math.floor(concurrency) || 1));
+  const processed: string[] = [];
+
+  for (let offset = 0; offset < uniqueIds.length; offset += width) {
+    const chunk = uniqueIds.slice(offset, offset + width);
+    const results = await Promise.all(
+      chunk.map((queuedJobId) => runQueuedRatingOnce(queuedJobId))
+    );
+    for (const result of results) {
+      if (result) processed.push(result);
+    }
+  }
+
+  return processed;
+}
+
+/** Drain one listing-sized batch of oldest queued ratings per worker tick. */
+export async function runQueuedRatingBatch(limit = 10): Promise<string[]> {
+  const admin = createSupabaseAdminClient();
+  const boundedLimit = Math.max(
+    1,
+    Math.min(MAX_SUPPORTING_PHOTOS + 1, Math.floor(limit) || 1)
+  );
+  const { data: queued, error } = await admin
+    .from("rating_jobs")
+    .select("id")
+    .eq("status", "queued")
+    .order("created_at", { ascending: true })
+    .limit(boundedLimit);
+  if (error) throw new Error("rating_batch_scan_failed");
+  return runQueuedRatingJobsById(
+    (queued ?? []).map((row) => row.id),
+    3
+  );
 }
 
 /** Requeue interrupted ratings; terminally fail and refund after three claims. */

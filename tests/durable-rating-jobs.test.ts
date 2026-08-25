@@ -6,6 +6,7 @@ const read = (file: string) => readFileSync(path.resolve(file), "utf8");
 
 const migration = read("supabase/migrations/0012_durable_rating_jobs.sql");
 const route = read("src/app/api/score/jobs/route.ts");
+const batchUploadRoute = read("src/app/api/photos/batch/upload/route.ts");
 const photoPersistence = read("src/lib/photo-persistence.ts");
 const worker = read("src/app/api/generate/worker/route.ts");
 const ratingJobs = read("src/lib/rating-jobs.ts");
@@ -76,13 +77,19 @@ describe("durable rating jobs", () => {
     expect(ratingJobs).toContain('status: "queued"');
     expect(ratingJobs).toContain("attempt_count");
     expect(worker).toContain("recoverStaleRatingJobs");
-    expect(worker).toContain("runQueuedRatingOnce");
-    // One expensive AI operation per tick: rating first, then a queued
-    // attempt-1 generation, then background refinement.
-    expect(worker).toContain("ratingJobId ? null : await runQueuedGenerationOnce()");
+    expect(worker).toContain("runQueuedRatingBatch(10)");
+    expect(ratingJobs).toContain("runQueuedRatingJobsById");
+    expect(ratingJobs).toContain("MAX_SUPPORTING_PHOTOS + 1");
+    // One listing-sized rating batch per tick. Generation/refinement only run
+    // when that batch was empty.
     expect(worker).toContain(
-      "ratingJobId || genJobId ? null : await runQueuedRefinementOnce()"
+      "ratingJobIds.length ? null : await runQueuedGenerationOnce()"
     );
+    expect(worker).toContain(
+      "ratingJobIds.length || genJobId ? null : await runQueuedRefinementOnce()"
+    );
+    expect(route).toContain("export const maxDuration = 240");
+    expect(batchUploadRoute).toContain("export const maxDuration = 240");
   });
 
   it("makes cache and audit persistence idempotent across worker retries", () => {

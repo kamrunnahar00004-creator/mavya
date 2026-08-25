@@ -9,7 +9,7 @@ import {
 import {
   recoverStaleRatingJobs,
   requeueReadyDependencyRatingJobs,
-  runQueuedRatingOnce,
+  runQueuedRatingBatch,
 } from "@/lib/rating-jobs";
 import { drainStorageCleanup } from "@/lib/storage-cleanup";
 import { logEvent } from "@/lib/errors";
@@ -66,18 +66,16 @@ async function handle(req: NextRequest) {
   // drain via after(); this guarantees eventual cleanup if that kick died).
   const storageCleaned = await drainStorageCleanup(admin);
 
-  // Process one queued refinement per tick. Each attempt can take minutes, so
-  // a second attempt in the same serverless invocation risks being killed at
-  // the route limit. A scheduler can invoke this endpoint again for the next
-  // queued attempt.
+  // A listing can contain one main plus nine supporting photos. Drain one
+  // listing-sized rating batch so the daily backstop does not require one day
+  // per photo. Generation remains one-at-a-time when no ratings are waiting.
   const processed: string[] = [];
-  const ratingJobId = await runQueuedRatingOnce();
-  if (ratingJobId) processed.push(ratingJobId);
-  // Keep one expensive AI operation per tick. Priority: rating, then a
-  // queued attempt-1 generation (user-visible), then background refinement.
-  const genJobId = ratingJobId ? null : await runQueuedGenerationOnce();
+  const ratingJobIds = await runQueuedRatingBatch(10);
+  processed.push(...ratingJobIds);
+  const genJobId = ratingJobIds.length ? null : await runQueuedGenerationOnce();
   if (genJobId) processed.push(genJobId);
-  const jobId = ratingJobId || genJobId ? null : await runQueuedRefinementOnce();
+  const jobId =
+    ratingJobIds.length || genJobId ? null : await runQueuedRefinementOnce();
   if (jobId) processed.push(jobId);
 
   logEvent("worker.tick", {

@@ -45,11 +45,27 @@ describe("durable rating question dependency", () => {
 
   it("does not let reconciliation rewrite an already-completed main rating", () => {
     const completed = jobs.indexOf('status: "completed"');
-    const reconciliation = jobs.indexOf("await requeueReadyDependencyRatingJobs()", completed);
+    const reconciliation = jobs.indexOf(
+      "await requeueReadyDependencyRatingJobIds(",
+      completed
+    );
     expect(completed).toBeGreaterThan(-1);
     expect(reconciliation).toBeGreaterThan(completed);
-    const surrounding = jobs.slice(reconciliation - 100, reconciliation + 160);
+    const surrounding = jobs.slice(reconciliation - 100, reconciliation + 650);
     expect(surrounding).toContain("try {");
     expect(surrounding).toContain("catch {");
+    expect(surrounding).toContain("job.product_id");
+    expect(surrounding).toContain(
+      "await runQueuedRatingJobsById(unlockedJobIds, 3)"
+    );
+  });
+
+  it("scopes main-photo continuation to its product and keeps claims bounded", () => {
+    expect(jobs).toContain('query = query.eq("product_id", productId)');
+    expect(jobs).toContain("MAX_SUPPORTING_PHOTOS + 1");
+    expect(jobs).toContain("Math.min(3, Math.floor(concurrency) || 1)");
+    expect(jobs).toContain(
+      "chunk.map((queuedJobId) => runQueuedRatingOnce(queuedJobId))"
+    );
   });
 });
