@@ -110,6 +110,30 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(ternaryIdx).toBeGreaterThan(mainReturnIdx);
   });
 
+  it("leaves the loading gate when the session check fails instead of spinning forever", () => {
+    const sessionCheck = subscribePage.indexOf("await supabase.auth.getSession()");
+    const returnedError = subscribePage.indexOf("if (sessionError) throw sessionError", sessionCheck);
+    const unavailableState = subscribePage.indexOf(
+      'setAuthState("unavailable")',
+      returnedError
+    );
+    const unavailableView = subscribePage.indexOf(
+      'if (authState === "unavailable")',
+      unavailableState
+    );
+    const retryAction = subscribePage.indexOf(
+      "onClick={() => window.location.reload()}",
+      unavailableView
+    );
+
+    expect(sessionCheck).toBeGreaterThan(-1);
+    expect(returnedError).toBeGreaterThan(sessionCheck);
+    expect(unavailableState).toBeGreaterThan(returnedError);
+    expect(unavailableView).toBeGreaterThan(unavailableState);
+    expect(retryAction).toBeGreaterThan(unavailableView);
+    expect(subscribePage).toContain("We could not check your session. Please try again.");
+  });
+
   it("never duplicates a standalone Manage billing panel or hides the plan cards", () => {
     // Founder call: a bespoke "review your subscription" box here is dead
     // weight. /settings shows Manage billing unconditionally for any

@@ -155,7 +155,9 @@ function formatDate(iso: string | null): string {
 }
 
 function SubscribeInner() {
-  const [authState, setAuthState] = useState<"checking" | "in" | "out">("checking");
+  const [authState, setAuthState] = useState<
+    "checking" | "in" | "out" | "unavailable"
+  >("checking");
   const [authOpen, setAuthOpen] = useState(false);
   const [status, setStatus] = useState<BillingStatus | null>(null);
   const [busy, setBusy] = useState<
@@ -169,10 +171,16 @@ function SubscribeInner() {
   useEffect(() => {
     let alive = true;
     (async () => {
-      const supabase = createSupabaseBrowserClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
+      let session = null;
+      try {
+        const supabase = createSupabaseBrowserClient();
+        const { data, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) throw sessionError;
+        session = data.session;
+      } catch {
+        if (alive) setAuthState("unavailable");
+        return;
+      }
       if (!alive) return;
       if (!session?.user) {
         setAuthState("out");
@@ -282,6 +290,27 @@ function SubscribeInner() {
           className="h-6 w-6 animate-spin text-[var(--color-ink-soft)]"
           aria-hidden="true"
         />
+      </main>
+    );
+  }
+
+  if (authState === "unavailable") {
+    return (
+      <main className="mx-auto flex max-w-[1080px] flex-col items-center px-6 py-24 text-center">
+        <AlertCircle
+          className="h-6 w-6 text-[var(--color-weak)]"
+          aria-hidden="true"
+        />
+        <p className="mt-3 text-[15px] text-[var(--color-ink-muted)]">
+          We could not check your session. Please try again.
+        </p>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-5 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+        >
+          Try again
+        </button>
       </main>
     );
   }
