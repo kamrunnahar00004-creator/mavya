@@ -19,9 +19,10 @@ describe("buyer-question coverage UI (slice 3)", () => {
     expect(panel).not.toMatch(/duplicate/i);
   });
 
-  it("coverage is purely seller-clicked, session-only -- the AI's per-photo answeredByPhotoId is never read by this panel", () => {
+  it("coverage is purely seller-clicked -- the AI's per-photo answeredByPhotoId is never read by this panel", () => {
     expect(panel).toContain('coverageState.status !== "ready"');
-    expect(panel).toContain("const [checked, setChecked] = useState<Set<string>>(new Set());");
+    expect(panel).toContain("checkedQuestionIds: ReadonlySet<string>");
+    expect(panel).toContain("onToggleQuestion: (questionId: string) => void");
     expect(panel).toContain("checkedCount");
     // The doc comment explains that answeredByPhotoId is no longer read (a
     // deliberate note, not a leftover) -- the actual field access is what
@@ -42,8 +43,9 @@ describe("buyer-question coverage UI (slice 3)", () => {
   });
 
   it("clicking a question is the only thing that marks it covered", () => {
-    expect(panel).toContain("const toggle = (questionId: string) =>");
-    expect(panel).toContain("onClick={() => toggle(a.questionId)}");
+    expect(panel).toContain(
+      "onClick={() => onToggleQuestion(a.questionId)}"
+    );
     expect(panel).toContain('aria-pressed={done}');
     // Hides the shot instruction once clicked, matching the old panel.
     expect(panel).toContain("{!done && (");
@@ -82,11 +84,24 @@ describe("buyer-question coverage UI (slice 3)", () => {
     );
   });
 
-  it("product-workspace derives photo labels from the live photo order, not a separate fetch", () => {
-    expect(productWorkspace).toContain("const photoLabelById = useMemo(");
-    expect(productWorkspace).toContain('"Main photo"');
+  it("keeps manual checks above the photo-keyed audit workspace so photo switching cannot erase them", () => {
+    expect(panel).not.toContain("useState");
+    expect(productWorkspace).toContain("checkedBuyerQuestionsByProduct");
+    expect(productWorkspace).toContain(
+      "checkedBuyerQuestionsByProduct.get(productId)"
+    );
+    expect(productWorkspace).toContain(
+      "checkedBuyerQuestionIds={checkedBuyerQuestionIds}"
+    );
+    expect(productWorkspace).toContain(
+      "onToggleBuyerQuestion={handleToggleBuyerQuestion}"
+    );
+    expect(auditWorkspace).toContain(
+      "checkedQuestionIds={"
+    );
     expect(productWorkspace).toContain("coverageState={coverageState}");
-    expect(productWorkspace).toContain("photoLabelById={photoLabelById}");
+    expect(productWorkspace).not.toContain("photoLabelById");
+    expect(auditWorkspace).not.toContain("photoLabelById");
   });
 
   it("refreshes server-authoritative coverage after supporting-photo mutations", () => {

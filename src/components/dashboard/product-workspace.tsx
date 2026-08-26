@@ -35,6 +35,11 @@ import { MAX_SUPPORTING_PHOTOS } from "@/lib/versions";
 import { prepareUploadImage } from "@/lib/client-image";
 import { trackClientEvent } from "@/lib/track-client";
 import type { CoverageState } from "@/lib/buyer-question-coverage";
+import {
+  classifyRatingPollResult,
+  isExpectedPendingRatingStatus,
+  ratingPollRecoveryAction,
+} from "@/lib/rating-poll";
 
 export type InitialJob = {
   id: string;
@@ -108,7 +113,7 @@ type Photo = {
   imageSrc: string;
   storagePath: string;
   audit: DemoState;
-  status: "analyzing" | "graded" | "failed";
+  status: "analyzing" | "graded" | "delayed" | "failed";
   /** Visible reason when status is "failed" (rating failed/invalid upload). */
   failedMsg?: string;
   /** Durable rating job to resume polling after refresh (analyzing photos). */
@@ -242,6 +247,8 @@ const RETRYABLE_CODES = new Set([
   "provider_refusal",
 ]);
 
+const EMPTY_QUESTION_IDS: ReadonlySet<string> = new Set();
+
 function applyCompletedJob(photo: Photo, job: InitialJob): Photo {
   if (job.status !== "completed" || !job.resultUrl || !job.candidateRubric) return photo;
   const improvedAudit =
@@ -273,13 +280,10 @@ function makePhoto(p: InitialPhoto): Photo {
   if (!p.rubric) {
     const jobStatus = p.ratingJob?.status;
     // Only an EXPLICIT terminal failed/cancelled job may render as failed.
-    // A missing ratingJob (never observed by this exact SSR snapshot -- a
-    // real, reproduced race: the client can see the main photo's job flip
-    // to "completed" and refresh before the server-side supporting-job
-    // continuation has even started) or any other unrecognized status must
-    // never be read as a failure -- it stays "analyzing" and polling below
-    // resumes it by photo id (no job id needed) until a real terminal
-    // status is observed.
+    // A missing ratingJob is not proof of failure. Successful upload paths
+    // create the durable job before returning, so polling allows a short
+    // consistency grace period and then surfaces a retryable delayed state
+    // instead of either lying about failure or spinning forever.
     const ratingTerminalFailed = jobStatus === "failed" || jobStatus === "cancelled";
     return {
       ...analyzingPhoto(p.id, p.imageSrc),
@@ -479,16 +483,25 @@ export function ProductWorkspace({
   const mountedRef = useRef(true);
   const router = useRouter();
   const [photos, setPhotos] = useState<Photo[]>(() => initialPhotos.map(makePhoto));
-  // photoId -> short display label for the coverage panel's "which photo
-  // answers this" tag. Derived from the SAME live, already-ordered photos
-  // state the rest of the workspace renders -- no separate data source.
-  const photoLabelById = useMemo(() => {
-    const map = new Map<string, string>();
-    photos.forEach((p, i) => {
-      map.set(p.id, p.kind === "main" ? "Main photo" : `Photo ${i + 1}`);
-    });
-    return map;
-  }, [photos]);
+  // Browser-memory only. Keying by product preserves the seller's manual
+  // checks while they switch photos without leaking them to another product.
+  const [checkedBuyerQuestionsByProduct, setCheckedBuyerQuestionsByProduct] =
+    useState<Map<string, Set<string>>>(() => new Map());
+  const checkedBuyerQuestionIds =
+    checkedBuyerQuestionsByProduct.get(productId) ?? EMPTY_QUESTION_IDS;
+  const handleToggleBuyerQuestion = useCallback(
+    (questionId: string) => {
+      setCheckedBuyerQuestionsByProduct((previous) => {
+        const next = new Map(previous);
+        const checked = new Set(next.get(productId) ?? []);
+        if (checked.has(questionId)) checked.delete(questionId);
+        else checked.add(questionId);
+        next.set(productId, checked);
+        return next;
+      });
+    },
+    [productId]
+  );
   const [activeId, setActiveId] = useState<string>(
     () => initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
   );
@@ -509,6 +522,9 @@ export function ProductWorkspace({
   const photosRef = useRef<Photo[]>(photos);
   const extraInputRef = useRef<HTMLInputElement | null>(null);
   const pollTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const ratingPollAnomalies = useRef<
+    Record<string, { requestFailures: number; malformed: number }>
+  >({});
   // Set after pollJob is defined; lets applyJobPayload chain refinement polls.
   const pollJobRef = useRef<((photoId: string, query: string) => void) | null>(null);
   const mainRubric = initialPhotos.find((p) => p.role === "main")?.rubric;
@@ -539,50 +555,77 @@ export function ProductWorkspace({
       const key = `rating:${photoId}`;
       const existing = pollTimers.current[key];
       if (existing) clearInterval(existing);
-      // A job id is preferred, but this photo's rating_jobs row may not have
-      // been observed yet by whatever snapshot started this poll (the exact
-      // race that caused this bug: the client can see the main photo's job
-      // flip to "completed" and refresh before the server-side supporting-
-      // job continuation has even started, so a supporting photo's job can
-      // be momentarily missing from that snapshot even though it exists).
-      // rating_jobs has a UNIQUE constraint on photo_id (migration 0012), so
-      // the photoId-keyed lookup the GET route already supports is exactly
-      // as precise as the job-id one -- there is never more than one row.
-      const query = jobId
-        ? `id=${encodeURIComponent(jobId)}`
-        : `photoId=${encodeURIComponent(photoId)}`;
+      // Prefer the known id, then fall back to the unique photo_id lookup if
+      // that id is stale or absent. Successful upload paths create the job
+      // before returning; repeated 404s therefore become a visible delayed
+      // state instead of an infinite spinner.
+      let queryByJobId = Boolean(jobId);
+      const anomalies = (ratingPollAnomalies.current[photoId] ??= {
+        requestFailures: 0,
+        malformed: 0,
+      });
+      let inFlight = false;
+      const recoverFromAnomaly = (count: number) => {
+        const action = ratingPollRecoveryAction(count);
+        if (action === "refresh") router.refresh();
+        if (action !== "delay") return;
+        clearInterval(pollTimers.current[key]);
+        delete pollTimers.current[key];
+        if (mountedRef.current) {
+          patch(photoId, {
+            status: "delayed",
+            failedMsg:
+              "Rating is taking longer than expected. Check its status again.",
+          });
+        }
+      };
       pollTimers.current[key] = setInterval(async () => {
+        if (inFlight) return;
+        inFlight = true;
         try {
+          const query = queryByJobId
+            ? `id=${encodeURIComponent(jobId!)}`
+            : `photoId=${encodeURIComponent(photoId)}`;
           const res = await fetch(`/api/score/jobs?${query}`, {
             cache: "no-store",
           });
-          if (!res.ok) return; // transient/unavailable: keep polling, never a failure
+          if (!res.ok) {
+            const error = (await res.json().catch(() => null)) as {
+              code?: string;
+            } | null;
+            if (res.status === 404 && error?.code === "source_unavailable") {
+              queryByJobId = false;
+            }
+            anomalies.requestFailures += 1;
+            recoverFromAnomaly(anomalies.requestFailures);
+            return;
+          }
+          anomalies.requestFailures = 0;
           const body = (await res.json()) as {
             status?: string;
             message?: string | null;
             rubric?: RubricJson | null;
           };
-          if (
-            body.status === "queued" ||
-            body.status === "waiting_dependency" ||
-            body.status === "scoring"
-          ) {
+          const decision = classifyRatingPollResult(
+            body.status,
+            Boolean(body.rubric)
+          );
+          if (decision === "pending") {
+            if (isExpectedPendingRatingStatus(body.status)) {
+              anomalies.malformed = 0;
+            } else {
+              anomalies.malformed += 1;
+              recoverFromAnomaly(anomalies.malformed);
+            }
             return;
           }
-          // Only an EXPLICIT terminal failed/cancelled status ends this poll
-          // as a failure. "completed" without a rubric (a malformed response)
-          // or any unrecognized/missing status is treated as still-unsettled
-          // and kept polling -- required behavior: missing/unknown/stale
-          // client state must never be read as a terminal failure.
-          if (body.status !== "completed" && body.status !== "failed" && body.status !== "cancelled") {
-            return;
-          }
-          clearInterval(pollTimers.current[key]);
-          delete pollTimers.current[key];
           if (!mountedRef.current) return;
           const cur = photosRef.current.find((p) => p.id === photoId);
           if (!cur) return;
-          if (body.status === "completed" && body.rubric) {
+          clearInterval(pollTimers.current[key]);
+          delete pollTimers.current[key];
+          delete ratingPollAnomalies.current[photoId];
+          if (decision === "graded" && body.rubric) {
             const audit =
               cur.kind === "main"
                 ? rubricToDemoState({ rubric: body.rubric, imageSrc: cur.imageSrc })
@@ -597,23 +640,24 @@ export function ProductWorkspace({
               ratingJobId: undefined,
               rubric: body.rubric,
             });
-          } else if (body.status === "failed" || body.status === "cancelled") {
+          } else {
             patch(photoId, {
               status: "failed",
               failedMsg: body.message || "This photo could not be rated.",
               ratingJobId: undefined,
             });
-          } else {
-            // completed but no rubric came back: not a confirmed failure,
-            // keep polling rather than guessing.
-            return;
           }
           // Coverage is computed from pointer-current audits on the server.
           // Refresh after every terminal rating outcome so the panel cannot
           // remain stuck on an old ready/still-checking verdict.
           router.refresh();
         } catch {
-          // transient poll failure: keep trying
+          // A brief network failure is transient. A sustained one becomes a
+          // visible, retryable delayed state instead of an endless spinner.
+          anomalies.requestFailures += 1;
+          recoverFromAnomaly(anomalies.requestFailures);
+        } finally {
+          inFlight = false;
         }
       }, 2500);
     },
@@ -1007,6 +1051,7 @@ export function ProductWorkspace({
     prevProductIdRef.current = productId;
     Object.values(pollTimers.current).forEach(clearInterval);
     pollTimers.current = {};
+    ratingPollAnomalies.current = {};
     setPhotos(initialPhotos.map(makePhoto));
     setActiveId(
       initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
@@ -1254,6 +1299,7 @@ export function ProductWorkspace({
       });
       if (!res.ok) throw new Error("delete_failed");
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      delete ratingPollAnomalies.current[photo.id];
       setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
       setNotice(null);
       // Removing a photo changes both coverage attribution and readiness.
@@ -1267,6 +1313,17 @@ export function ProductWorkspace({
     setActiveId(id);
     setNotice(null);
   }, []);
+
+  const handleRetryDelayedRating = useCallback(() => {
+    const photo = photosRef.current.find((p) => p.id === activeId);
+    if (!photo || photo.status !== "delayed") return;
+    patch(photo.id, {
+      status: "analyzing",
+      failedMsg: undefined,
+    });
+    delete ratingPollAnomalies.current[photo.id];
+    pollRating(photo.id, photo.ratingJobId);
+  }, [activeId, patch, pollRating]);
 
   const handleAddPhoto = useCallback(() => extraInputRef.current?.click(), []);
 
@@ -1556,6 +1613,45 @@ export function ProductWorkspace({
     );
   }
 
+  if (active.status === "delayed") {
+    return (
+      <main className="mx-auto flex max-w-[720px] flex-col items-center gap-5 px-6 py-10">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={active.imageSrc}
+          alt=""
+          className="max-h-[320px] rounded-[var(--radius-xl)] object-contain shadow-[var(--shadow-soft)]"
+        />
+        <div
+          role="status"
+          className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 py-3 text-center text-[14px] text-[var(--color-ink)]"
+        >
+          {active.failedMsg}
+        </div>
+        <div className="flex flex-wrap items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={handleRetryDelayedRating}
+            className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)]"
+          >
+            Check rating again
+          </button>
+          {photos.some((p) => p.kind === "main" && p.id !== active.id) && (
+            <button
+              type="button"
+              onClick={() =>
+                setActiveId(photos.find((p) => p.kind === "main")?.id ?? "")
+              }
+              className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+            >
+              Back to main photo
+            </button>
+          )}
+        </div>
+      </main>
+    );
+  }
+
   const wrongProduct = active.supportingRole === "unrelated_or_wrong_product";
   // A composed listing graphic (banner/collage/diagram) detected by the model,
   // or the legacy digital_preview role. Scored HONESTLY on usefulness (a good,
@@ -1629,7 +1725,7 @@ export function ProductWorkspace({
     label: p.kind === "main" ? "Main photo" : "Supporting",
     thumbnailUrl: p.imageSrc,
     status:
-      p.status === "failed"
+      p.status === "failed" || p.status === "delayed"
         ? "error"
         : p.improveStatus === "generating"
         ? "improving"
@@ -1708,7 +1804,8 @@ export function ProductWorkspace({
         checklistLoading={active.kind === "main" ? checklistLoading : false}
         coveredShotIds={active.kind === "main" ? [...covered] : undefined}
         coverageState={coverageState}
-        photoLabelById={photoLabelById}
+        checkedBuyerQuestionIds={checkedBuyerQuestionIds}
+        onToggleBuyerQuestion={handleToggleBuyerQuestion}
         animate
       />
       {/* Version strip hidden: seller sees one current improved preview, not 1/2/3 picker. */}

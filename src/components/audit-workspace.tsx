@@ -35,7 +35,8 @@ import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { SUPPORTING_ROLE_LABELS } from "@/lib/audit-mapping";
 import { buildEditSuggestionChips, deriveEditContext } from "@/lib/selection-display";
 
-const EMPTY_PHOTO_LABELS = new Map<string, string>();
+const EMPTY_CHECKED_QUESTION_IDS: ReadonlySet<string> = new Set();
+const NOOP = () => undefined;
 
 const IMPROVE_STATUSES = [
   "Analyzing fixes…",
@@ -132,9 +133,10 @@ type Props = {
    *  the panel below falls back to the legacy checklist exactly as before
    *  when this is undefined, so the demo is unaffected. */
   coverageState?: CoverageState;
-  /** photoId -> short display label, for tagging which photo answers a
-   *  question in the coverage panel. */
-  photoLabelById?: Map<string, string>;
+  /** Seller-controlled, session-only buyer-question checklist state. Kept
+   *  above this photo-keyed workspace so switching photos cannot erase it. */
+  checkedBuyerQuestionIds?: ReadonlySet<string>;
+  onToggleBuyerQuestion?: (questionId: string) => void;
 };
 
 export function AuditWorkspace({
@@ -170,7 +172,8 @@ export function AuditWorkspace({
   animate = true,
   initialPreview = false,
   coverageState,
-  photoLabelById,
+  checkedBuyerQuestionIds,
+  onToggleBuyerQuestion,
 }: Props) {
   const isExtra = panelMode === "extra";
   const [revealed, setRevealed] = useState(!animate);
@@ -598,7 +601,10 @@ export function AuditWorkspace({
               coverageState.status === "still_checking") && (
               <BuyerQuestionCoveragePanel
                 coverageState={coverageState}
-                photoLabelById={photoLabelById ?? EMPTY_PHOTO_LABELS}
+                checkedQuestionIds={
+                  checkedBuyerQuestionIds ?? EMPTY_CHECKED_QUESTION_IDS
+                }
+                onToggleQuestion={onToggleBuyerQuestion ?? NOOP}
               />
             )}
           {/* coverageState is undefined only on the landing-page demo (no real

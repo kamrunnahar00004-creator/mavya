@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import { Circle, CircleCheck, Loader2 } from "lucide-react";
 import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { categoryById } from "@/lib/taxonomy";
@@ -8,10 +7,8 @@ import { cn } from "@/lib/utils";
 
 type Props = {
   coverageState: CoverageState;
-  /** Accepted for backward compatibility with the caller's prop chain --
-   *  no longer read. Coverage here is purely seller-clicked (see below), not
-   *  attributed to a specific photo. */
-  photoLabelById?: Map<string, string>;
+  checkedQuestionIds: ReadonlySet<string>;
+  onToggleQuestion: (questionId: string) => void;
 };
 
 /**
@@ -29,9 +26,11 @@ type Props = {
  * "answered"/"not answered" as a verdict; an unchecked question just shows
  * its shot instruction, a checked one goes quiet.
  */
-export function BuyerQuestionCoveragePanel({ coverageState }: Props) {
-  const [checked, setChecked] = useState<Set<string>>(new Set());
-
+export function BuyerQuestionCoveragePanel({
+  coverageState,
+  checkedQuestionIds,
+  onToggleQuestion,
+}: Props) {
   if (coverageState.status === "still_checking") {
     return (
       <div
@@ -60,16 +59,8 @@ export function BuyerQuestionCoveragePanel({ coverageState }: Props) {
   const categoryLabel =
     categoryById(coverageState.category)?.label ?? coverageState.category;
   const checkedCount = coverageState.answers.filter((a) =>
-    checked.has(a.questionId)
+    checkedQuestionIds.has(a.questionId)
   ).length;
-
-  const toggle = (questionId: string) =>
-    setChecked((prev) => {
-      const next = new Set(prev);
-      if (next.has(questionId)) next.delete(questionId);
-      else next.add(questionId);
-      return next;
-    });
 
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white/70 px-4 py-3.5">
@@ -87,12 +78,12 @@ export function BuyerQuestionCoveragePanel({ coverageState }: Props) {
             (q) => q.id === a.questionId
           );
           if (!question) return null;
-          const done = checked.has(a.questionId);
+          const done = checkedQuestionIds.has(a.questionId);
           return (
             <button
               key={a.questionId}
               type="button"
-              onClick={() => toggle(a.questionId)}
+              onClick={() => onToggleQuestion(a.questionId)}
               aria-pressed={done}
               className="flex w-full items-start gap-2.5 rounded-[var(--radius-md)] py-0.5 text-left transition-colors hover:bg-[var(--color-page-deep)]/40"
             >
