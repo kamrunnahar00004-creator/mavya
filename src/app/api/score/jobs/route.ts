@@ -154,15 +154,27 @@ export async function GET(req: NextRequest) {
   let rubric: unknown = null;
   let storagePath: string | null = null;
   if (job.status === "completed") {
-    const { data: photo } = await supabase
+    const { data: photo, error: photoError } = await supabase
       .from("photos")
-      .select("storage_path, audits(rubric, created_at)")
+      .select("storage_path, current_audit_id")
       .eq("id", job.photo_id)
       .maybeSingle();
+    if (photoError) {
+      logEvent("rating.poll_photo_lookup_failed", {});
+    }
     storagePath = photo?.storage_path ?? null;
-    const audits = (photo?.audits ?? []) as { rubric: unknown; created_at: string }[];
-    rubric = [...audits].sort((a, b) => b.created_at.localeCompare(a.created_at))[0]
-      ?.rubric ?? null;
+    if (photo?.current_audit_id) {
+      const { data: audit, error: auditError } = await supabase
+        .from("audits")
+        .select("rubric")
+        .eq("id", photo.current_audit_id)
+        .eq("photo_id", job.photo_id)
+        .maybeSingle();
+      if (auditError) {
+        logEvent("rating.poll_audit_lookup_failed", {});
+      }
+      rubric = audit?.rubric ?? null;
+    }
   }
   return NextResponse.json({
     ...payload(job as ExistingJob),

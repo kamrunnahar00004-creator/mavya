@@ -7,6 +7,7 @@ import {
   ratingPollRecoveryAction,
   RATING_POLL_ANOMALY_DELAY_AFTER,
   RATING_POLL_ANOMALY_REFRESH_AFTER,
+  shouldHydrateCompletedRating,
 } from "../src/lib/rating-poll";
 
 const source = readFileSync(
@@ -77,6 +78,20 @@ describe("missing rating-job recovery", () => {
   });
 });
 
+describe("same-product refresh reconciliation", () => {
+  it.each(["analyzing", "delayed", "failed"] as const)(
+    "hydrates a completed server rating over local %s state",
+    (status) => {
+      expect(shouldHydrateCompletedRating(status, true)).toBe(true);
+    }
+  );
+
+  it("does not overwrite an already graded photo or hydrate without a rubric", () => {
+    expect(shouldHydrateCompletedRating("graded", true)).toBe(false);
+    expect(shouldHydrateCompletedRating("analyzing", false)).toBe(false);
+  });
+});
+
 describe("product-workspace rating-poll wiring", () => {
   it("uses independent timers and an optional photo-id fallback", () => {
     expect(source).toContain('const key = `rating:${photoId}`;');
@@ -127,5 +142,30 @@ describe("product-workspace rating-poll wiring", () => {
       "recoverFromAnomaly(anomalies.requestFailures);"
     );
     expect(source).toContain("Back to main photo");
+  });
+
+  it("merges completed same-product refresh props without resetting all photo state", () => {
+    expect(source).toContain("shouldHydrateCompletedRating(");
+    expect(source).toContain("const hydrated = makePhoto(incoming);");
+    expect(source).toContain("return changed ? reconciled : currentPhotos;");
+  });
+});
+
+describe("rating status endpoint uses the authoritative audit pointer", () => {
+  const route = readFileSync(
+    path.resolve("src/app/api/score/jobs/route.ts"),
+    "utf8"
+  );
+
+  it("loads photos.current_audit_id and fetches that exact audit", () => {
+    expect(route).toContain('.select("storage_path, current_audit_id")');
+    expect(route).toContain("if (photo?.current_audit_id)");
+    expect(route).toContain('.eq("id", photo.current_audit_id)');
+    expect(route).toContain('.eq("photo_id", job.photo_id)');
+  });
+
+  it("does not independently sort an embedded audits relation", () => {
+    expect(route).not.toContain("audits(rubric, created_at)");
+    expect(route).not.toContain("localeCompare");
   });
 });

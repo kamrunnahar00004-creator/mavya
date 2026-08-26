@@ -25,6 +25,19 @@ export function isExpectedPendingRatingStatus(status: unknown): boolean {
   );
 }
 
+/**
+ * A same-product server refresh must be allowed to fill in a rating that the
+ * client poll missed. It must not replace an already-live graded photo, whose
+ * client state may also contain generation/edit progress not present in the
+ * refreshed server snapshot.
+ */
+export function shouldHydrateCompletedRating(
+  currentStatus: "analyzing" | "graded" | "delayed" | "failed",
+  incomingHasRubric: boolean
+): boolean {
+  return incomingHasRubric && currentStatus !== "graded";
+}
+
 export type RatingPollRecoveryAction = "continue" | "refresh" | "delay";
 
 /** Bounded recovery policy for a missing job or malformed terminal payload. */

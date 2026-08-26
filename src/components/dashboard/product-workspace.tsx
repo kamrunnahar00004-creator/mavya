@@ -39,6 +39,7 @@ import {
   classifyRatingPollResult,
   isExpectedPendingRatingStatus,
   ratingPollRecoveryAction,
+  shouldHydrateCompletedRating,
 } from "@/lib/rating-poll";
 
 export type InitialJob = {
@@ -532,6 +533,35 @@ export function ProductWorkspace({
   useEffect(() => {
     photosRef.current = photos;
   }, [photos]);
+
+  // router.refresh() keeps this client component mounted. Reconcile only
+  // newly completed ratings from the refreshed server props; replacing the
+  // whole array would erase unrelated live generation/edit state. This is the
+  // recovery path when a poll response was stale or temporarily malformed.
+  useEffect(() => {
+    setPhotos((currentPhotos) => {
+      const incomingById = new Map(initialPhotos.map((photo) => [photo.id, photo]));
+      let changed = false;
+      const reconciled = currentPhotos.map((current) => {
+        const incoming = incomingById.get(current.id);
+        if (
+          !incoming ||
+          !shouldHydrateCompletedRating(current.status, Boolean(incoming.rubric))
+        ) {
+          return current;
+        }
+        changed = true;
+        const hydrated = makePhoto(incoming);
+        const timerKey = `rating:${current.id}`;
+        const timer = pollTimers.current[timerKey];
+        if (timer) clearInterval(timer);
+        delete pollTimers.current[timerKey];
+        delete ratingPollAnomalies.current[current.id];
+        return hydrated;
+      });
+      return changed ? reconciled : currentPhotos;
+    });
+  }, [initialPhotos]);
 
   useEffect(() => {
     const timers = pollTimers.current;
