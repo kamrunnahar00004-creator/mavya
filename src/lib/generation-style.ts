@@ -21,6 +21,9 @@ import type { SupportingPhotoRole } from "@/lib/rubric";
  *  may vary by category; ids must not. */
 export type GenerationStyle = "matches_original" | "studio" | "lifestyle";
 
+/** The model may return `other` even though it is not a catalog category. */
+export type GenerationStyleCategory = CanonicalCategory | "other";
+
 export const GENERATION_STYLES: readonly GenerationStyle[] = [
   "matches_original",
   "studio",
@@ -48,9 +51,9 @@ export type GenerationStyleOption = {
  * label, a device mockup), not to look appealing. These roles get
  * "matches_original" only, regardless of category.
  *
- * FIRST-PASS list, not yet Codex-confirmed for every category interaction
- * -- flagged in the architecture-clarification report, ships as the
- * conservative default until reviewed.
+ * These roles retain only the existing restrained treatment. They must not
+ * be restaged into studio/lifestyle scenes because their text, measurements,
+ * contents, or display context are the information being sold.
  */
 const INFORMATIONAL_SUPPORTING_ROLES: readonly SupportingPhotoRole[] = [
   "size_chart",
@@ -58,11 +61,18 @@ const INFORMATIONAL_SUPPORTING_ROLES: readonly SupportingPhotoRole[] = [
   "bundle_layout",
   "feature_spec",
   "care_instruction",
-  "digital_preview",
   "printed_example",
   "device_mockup",
   "planner_preview",
 ];
+
+/** These roles already fail the authoritative generation queue's safety
+ * gates. Keep the style policy aligned so a future caller cannot present a
+ * picker that the server will inevitably reject. */
+const BLOCKED_SUPPORTING_ROLES: ReadonlySet<SupportingPhotoRole> = new Set([
+  "digital_preview",
+  "unrelated_or_wrong_product",
+]);
 
 /**
  * Explicit lifestyle/model allowlist by category, per architecture
@@ -89,15 +99,30 @@ const LIFESTYLE_ALLOWED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
   "candles", // same "unless explicitly requested" carve-out as mugs
 ] as CanonicalCategory[]);
 
-/** Studio is close to universally reasonable for a physical product photo.
- *  Vintage is the one deliberate exception: its entire category is about
- *  honest condition/patina display (taxonomy.ts: "NEVER hide, clean up, or
- *  repair legitimate vintage wear"), and a studio treatment risks reading
- *  as over-polished even when only background/lighting are touched -- left
- *  out until Codex/founder confirms it's safe. */
-const STUDIO_EXCLUDED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
-  "vintage",
+/** Lifestyle is available for these categories, but is not the safest first
+ * choice for a cold main-photo fix. Model-worn context is the clearest default
+ * only where fit/scale is central to understanding the product. */
+const LIFESTYLE_RECOMMENDED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
+  "jewelry",
+  "apparel",
+  "bags",
 ] as CanonicalCategory[]);
+
+/** Supporting photos must preserve their existing job. Studio treatment is
+ * limited to roles where a cleaner controlled presentation does not replace
+ * that job with a different scene. */
+const STUDIO_SUPPORTING_ROLES: ReadonlySet<SupportingPhotoRole> = new Set([
+  "detail_closeup",
+  "alternate_angle",
+  "variation",
+]);
+
+/** Lifestyle treatment is only coherent for an already in-use photo. It must
+ * never turn a detail, packaging, process, or informational image into a new
+ * kind of supporting photo. */
+const LIFESTYLE_SUPPORTING_ROLES: ReadonlySet<SupportingPhotoRole> = new Set([
+  "in_use",
+]);
 
 function isInformationalSupportingRole(
   role: SupportingPhotoRole | undefined
@@ -115,23 +140,50 @@ function isInformationalSupportingRole(
  * recommendedForMain flag -- callers decide whether to render it.
  */
 export function availableGenerationStyles(args: {
-  category: CanonicalCategory;
+  category: GenerationStyleCategory;
   role: "main" | "supporting";
   supportingPhotoRole?: SupportingPhotoRole;
 }): GenerationStyle[] {
   const { category, role, supportingPhotoRole } = args;
-  if (role === "supporting" && isInformationalSupportingRole(supportingPhotoRole)) {
+  if (category === "other") {
+    // Unknown may represent a product outside the catalog. Do not infer a
+    // physical scene or model treatment without category-specific safeguards.
     return ["matches_original"];
   }
   if (categoryById(category)?.kind === "digital") {
-    // Studio/lifestyle styling does not apply to screenshots, mockups,
-    // printables -- there is no physical object or scene to restage.
+    // Digital generation is rejected by the authoritative server queue today.
+    // Returning no options keeps this policy honest if it is reused by either
+    // the picker or request validator.
+    return [];
+  }
+  if (
+    role === "supporting" &&
+    supportingPhotoRole &&
+    BLOCKED_SUPPORTING_ROLES.has(supportingPhotoRole)
+  ) {
+    return [];
+  }
+  if (role === "supporting" && isInformationalSupportingRole(supportingPhotoRole)) {
     return ["matches_original"];
   }
-  const styles: GenerationStyle[] = ["matches_original"];
-  if (!STUDIO_EXCLUDED_CATEGORIES.has(category)) {
-    styles.push("studio");
+  if (role === "supporting") {
+    const styles: GenerationStyle[] = ["matches_original"];
+    if (supportingPhotoRole && STUDIO_SUPPORTING_ROLES.has(supportingPhotoRole)) {
+      styles.push("studio");
+    }
+    if (
+      supportingPhotoRole &&
+      LIFESTYLE_SUPPORTING_ROLES.has(supportingPhotoRole) &&
+      LIFESTYLE_ALLOWED_CATEGORIES.has(category)
+    ) {
+      styles.push("lifestyle");
+    }
+    return styles;
   }
+  const styles: GenerationStyle[] = ["matches_original"];
+  // A studio treatment may change only presentation. Vintage preservation is
+  // enforced by the server prompt/fidelity gate, not by hiding the option.
+  styles.push("studio");
   if (LIFESTYLE_ALLOWED_CATEGORIES.has(category)) {
     styles.push("lifestyle");
   }
@@ -145,10 +197,11 @@ export function availableGenerationStyles(args: {
  * doc comment on how callers must treat this.
  */
 export function recommendedMainStyle(
-  category: CanonicalCategory
+  category: GenerationStyleCategory
 ): GenerationStyle | null {
-  if (categoryById(category)?.kind === "digital") return "matches_original";
-  if (LIFESTYLE_ALLOWED_CATEGORIES.has(category)) return "lifestyle";
-  if (!STUDIO_EXCLUDED_CATEGORIES.has(category)) return "studio";
-  return "matches_original";
+  if (category === "other") return "matches_original";
+  if (categoryById(category)?.kind === "digital") return null;
+  if (category === "vintage") return "matches_original";
+  if (LIFESTYLE_RECOMMENDED_CATEGORIES.has(category)) return "lifestyle";
+  return "studio";
 }
