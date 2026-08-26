@@ -170,7 +170,10 @@ export const TAXONOMY_VERSION = 1;
 export const RUBRIC_VERSION = "main-v22";
 export const SUPPORTING_RUBRIC_VERSION = "supporting-v19";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
-export const GENERATION_PROMPT_VERSION = "gen-v2";
+// gen-v3: persisted generation_style now controls execution. Matches Original,
+// Studio, and category-scoped Model/Lifestyle each receive a distinct server-
+// only strategy block while sharing the same strict fidelity and role floor.
+export const GENERATION_PROMPT_VERSION = "gen-v3";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
 
 /** Rubric version for a scoring mode. */

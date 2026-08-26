@@ -649,6 +649,7 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
       extraConstraints,
       mainProductContext,
       mode,
+      generationStyle: job.generation_style,
       // Edit workflow: when polishing FROM the parent's result the edit is
       // already baked into the base image (re-applying could double-apply,
       // e.g. "make the background darker"). Only a fresh attempt from the
@@ -960,6 +961,7 @@ export async function runQueuedGenerationOnce(jobId?: string): Promise<string | 
       extraConstraints,
       mainProductContext,
       mode,
+      generationStyle: job.generation_style,
       editInstruction: job.edit_instruction ?? undefined,
       onStage: async (stage) => {
         await patch({ status: stage, stage });

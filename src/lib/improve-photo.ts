@@ -32,6 +32,8 @@ import { imageEditCall, ProviderModerationError } from "@/lib/openai";
 import { rawOverall } from "@/lib/calibration";
 import { ISSUE_FAMILIES, PILLAR_KEYS, type IssueFamily, type RubricJson } from "@/lib/rubric";
 import { generationGuidanceFor } from "@/lib/taxonomy";
+import { generationStylePromptBlock } from "@/lib/generation-prompt-strategy";
+import type { GenerationStyle } from "@/lib/generation-style";
 import { GENERAL_RUBRIC_PROMPT } from "@/lib/general-rubric";
 import sharp from "sharp";
 
@@ -239,7 +241,8 @@ function buildTargetedPrompt(
   audit: RubricJson,
   extraConstraints: string[] = [],
   mode: ImproveMode = "main",
-  source: "original" | "improved_preview" = "original"
+  source: "original" | "improved_preview" = "original",
+  generationStyle: GenerationStyle = "matches_original"
 ): string {
   const isExtra = mode === "extra";
   // Pass each fix as Action + Reason so the generator resolves the actual
@@ -287,12 +290,20 @@ function buildTargetedPrompt(
     ? `Quality objective: make a genuinely clearer, more trustworthy SUPPORTING listing photo that still does its exact job — better clarity, lighting, readability, and cleanliness — while preserving the role, framing, and all text/content. This is NOT a search thumbnail and must NOT become a hero shot. If preservation and polish conflict, preserve the role and content faithfully.`
     : `Quality objective: make the improved hero image genuinely listing-ready, with the complete physical product clearly visible, authentic in appearance, and strong enough to earn an honest 8+ audit score on thumbnail clarity, lighting, background, and click appeal. Do not fabricate quality or sacrifice product identity to reach that target. If preservation and polish conflict, preserve the physical product faithfully.`;
 
+  const styleBlock = generationStylePromptBlock({
+    style: generationStyle,
+    detectedCategory: audit.detected_category,
+    role: isExtra ? "supporting" : "main",
+    supportingPhotoRole: isExtra ? audit.supporting_photo_role : undefined,
+  });
+
   // Supporting photos use the role-preserving prompt and skip hero framing/crop
   // rules. Hero photos use the restrained hero prompt + category + crop guidance.
   const blocks = isExtra
     ? [
         SUPPORTING_IMPROVE_PROMPT,
         supportingRoleGuidance(audit.supporting_photo_role),
+        styleBlock,
         fixesBlock,
         lightInstruction,
         extras,
@@ -302,6 +313,7 @@ function buildTargetedPrompt(
     : [
         RESTRAINED_PROMPT,
         categoryGuidance(audit.detected_category),
+        styleBlock,
         fixesBlock,
         cropInstruction,
         lightInstruction,
@@ -343,7 +355,8 @@ function buildEditPrompt(
   audit: RubricJson,
   editInstruction: string,
   source: "original" | "improved_preview",
-  mode: ImproveMode = "main"
+  mode: ImproveMode = "main",
+  generationStyle: GenerationStyle = "matches_original"
 ): string {
   const isExtra = mode === "extra";
   const retryInstruction =
@@ -363,10 +376,18 @@ Requested change: "${editInstruction}"`;
     ? `Quality objective: apply the seller's requested change while keeping the supporting photo's role, content, and all text/numbers intact and authentic. Keep the result a believable real photo or screenshot, never a hero conversion or an AI render.`
     : `Quality objective: apply the seller's requested change while keeping the complete physical product clearly visible, authentic, and unaltered in identity. Keep the result a believable, listing-ready Etsy photo. Do not fabricate quality or change the product to satisfy the request.`;
 
+  const styleBlock = generationStylePromptBlock({
+    style: generationStyle,
+    detectedCategory: audit.detected_category,
+    role: isExtra ? "supporting" : "main",
+    supportingPhotoRole: isExtra ? audit.supporting_photo_role : undefined,
+  });
+
   const blocks = isExtra
     ? [
         SUPPORTING_IMPROVE_PROMPT,
         supportingRoleGuidance(audit.supporting_photo_role),
+        styleBlock,
         editBlock,
         retryInstruction,
         objective,
@@ -374,6 +395,7 @@ Requested change: "${editInstruction}"`;
     : [
         RESTRAINED_PROMPT,
         categoryGuidance(audit.detected_category),
+        styleBlock,
         editBlock,
         retryInstruction,
         objective,
@@ -746,6 +768,8 @@ export async function improvePhoto(args: {
    * compares the result to the original product.
    */
   editInstruction?: string;
+  /** Persisted, server-validated presentation strategy for this workflow. */
+  generationStyle?: GenerationStyle;
   /** Pipeline-stage callback (persisted to the generation job for honest UI). */
   onStage?: (stage: "generating" | "fidelity_check" | "rescoring") => void | Promise<void>;
 }): Promise<ImproveResult> {
@@ -758,6 +782,7 @@ export async function improvePhoto(args: {
   const promptAudit = args.promptAudit ?? args.originalAudit;
   const promptSource = args.baseBuffer ? "improved_preview" : "original";
   const editInstruction = sanitizeEditInstruction(args.editInstruction);
+  const generationStyle = args.generationStyle ?? "matches_original";
 
   // Preserve the source aspect intent instead of forcing everything square:
   // clearly landscape sources render 1536x1024, clearly portrait 1024x1536.
@@ -784,12 +809,19 @@ export async function improvePhoto(args: {
       imageBuffer: editBuffer,
       imageMimeType: editMimeType,
       prompt: editInstruction
-        ? buildEditPrompt(promptAudit, editInstruction, promptSource, mode)
+        ? buildEditPrompt(
+            promptAudit,
+            editInstruction,
+            promptSource,
+            mode,
+            generationStyle
+          )
         : buildTargetedPrompt(
             promptAudit,
             args.extraConstraints,
             mode,
-            promptSource
+            promptSource,
+            generationStyle
           ),
       size,
     });

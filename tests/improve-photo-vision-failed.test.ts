@@ -162,4 +162,37 @@ describe("improve-photo vision_failed handling", () => {
     // Audit indicates score unavailable (not that generation failed)
     expect(result.candidateAudit.priority_action).toContain("unavailable");
   });
+
+  it.each([
+    ["studio", "SELECTED GENERATION STYLE: STUDIO", "jewelry-studio"],
+    ["lifestyle", "SELECTED GENERATION STYLE: MODEL / LIFESTYLE", "naturally worn"],
+  ] as const)(
+    "passes the selected %s strategy into the provider prompt",
+    async (generationStyle, styleHeading, categoryDirection) => {
+      mockImageEditCall.mockResolvedValueOnce("styled-generated-image");
+      mockScorePhoto.mockRejectedValueOnce(new Error("Verification failed"));
+      mockEvaluateFidelity.mockRejectedValueOnce(new Error("Verification failed"));
+
+      const result = await improvePhoto({
+        originalBuffer: Buffer.from("original"),
+        originalMimeType: "image/jpeg",
+        originalAudit: {
+          ...mockOriginalAudit,
+          detected_category: "jewelry",
+        },
+        mode: "main",
+        generationStyle,
+        onStage: vi.fn(),
+      });
+
+      expect(result.ok).toBe(true);
+      expect(mockImageEditCall).toHaveBeenCalledOnce();
+
+      const prompt = mockImageEditCall.mock.calls[0]?.[0]?.prompt;
+      expect(prompt).toEqual(expect.any(String));
+      expect(prompt).toContain(styleHeading);
+      expect(prompt.toLowerCase()).toContain(categoryDirection);
+      expect(prompt).toContain("ABSOLUTE PRODUCT-FIDELITY FLOOR");
+    }
+  );
 });
