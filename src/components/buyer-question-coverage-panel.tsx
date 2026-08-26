@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Loader2, X } from "lucide-react";
+import { Circle, CircleCheck, Loader2 } from "lucide-react";
 import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { categoryById } from "@/lib/taxonomy";
 
@@ -13,13 +13,17 @@ type Props = {
 };
 
 /**
- * Buyer-question coverage (slice 3, first pass). Assertive by design --
- * unlike the old gentle checklist, an unanswered question shows a plain X,
- * not a soft suggestion. Only ever renders real per-question answers in
- * the "ready" state; "still_checking" shows one honest placeholder instead
- * of guessing at partial answers, and "legacy"/"unavailable" render
- * nothing here (legacy falls back to the old PhotoChecklistPanel in the
- * caller; unavailable has nothing true to say yet).
+ * Buyer-question coverage (slice 3). Reads as a checklist, not a pass/fail
+ * grade -- an unanswered question is a plain open circle (the same neutral
+ * language the older PhotoChecklistPanel used), never a red X. The AI's
+ * photo-to-question matching is not perfect (a real photo can answer a
+ * question the model failed to recognize), so an unanswered item must never
+ * look like an accusation -- founder call, avoids false-negative panic.
+ * Only ever renders real per-question answers in the "ready" state;
+ * "still_checking" shows one honest placeholder instead of guessing at
+ * partial answers, and "legacy"/"unavailable" render nothing here (legacy
+ * falls back to the old PhotoChecklistPanel in the caller; unavailable has
+ * nothing true to say yet).
  */
 export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Props) {
   if (coverageState.status === "still_checking") {
@@ -76,13 +80,13 @@ export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Pr
           return (
             <div key={a.questionId} className="flex items-start gap-2.5">
               {answered ? (
-                <Check
+                <CircleCheck
                   className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-strong)]"
                   aria-hidden="true"
                 />
               ) : (
-                <X
-                  className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-weak)]"
+                <Circle
+                  className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-border-strong)]"
                   aria-hidden="true"
                 />
               )}

@@ -19,16 +19,24 @@ describe("buyer-question coverage UI (slice 3)", () => {
     expect(panel).not.toMatch(/duplicate/i);
   });
 
-  it("ready state shows a real answered/total count and per-question check or X", () => {
+  it("ready state shows a real answered/total count and reads as a checklist, not a pass/fail X", () => {
     expect(panel).toContain('coverageState.status !== "ready"');
     expect(panel).toContain("answeredCount");
-    expect(panel).toContain("<Check");
-    expect(panel).toContain("<X");
+    // Checklist language: an open circle for not-yet, a filled circle-check
+    // for done -- same neutral icons the older PhotoChecklistPanel uses.
+    // Never a red X: founder call, avoids false-negative panic when the
+    // AI's photo-to-question matching misses a real photo that does answer
+    // the question.
+    expect(panel).toContain("<CircleCheck");
+    expect(panel).toContain("<Circle");
+    expect(panel).not.toContain("<X ");
+    expect(panel).not.toContain("<Check ");
+    expect(panel).not.toContain("text-[var(--color-weak)]");
   });
 
-  it("still_checking never renders a false per-question X -- one honest placeholder instead", () => {
+  it("still_checking never renders a false per-question failure -- one honest placeholder instead", () => {
     expect(panel).toContain('coverageState.status === "still_checking"');
-    // The still_checking branch returns before any per-question Check/X
+    // The still_checking branch returns before any per-question icon
     // rendering is reached.
     const stillCheckingIdx = panel.indexOf('coverageState.status === "still_checking"');
     const readyGuardIdx = panel.indexOf('coverageState.status !== "ready"');
