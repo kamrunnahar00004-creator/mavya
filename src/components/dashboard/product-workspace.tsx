@@ -271,19 +271,25 @@ function makePhoto(p: InitialPhoto): Photo {
   // No audit yet: the photo STAYS visible — analyzing while its durable
   // rating job runs, or a failed state the seller can delete. Never vanish.
   if (!p.rubric) {
-    const ratingActive =
-      p.ratingJob?.status === "queued" ||
-      p.ratingJob?.status === "waiting_dependency" ||
-      p.ratingJob?.status === "scoring";
+    const jobStatus = p.ratingJob?.status;
+    // Only an EXPLICIT terminal failed/cancelled job may render as failed.
+    // A missing ratingJob (never observed by this exact SSR snapshot -- a
+    // real, reproduced race: the client can see the main photo's job flip
+    // to "completed" and refresh before the server-side supporting-job
+    // continuation has even started) or any other unrecognized status must
+    // never be read as a failure -- it stays "analyzing" and polling below
+    // resumes it by photo id (no job id needed) until a real terminal
+    // status is observed.
+    const ratingTerminalFailed = jobStatus === "failed" || jobStatus === "cancelled";
     return {
       ...analyzingPhoto(p.id, p.imageSrc),
       kind: p.role,
       storagePath: p.storagePath,
-      status: ratingActive ? "analyzing" : "failed",
-      failedMsg: ratingActive
-        ? undefined
-        : p.ratingJob?.errorMessage || "This photo could not be rated.",
-      ratingJobId: ratingActive ? p.ratingJob?.id : undefined,
+      status: ratingTerminalFailed ? "failed" : "analyzing",
+      failedMsg: ratingTerminalFailed
+        ? p.ratingJob?.errorMessage || "This photo could not be rated."
+        : undefined,
+      ratingJobId: p.ratingJob?.id,
     };
   }
   const audit = isMain
@@ -529,16 +535,28 @@ export function ProductWorkspace({
   // poll it, then grade in place or surface a visible failed state. The photo
   // is never dropped — deleting is the seller's decision.
   const pollRating = useCallback(
-    (photoId: string, jobId: string) => {
+    (photoId: string, jobId?: string) => {
       const key = `rating:${photoId}`;
       const existing = pollTimers.current[key];
       if (existing) clearInterval(existing);
+      // A job id is preferred, but this photo's rating_jobs row may not have
+      // been observed yet by whatever snapshot started this poll (the exact
+      // race that caused this bug: the client can see the main photo's job
+      // flip to "completed" and refresh before the server-side supporting-
+      // job continuation has even started, so a supporting photo's job can
+      // be momentarily missing from that snapshot even though it exists).
+      // rating_jobs has a UNIQUE constraint on photo_id (migration 0012), so
+      // the photoId-keyed lookup the GET route already supports is exactly
+      // as precise as the job-id one -- there is never more than one row.
+      const query = jobId
+        ? `id=${encodeURIComponent(jobId)}`
+        : `photoId=${encodeURIComponent(photoId)}`;
       pollTimers.current[key] = setInterval(async () => {
         try {
-          const res = await fetch(`/api/score/jobs?id=${encodeURIComponent(jobId)}`, {
+          const res = await fetch(`/api/score/jobs?${query}`, {
             cache: "no-store",
           });
-          if (!res.ok) return;
+          if (!res.ok) return; // transient/unavailable: keep polling, never a failure
           const body = (await res.json()) as {
             status?: string;
             message?: string | null;
@@ -549,6 +567,14 @@ export function ProductWorkspace({
             body.status === "waiting_dependency" ||
             body.status === "scoring"
           ) {
+            return;
+          }
+          // Only an EXPLICIT terminal failed/cancelled status ends this poll
+          // as a failure. "completed" without a rubric (a malformed response)
+          // or any unrecognized/missing status is treated as still-unsettled
+          // and kept polling -- required behavior: missing/unknown/stale
+          // client state must never be read as a terminal failure.
+          if (body.status !== "completed" && body.status !== "failed" && body.status !== "cancelled") {
             return;
           }
           clearInterval(pollTimers.current[key]);
@@ -571,12 +597,16 @@ export function ProductWorkspace({
               ratingJobId: undefined,
               rubric: body.rubric,
             });
-          } else {
+          } else if (body.status === "failed" || body.status === "cancelled") {
             patch(photoId, {
               status: "failed",
               failedMsg: body.message || "This photo could not be rated.",
               ratingJobId: undefined,
             });
+          } else {
+            // completed but no rubric came back: not a confirmed failure,
+            // keep polling rather than guessing.
+            return;
           }
           // Coverage is computed from pointer-current audits on the server.
           // Refresh after every terminal rating outcome so the panel cannot
@@ -915,12 +945,15 @@ export function ProductWorkspace({
       }
       if (
         !p.rubric &&
-        p.ratingJob &&
-        (p.ratingJob.status === "queued" ||
-          p.ratingJob.status === "waiting_dependency" ||
-          p.ratingJob.status === "scoring")
+        p.ratingJob?.status !== "failed" &&
+        p.ratingJob?.status !== "cancelled"
       ) {
-        pollRating(p.id, p.ratingJob.id);
+        // Poll by job id when this snapshot has one; otherwise poll by photo
+        // id (the GET route supports both -- rating_jobs is unique per
+        // photo_id, migration 0012). A missing job id here does not mean no
+        // job exists -- it means this exact snapshot has not observed one
+        // yet, which must never be read as a failure (required behavior #6).
+        pollRating(p.id, p.ratingJob?.id);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -995,12 +1028,15 @@ export function ProductWorkspace({
       }
       if (
         !p.rubric &&
-        p.ratingJob &&
-        (p.ratingJob.status === "queued" ||
-          p.ratingJob.status === "waiting_dependency" ||
-          p.ratingJob.status === "scoring")
+        p.ratingJob?.status !== "failed" &&
+        p.ratingJob?.status !== "cancelled"
       ) {
-        pollRating(p.id, p.ratingJob.id);
+        // Poll by job id when this snapshot has one; otherwise poll by photo
+        // id (the GET route supports both -- rating_jobs is unique per
+        // photo_id, migration 0012). A missing job id here does not mean no
+        // job exists -- it means this exact snapshot has not observed one
+        // yet, which must never be read as a failure (required behavior #6).
+        pollRating(p.id, p.ratingJob?.id);
       }
     }
   }, [productId, initialPhotos, pollJob, pollRating]);
