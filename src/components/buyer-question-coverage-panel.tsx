@@ -1,31 +1,37 @@
 "use client";
 
+import { useState } from "react";
 import { Circle, CircleCheck, Loader2 } from "lucide-react";
 import type { CoverageState } from "@/lib/buyer-question-coverage";
 import { categoryById } from "@/lib/taxonomy";
+import { cn } from "@/lib/utils";
 
 type Props = {
   coverageState: CoverageState;
-  /** photoId -> a short display label ("Main photo", "Photo 2", ...), for
-   *  tagging which photo answers a question. Built from the SAME live
-   *  photo order the workspace already renders (not a separate fetch). */
-  photoLabelById: Map<string, string>;
+  /** Accepted for backward compatibility with the caller's prop chain --
+   *  no longer read. Coverage here is purely seller-clicked (see below), not
+   *  attributed to a specific photo. */
+  photoLabelById?: Map<string, string>;
 };
 
 /**
- * Buyer-question coverage (slice 3). Reads as a checklist, not a pass/fail
- * grade -- an unanswered question is a plain open circle (the same neutral
- * language the older PhotoChecklistPanel used), never a red X. The AI's
- * photo-to-question matching is not perfect (a real photo can answer a
- * question the model failed to recognize), so an unanswered item must never
- * look like an accusation -- founder call, avoids false-negative panic.
- * Only ever renders real per-question answers in the "ready" state;
- * "still_checking" shows one honest placeholder instead of guessing at
- * partial answers, and "legacy"/"unavailable" render nothing here (legacy
- * falls back to the old PhotoChecklistPanel in the caller; unavailable has
- * nothing true to say yet).
+ * Buyer-question coverage (slice 3, revised to founder feedback). Purely
+ * seller-controlled now, the same model the older PhotoChecklistPanel
+ * already used: clicking a question is the ONLY thing that marks it
+ * covered, session-only (resets on reload), no scoring, no pressure.
+ *
+ * The AI's per-photo answers_question_ids matching still exists
+ * server-side (coverageState.answers carries it), but this panel no longer
+ * reads answeredByPhotoId at all. A seller who genuinely already covered a
+ * question the AI failed to recognize should never see a false "not
+ * answered" signal -- the simplest fix is to let the seller be the one who
+ * says a question is covered, not the model. Nothing on screen ever states
+ * "answered"/"not answered" as a verdict; an unchecked question just shows
+ * its shot instruction, a checked one goes quiet.
  */
-export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Props) {
+export function BuyerQuestionCoveragePanel({ coverageState }: Props) {
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+
   if (coverageState.status === "still_checking") {
     return (
       <div
@@ -53,9 +59,17 @@ export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Pr
 
   const categoryLabel =
     categoryById(coverageState.category)?.label ?? coverageState.category;
-  const answeredCount = coverageState.answers.filter(
-    (a) => a.answeredByPhotoId !== null
+  const checkedCount = coverageState.answers.filter((a) =>
+    checked.has(a.questionId)
   ).length;
+
+  const toggle = (questionId: string) =>
+    setChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(questionId)) next.delete(questionId);
+      else next.add(questionId);
+      return next;
+    });
 
   return (
     <div className="rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white/70 px-4 py-3.5">
@@ -64,7 +78,7 @@ export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Pr
           What buyers ask about {categoryLabel.toLowerCase()}
         </span>
         <span className="text-[11px] font-semibold text-[var(--color-ink-soft)]">
-          {answeredCount} of {coverageState.answers.length}
+          {checkedCount} of {coverageState.answers.length}
         </span>
       </div>
       <div className="mt-2.5 flex flex-col gap-2.5">
@@ -73,13 +87,16 @@ export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Pr
             (q) => q.id === a.questionId
           );
           if (!question) return null;
-          const answered = a.answeredByPhotoId !== null;
-          const photoLabel = answered
-            ? photoLabelById.get(a.answeredByPhotoId!) ?? null
-            : null;
+          const done = checked.has(a.questionId);
           return (
-            <div key={a.questionId} className="flex items-start gap-2.5">
-              {answered ? (
+            <button
+              key={a.questionId}
+              type="button"
+              onClick={() => toggle(a.questionId)}
+              aria-pressed={done}
+              className="flex w-full items-start gap-2.5 rounded-[var(--radius-md)] py-0.5 text-left transition-colors hover:bg-[var(--color-page-deep)]/40"
+            >
+              {done ? (
                 <CircleCheck
                   className="mt-[3px] h-4 w-4 flex-shrink-0 text-[var(--color-strong)]"
                   aria-hidden="true"
@@ -91,33 +108,26 @@ export function BuyerQuestionCoveragePanel({ coverageState, photoLabelById }: Pr
                 />
               )}
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-[13.5px] font-semibold text-[var(--color-ink)]">
-                    {question.text}
-                  </span>
-                  {photoLabel && (
-                    <span
-                      className="flex-shrink-0 text-[11.5px] text-[var(--color-ink-soft)]"
-                      aria-hidden="true"
-                    >
-                      {photoLabel}
-                    </span>
+                <span
+                  className={cn(
+                    "text-[13.5px] font-semibold",
+                    done
+                      ? "text-[var(--color-ink-soft)] line-through"
+                      : "text-[var(--color-ink)]"
                   )}
-                </div>
-                <span className="sr-only">
-                  {answered
-                    ? photoLabel
-                      ? `Answered by ${photoLabel}.`
-                      : "Answered."
-                    : "Not answered yet."}
+                >
+                  {question.text}
                 </span>
-                {!answered && (
+                <span className="sr-only">
+                  {done ? "Marked as covered." : "Not marked yet."}
+                </span>
+                {!done && (
                   <p className="mt-0.5 text-[12px] leading-snug text-[var(--color-ink-soft)]">
                     {question.shot_instruction}
                   </p>
                 )}
               </div>
-            </div>
+            </button>
           );
         })}
       </div>
