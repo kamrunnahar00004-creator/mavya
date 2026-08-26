@@ -39,6 +39,7 @@ const baseJob = {
   workflow_id: "wf-1",
   attempt_number: 1,
   allowance_key: "user-1:workflow:key",
+  generation_style: "matches_original" as const,
 };
 
 describe("background refinement after seller edits", () => {

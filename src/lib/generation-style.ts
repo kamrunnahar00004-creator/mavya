@@ -1,4 +1,8 @@
-import { categoryById, type CanonicalCategory } from "@/lib/taxonomy";
+import {
+  CATEGORY_IDS,
+  categoryById,
+  type CanonicalCategory,
+} from "@/lib/taxonomy";
 import type { SupportingPhotoRole } from "@/lib/rubric";
 
 /**
@@ -29,6 +33,25 @@ export const GENERATION_STYLES: readonly GenerationStyle[] = [
   "studio",
   "lifestyle",
 ];
+
+/** Runtime boundary guard for JSON request bodies and persisted values. */
+export function isGenerationStyle(value: unknown): value is GenerationStyle {
+  return (
+    typeof value === "string" &&
+    (GENERATION_STYLES as readonly string[]).includes(value)
+  );
+}
+
+/** Conservative bridge from persisted/model strings into the policy type. */
+export function normalizeGenerationStyleCategory(
+  value: unknown
+): GenerationStyleCategory {
+  if (value === "other") return "other";
+  return typeof value === "string" &&
+    (CATEGORY_IDS as readonly string[]).includes(value)
+    ? (value as CanonicalCategory)
+    : "other";
+}
 
 export type GenerationStyleOption = {
   id: GenerationStyle;

@@ -12,9 +12,10 @@ const migration = readFileSync(
 );
 
 describe("POST /api/generate/bulk: durable idempotent request", () => {
-  it("accepts only a product and idempotency key from the browser", () => {
+  it("accepts only product, idempotency key, and the validated style from the browser", () => {
     expect(route).toContain('typeof body.productId === "string"');
     expect(route).toContain('typeof body.idempotencyKey === "string"');
+    expect(route).toContain("isGenerationStyle(rawGenerationStyle)");
     expect(route).not.toMatch(/body\.photoId/);
     expect(route).not.toMatch(/body\.bucket/);
     expect(route).not.toMatch(/body\.score/);

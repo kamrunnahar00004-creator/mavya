@@ -16,6 +16,12 @@ import type { FidelityReport } from "@/lib/fidelity";
 import { weightedRateLimitMany, type RateLimitResult } from "@/lib/rate-limit";
 import type { PlanKey } from "@/lib/plans";
 import { generationDailyMax } from "@/lib/generation-policy";
+import {
+  availableGenerationStyles,
+  normalizeGenerationStyleCategory,
+  recommendedMainStyle,
+  type GenerationStyle,
+} from "@/lib/generation-style";
 
 const GENERATION_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 
@@ -52,6 +58,7 @@ export type JobRow = {
   status: GenerationJobStatus;
   stage: string | null;
   operation: "improve" | "edit" | "retry" | "refine";
+  generation_style: GenerationStyle;
   edit_instruction: string | null;
   result_storage_path: string | null;
   candidate_rubric: RubricJson | null;
@@ -74,6 +81,7 @@ export type QueueGenerationInput = {
   photoId: string;
   idempotencyKey: string;
   operation: "improve" | "edit" | "retry";
+  generationStyle: GenerationStyle;
   editInstruction?: string | null;
   previousJobId?: string;
   unresolvedIssues?: string[];
@@ -121,6 +129,7 @@ export async function queueGeneration(
     photoId,
     idempotencyKey,
     operation,
+    generationStyle,
     editInstruction = null,
     previousJobId,
     unresolvedIssues,
@@ -149,6 +158,7 @@ export async function queueGeneration(
       if (
         job.photo_id !== photoId ||
         job.operation !== operation ||
+        job.generation_style !== generationStyle ||
         (job.edit_instruction ?? null) !== (editInstruction ?? null)
       ) {
         return {
@@ -201,6 +211,34 @@ export async function queueGeneration(
   }
   const originalAudit = auditRow.rubric as RubricJson;
   const mode: "main" | "extra" = photo.role === "main" ? "main" : "extra";
+
+  // Style authorization is server-derived from the persisted audit and photo
+  // role. recommendedMainStyle is intentionally display metadata only: it is
+  // never allowed to authorize a style that the availability policy rejects.
+  const availableStyles = availableGenerationStyles({
+    category: normalizeGenerationStyleCategory(originalAudit.detected_category),
+    role: photo.role === "main" ? "main" : "supporting",
+    supportingPhotoRole: originalAudit.supporting_photo_role,
+  });
+  const recommendedStyle =
+    photo.role === "main"
+      ? recommendedMainStyle(
+          normalizeGenerationStyleCategory(originalAudit.detected_category)
+        )
+      : null;
+  if (!availableStyles.includes(generationStyle)) {
+    logEvent("generate.style_rejected", {
+      userId,
+      photoId,
+      generationStyle,
+      recommendedStyle,
+    });
+    return {
+      ok: false,
+      code: "bad_request",
+      message: "This generation style is not available for this photo.",
+    };
+  }
 
   // 4. Server-side generation gates (mirror the UI, never trust it). AUTO
   //    generation (one-click improve / retry) cannot preserve the exact
@@ -318,6 +356,7 @@ export async function queueGeneration(
       status: "queued",
       stage: "queued",
       operation,
+      generation_style: generationStyle,
       edit_instruction: editInstruction ?? null,
       parent_job_id: baseJobId,
       unresolved_issues: unresolvedIssues ?? [],
@@ -344,6 +383,7 @@ export async function queueGeneration(
           job.user_id !== userId ||
           job.photo_id !== photoId ||
           job.operation !== operation ||
+          job.generation_style !== generationStyle ||
           (job.edit_instruction ?? null) !== (editInstruction ?? null)
         ) {
           return {
@@ -386,6 +426,6 @@ export async function queueGeneration(
   // route are the durable backstops.
   after(() => runQueuedGenerationOnce(job.id));
 
-  logEvent("generate.queued", { jobId: job.id, operation });
+  logEvent("generate.queued", { jobId: job.id, operation, generationStyle });
   return { ok: true, job, origin: "new" };
 }

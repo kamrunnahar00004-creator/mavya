@@ -21,6 +21,12 @@ import {
   type BulkSkipReason,
 } from "@/lib/bulk-fix";
 import type { RubricJson } from "@/lib/rubric";
+import {
+  availableGenerationStyles,
+  isGenerationStyle,
+  normalizeGenerationStyleCategory,
+  type GenerationStyle,
+} from "@/lib/generation-style";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -31,6 +37,7 @@ type BulkRequestRow = {
   user_id: string;
   product_id: string;
   idempotency_key: string;
+  generation_style: GenerationStyle;
   status: "processing" | "completed";
 };
 
@@ -89,10 +96,21 @@ async function loadRequestItems(
   return { items: (data as BulkItemRow[] | null) ?? [], error: error?.message ?? null };
 }
 
-function bulkResponse(requestId: string, items: readonly BulkItemRow[], status = 200) {
+function bulkResponse(
+  requestId: string,
+  generationStyle: GenerationStyle,
+  items: readonly BulkItemRow[],
+  status = 200
+) {
   const roster = storedRoster(items);
   return NextResponse.json(
-    { ok: true, requestId, summary: buildBulkSummary(roster), photos: roster },
+    {
+      ok: true,
+      requestId,
+      generationStyle,
+      summary: buildBulkSummary(roster),
+      photos: roster,
+    },
     { status }
   );
 }
@@ -137,6 +155,14 @@ export async function POST(req: NextRequest) {
   if (!productId || !idempotencyKey || idempotencyKey.length > 80) {
     return apiError("bad_request", "Missing productId or idempotencyKey.");
   }
+  const rawGenerationStyle = body.generationStyle;
+  if (rawGenerationStyle !== undefined && !isGenerationStyle(rawGenerationStyle)) {
+    return apiError("bad_request", "Invalid generation style.");
+  }
+  // Compatibility default for the already-live Fix-all caller. The future
+  // picker will send its choice explicitly.
+  const generationStyle: GenerationStyle =
+    rawGenerationStyle ?? "matches_original";
 
   const supabase = await createSupabaseServerClient();
   const admin = createSupabaseAdminClient();
@@ -145,7 +171,7 @@ export async function POST(req: NextRequest) {
   // return immediately; interrupted requests resume their pending items.
   const { data: existing, error: existingErr } = await admin
     .from("bulk_generation_requests")
-    .select("id, user_id, product_id, idempotency_key, status")
+    .select("id, user_id, product_id, idempotency_key, generation_style, status")
     .eq("user_id", user.id)
     .eq("idempotency_key", idempotencyKey)
     .maybeSingle();
@@ -155,10 +181,14 @@ export async function POST(req: NextRequest) {
   }
 
   let requestRow = existing as BulkRequestRow | null;
-  if (requestRow && requestRow.product_id !== productId) {
+  if (
+    requestRow &&
+    (requestRow.product_id !== productId ||
+      requestRow.generation_style !== generationStyle)
+  ) {
     return apiError(
       "idempotency_conflict",
-      "This request key was already used with a different product."
+      "This request key was already used with different parameters."
     );
   }
   if (requestRow?.status === "completed") {
@@ -170,7 +200,7 @@ export async function POST(req: NextRequest) {
       });
       return apiError("internal_error", "Could not load the Fix-all request. Try again.");
     }
-    return bulkResponse(requestRow.id, loaded.items);
+    return bulkResponse(requestRow.id, requestRow.generation_style, loaded.items);
   }
 
   if (!requestRow) {
@@ -275,12 +305,25 @@ export async function POST(req: NextRequest) {
         alreadyImproved: Boolean(photo.selected_generation_job_id),
         alreadyActive: activePhotoIds.has(photo.id),
       });
+      const styleAvailable = Boolean(
+        audit?.rubric &&
+          availableGenerationStyles({
+            category: normalizeGenerationStyleCategory(
+              audit.rubric.detected_category
+            ),
+            role: photo.role === "main" ? "main" : "supporting",
+            supportingPhotoRole: audit.rubric.supporting_photo_role,
+          }).includes(generationStyle)
+      );
+      const eligible = verdict.eligible && styleAvailable;
       return {
         photoId: photo.id,
         ordinal,
         generationKey: deriveBulkPhotoKey(user.id, productId, idempotencyKey, photo.id),
-        status: verdict.eligible ? "pending" : "skipped",
-        ...(!verdict.eligible ? { reason: verdict.reason } : {}),
+        status: eligible ? "pending" : "skipped",
+        ...(!eligible
+          ? { reason: verdict.eligible ? "not_generatable" : verdict.reason }
+          : {}),
       };
     });
 
@@ -290,6 +333,7 @@ export async function POST(req: NextRequest) {
         p_user: user.id,
         p_product: productId,
         p_idempotency_key: idempotencyKey,
+        p_generation_style: generationStyle,
         p_items: frozenItems,
       }
     );
@@ -302,15 +346,15 @@ export async function POST(req: NextRequest) {
       });
       return apiError("internal_error", "Could not save the Fix-all request. Try again.");
     }
-    if (freezeResult.product_conflict) {
+    if (freezeResult.product_conflict || freezeResult.style_conflict) {
       return apiError(
         "idempotency_conflict",
-        "This request key was already used with a different product."
+        "This request key was already used with different parameters."
       );
     }
     const { data: claimed, error: claimedErr } = await admin
       .from("bulk_generation_requests")
-      .select("id, user_id, product_id, idempotency_key, status")
+      .select("id, user_id, product_id, idempotency_key, generation_style, status")
       .eq("id", freezeResult.request_id)
       .single();
     if (claimedErr || !claimed) {
@@ -355,6 +399,7 @@ export async function POST(req: NextRequest) {
       photoId: item.photo_id,
       idempotencyKey: item.generation_key,
       operation: "improve",
+      generationStyle: requestRow.generation_style,
     });
     const entry = rosterEntryFromQueueOutcome(item.photo_id, outcome);
     const { error: itemErr } = await admin
@@ -405,5 +450,10 @@ export async function POST(req: NextRequest) {
     productId,
     summary: buildBulkSummary(roster),
   });
-  return bulkResponse(requestRow.id, final.items, existing ? 200 : 202);
+  return bulkResponse(
+    requestRow.id,
+    requestRow.generation_style,
+    final.items,
+    existing ? 200 : 202
+  );
 }

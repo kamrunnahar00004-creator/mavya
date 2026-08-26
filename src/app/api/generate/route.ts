@@ -24,6 +24,10 @@ import {
   type GenerationJobStatus,
 } from "@/lib/generation-types";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import {
+  isGenerationStyle,
+  type GenerationStyle,
+} from "@/lib/generation-style";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -148,6 +152,7 @@ async function jobPayload(
     stage: job.stage,
     outcome: job.outcome,
     operation: job.operation,
+    generationStyle: job.generation_style,
     errorCode: (job.error_code as ApiErrorCode | null) ?? null,
     // The executor runs detached from any request, so billing failures are
     // surfaced through the polled payload instead of a synchronous response.
@@ -219,7 +224,7 @@ export async function GET(req: NextRequest) {
  * flow. Results are persisted to storage and the job row survives refresh.
  *
  * Body (JSON): { photoId, idempotencyKey, editInstruction?, editSource?,
- *                previousJobId?, retry?, unresolvedIssues? }
+ *                previousJobId?, retry?, unresolvedIssues?, generationStyle? }
  */
 export async function POST(req: NextRequest) {
   const requestStartedAt = Date.now();
@@ -294,6 +299,14 @@ export async function POST(req: NextRequest) {
     : isRetry
     ? "retry"
     : "improve";
+  const rawGenerationStyle = body.generationStyle;
+  if (rawGenerationStyle !== undefined && !isGenerationStyle(rawGenerationStyle)) {
+    return apiError("bad_request", "Invalid generation style.");
+  }
+  // Compatibility default only. Recommendations remain UI metadata and must
+  // be sent explicitly once the picker ships.
+  const generationStyle: GenerationStyle =
+    rawGenerationStyle ?? "matches_original";
 
   // Charge the shared manual/bulk daily budget only after the request is
   // syntactically valid. Malformed edits must remain safe to correct and retry.
@@ -313,6 +326,7 @@ export async function POST(req: NextRequest) {
     photoId,
     idempotencyKey,
     operation,
+    generationStyle,
     editInstruction,
     previousJobId,
     unresolvedIssues,

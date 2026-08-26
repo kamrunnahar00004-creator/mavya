@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   availableGenerationStyles,
   GENERATION_STYLES,
+  isGenerationStyle,
+  normalizeGenerationStyleCategory,
   recommendedMainStyle,
   type GenerationStyle,
 } from "@/lib/generation-style";
@@ -10,6 +12,20 @@ import { CATEGORY_IDS, categoryById } from "@/lib/taxonomy";
 describe("generation-style: stable ids", () => {
   it("the three style ids match the Codex-approved architecture exactly", () => {
     expect(GENERATION_STYLES).toEqual(["matches_original", "studio", "lifestyle"]);
+  });
+
+  it("validates request values without coercion", () => {
+    for (const style of GENERATION_STYLES) expect(isGenerationStyle(style)).toBe(true);
+    for (const invalid of [undefined, null, "", "Studio", "model", 1]) {
+      expect(isGenerationStyle(invalid)).toBe(false);
+    }
+  });
+
+  it("normalizes unknown persisted categories to the conservative other policy", () => {
+    expect(normalizeGenerationStyleCategory("jewelry")).toBe("jewelry");
+    expect(normalizeGenerationStyleCategory("other")).toBe("other");
+    expect(normalizeGenerationStyleCategory("future_category")).toBe("other");
+    expect(normalizeGenerationStyleCategory(null)).toBe("other");
   });
 });
 

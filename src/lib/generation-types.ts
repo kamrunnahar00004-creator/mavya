@@ -1,6 +1,7 @@
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { ApiErrorCode } from "@/lib/errors";
+import type { GenerationStyle } from "@/lib/generation-style";
 
 /** Client-facing generation job states (mirrors generation_jobs.status). */
 export type GenerationJobStatus =
@@ -43,6 +44,8 @@ export type GenerationJobPayload = {
    *  does not survive a refresh/navigation) — edits always apply
    *  unconditionally regardless of the selection-lookup verdict. */
   operation?: "improve" | "edit" | "retry" | "refine";
+  /** Persisted style selected for the entire workflow. */
+  generationStyle?: GenerationStyle;
   errorCode: ApiErrorCode | null;
   message: string | null;
   /** Signed URL of the persisted result (completed jobs only). */

@@ -18,6 +18,7 @@ function job(overrides: Partial<JobRow> = {}): JobRow {
     status: "queued",
     stage: "queued",
     operation: "improve",
+    generation_style: "matches_original",
     edit_instruction: null,
     result_storage_path: null,
     candidate_rubric: null,

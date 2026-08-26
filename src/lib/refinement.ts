@@ -20,6 +20,7 @@ import { getEntitlement } from "@/lib/entitlements";
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
+import type { GenerationStyle } from "@/lib/generation-style";
 
 /**
  * Bounded background refinement (attempt 2, the single automatic follow-up of
@@ -48,6 +49,7 @@ export type WorkflowJobRow = {
   idempotency_key: string;
   status: GenerationJobStatus;
   operation: "improve" | "edit" | "retry" | "refine";
+  generation_style: GenerationStyle;
   edit_instruction: string | null;
   result_storage_path: string | null;
   candidate_rubric: RubricJson | null;
@@ -132,6 +134,7 @@ export async function maybeQueueRefinement(args: {
     | "photo_id"
     | "source_audit_id"
     | "operation"
+    | "generation_style"
     | "edit_instruction"
     | "workflow_id"
     | "attempt_number"
@@ -166,6 +169,7 @@ export async function maybeQueueRefinement(args: {
       status: "queued",
       stage: "queued",
       operation: "refine",
+      generation_style: job.generation_style,
       // Edit workflows carry the seller's instruction into attempt 2 so a
       // fresh-from-original retry can re-apply exactly what was asked.
       edit_instruction: job.edit_instruction ?? null,
@@ -252,7 +256,7 @@ export async function recoverStaleGenerationJob(
     .in("status", RECOVERABLE_ACTIVE_STATUSES)
     .lt("updated_at", cutoff)
     .select(
-      "id, user_id, product_id, photo_id, source_audit_id, operation, edit_instruction, workflow_id, attempt_number, allowance_key"
+      "id, user_id, product_id, photo_id, source_audit_id, operation, generation_style, edit_instruction, workflow_id, attempt_number, allowance_key"
     )
     .maybeSingle();
   if (!won) return null;
@@ -264,6 +268,7 @@ export async function recoverStaleGenerationJob(
     | "photo_id"
     | "source_audit_id"
     | "operation"
+    | "generation_style"
     | "edit_instruction"
     | "workflow_id"
     | "attempt_number"
