@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -51,6 +51,18 @@ export function EditPhotoModal({
   suggestedChips,
 }: Props) {
   const [text, setText] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // This modal can be opened from the style picker, whose own unmount
+  // cleanup unconditionally restores focus to the button that opened it --
+  // which sits BEHIND this modal. Without claiming focus here, that path
+  // leaves a keyboard user focused on the page behind an open dialog.
+  // Effects of a newly mounted component run after the cleanups of one
+  // unmounting in the same commit, so this reliably wins that race.
+  useEffect(() => {
+    textareaRef.current?.focus();
+  }, []);
+
   const safeSuggestedChips = suggestedChips?.filter(isEditChipSafeLabel);
   const exampleChips =
     safeSuggestedChips && safeSuggestedChips.length > 0
@@ -113,6 +125,7 @@ export function EditPhotoModal({
 
         <div className="flex items-end gap-2 rounded-[var(--radius-2xl)] bg-white p-2 shadow-[var(--shadow-soft-strong)]">
           <textarea
+            ref={textareaRef}
             value={text}
             onChange={(e) => setText(e.target.value.slice(0, MAX_EDIT_LEN))}
             placeholder="What do you want changed? e.g. use a cleaner background"
