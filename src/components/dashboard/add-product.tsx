@@ -691,16 +691,27 @@ export function AddProductCard({
           )}
         </div>
       ) : (
+        // Same overall shape as ProductCard (square media area + a footer
+        // text strip below it, same rounded-xl/white/border language) so
+        // this tile reads as one more card in the row, not a shorter,
+        // different-shaped placeholder next to real listings.
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="group flex aspect-square w-full flex-col items-center justify-center gap-3 rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] bg-white/40 text-[var(--color-ink-soft)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)] hover:shadow-[var(--shadow-soft)]"
+          className="group flex flex-col overflow-hidden rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] bg-white text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]"
         >
-          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
-            <Plus className="h-6 w-6" aria-hidden="true" />
+          <span className="flex aspect-square w-full items-center justify-center bg-[var(--color-page-deep)]/50 transition-colors duration-200 group-hover:bg-[var(--color-tint)]">
+            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
+              <Plus className="h-6 w-6" aria-hidden="true" />
+            </span>
           </span>
-          <span className="text-[13.5px] font-semibold text-[var(--color-ink-muted)] group-hover:text-[var(--color-primary)]">
-            Add product
+          <span className="flex flex-col gap-0.5 rounded-b-[var(--radius-xl)] bg-white px-3 py-2.5">
+            <span className="text-[14px] font-semibold text-[var(--color-ink)] group-hover:text-[var(--color-primary)]">
+              Add product
+            </span>
+            <span className="text-[11.5px] text-[var(--color-ink-muted)]">
+              Upload listing photos, get scored
+            </span>
           </span>
         </button>
       )}
