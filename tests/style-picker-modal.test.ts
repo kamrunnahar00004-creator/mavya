@@ -73,4 +73,21 @@ describe("StylePickerModal", () => {
     expect(source).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
     expect(source).toContain('from "lucide-react"');
   });
+
+  describe("AI Edit escape hatch", () => {
+    it("only renders for the single variant, and only when the caller supplies onEditInstead", () => {
+      expect(source).toContain('variant === "single" && onEditInstead');
+    });
+
+    it("reuses the exact existing AI Edit tooltip copy, not a rephrased duplicate", () => {
+      expect(source).toContain("AI Edit");
+      expect(source).toContain(
+        "Type what you want changed and AI redraws it.",
+      );
+    });
+
+    it("is a real dialog button, not outside the focus trap", () => {
+      expect(source).toContain("onClick={onEditInstead}");
+    });
+  });
 });

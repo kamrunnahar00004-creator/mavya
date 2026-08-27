@@ -1,6 +1,6 @@
 "use client";
 
-import { Aperture, Check, Image as ImageIcon, User, X } from "lucide-react";
+import { Aperture, Check, Image as ImageIcon, User, Wrench, X } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import {
@@ -50,6 +50,12 @@ type Props = {
   /** Category-specific wording is used for a single photo. Bulk may span
    *  categories, so it deliberately uses the neutral lifestyle label. */
   category?: GenerationStyleCategory;
+  /** A photo-specific, seller-written change instead of a preset style.
+   *  Only ever offered for a single photo (main or supporting) -- omit for
+   *  bulk, where one instruction can't sensibly apply to every photo. The
+   *  caller decides availability (e.g. never for a wrong-product photo) by
+   *  simply not passing this prop. */
+  onEditInstead?: () => void;
   onSelect: (style: GenerationStyle) => void;
   onClose: () => void;
 };
@@ -65,6 +71,7 @@ export function StylePickerModal({
   styles,
   recommended,
   category,
+  onEditInstead,
   onSelect,
   onClose,
 }: Props) {
@@ -178,6 +185,33 @@ export function StylePickerModal({
             );
           })}
         </div>
+
+        {variant === "single" && onEditInstead ? (
+          <>
+            <div className="my-4 h-px bg-[var(--color-border-soft)]" />
+            <button
+              type="button"
+              onClick={onEditInstead}
+              className={cn(
+                "flex min-h-[44px] w-full items-center gap-4 rounded-[var(--radius-xl)] border p-4 text-left transition-colors",
+                "border-[var(--color-border)] hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)]",
+                "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]",
+              )}
+            >
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-page-deep)] text-[var(--color-ink)]">
+                <Wrench className="h-5 w-5" aria-hidden="true" />
+              </span>
+              <span className="flex-1">
+                <span className="text-[15px] font-semibold text-[var(--color-ink)]">
+                  AI Edit
+                </span>
+                <span className="mt-0.5 block text-[13px] leading-snug text-[var(--color-ink-muted)]">
+                  Type what you want changed and AI redraws it.
+                </span>
+              </span>
+            </button>
+          </>
+        ) : null}
 
         {variant === "bulk" ? (
           <p className="mt-4 text-[12px] leading-snug text-[var(--color-ink-soft)]">

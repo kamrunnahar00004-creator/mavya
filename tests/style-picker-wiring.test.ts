@@ -77,4 +77,29 @@ describe("style picker wiring in ProductWorkspace", () => {
     expect(source).toContain("{stylePicker && (");
     expect(source).toContain("<StylePickerModal");
   });
+
+  describe("AI Edit escape hatch inside the picker", () => {
+    it("handleImprove offers onEditInstead, gated by the same wrongProduct check as AuditWorkspace's onEdit", () => {
+      expect(source).toContain(
+        'const wrongProduct = photo.supportingRole === "unrelated_or_wrong_product";',
+      );
+      expect(source).toContain("onEditInstead: wrongProduct");
+    });
+
+    it("selecting AI Edit closes the picker and bumps editRequestToken, never fires a generation request", () => {
+      expect(source).toContain("const [editRequestToken, setEditRequestToken] = useState(0);");
+      expect(source).toContain("setStylePicker(null);\n            setEditRequestToken((t) => t + 1);");
+    });
+
+    it("Fix all never offers AI Edit -- one instruction can't apply to a whole batch", () => {
+      const bulkPickerStart = source.indexOf('variant: "bulk",');
+      const bulkPickerEnd = source.indexOf("})", bulkPickerStart);
+      const bulkPickerBlock = source.slice(bulkPickerStart, bulkPickerEnd);
+      expect(bulkPickerBlock).not.toContain("onEditInstead");
+    });
+
+    it("editRequestToken reaches AuditWorkspace so it can open its own edit modal from outside", () => {
+      expect(source).toContain("requestEditOpen={editRequestToken}");
+    });
+  });
 });

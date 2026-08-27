@@ -137,6 +137,13 @@ type Props = {
    *  above this photo-keyed workspace so switching photos cannot erase it. */
   checkedBuyerQuestionIds?: ReadonlySet<string>;
   onToggleBuyerQuestion?: (questionId: string) => void;
+  /** Bump this (e.g. a counter incremented by the parent) to imperatively
+   *  open the edit modal from outside -- the style picker's "AI Edit"
+   *  option lives in ProductWorkspace, not here, but editModalOpen is this
+   *  component's own state. Ignored on mount and whenever the value repeats
+   *  (only a genuine change opens the modal), so passing 0 or leaving this
+   *  undefined never opens anything by itself. */
+  requestEditOpen?: number;
 };
 
 export function AuditWorkspace({
@@ -174,10 +181,23 @@ export function AuditWorkspace({
   coverageState,
   checkedBuyerQuestionIds,
   onToggleBuyerQuestion,
+  requestEditOpen,
 }: Props) {
   const isExtra = panelMode === "extra";
   const [revealed, setRevealed] = useState(!animate);
   const [editModalOpen, setEditModalOpen] = useState(false);
+  // Skips the initial render (so an initial 0/undefined never auto-opens
+  // the modal) and only opens on a genuine subsequent change.
+  const prevRequestEditOpen = useRef(requestEditOpen);
+  useEffect(() => {
+    if (
+      requestEditOpen !== undefined &&
+      requestEditOpen !== prevRequestEditOpen.current
+    ) {
+      setEditModalOpen(true);
+    }
+    prevRequestEditOpen.current = requestEditOpen;
+  }, [requestEditOpen]);
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);

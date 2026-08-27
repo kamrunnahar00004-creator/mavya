@@ -1268,9 +1268,12 @@ export function ProductWorkspace({
   // Seller explicitly chooses "Use improved photo" or "Keep original" via main UI.
 
   // One-click fix always opens the style picker first -- matches_original,
-  // studio, and lifestyle are never silently chosen for the seller. AI Edit
-  // (handleEdit) is unchanged: the seller already describes the exact
-  // change in words there, so no style popup applies to that flow.
+  // studio, and lifestyle are never silently chosen for the seller. The
+  // picker also offers "AI Edit" as an escape hatch to the same free-text
+  // flow (handleEdit) for a seller who wants to describe their own change
+  // instead of picking a preset; selecting it closes the picker and opens
+  // AuditWorkspace's existing edit modal via editRequestToken, it does not
+  // duplicate that modal or its wiring.
   type StylePickerState = {
     variant: "single" | "bulk";
     styles: GenerationStyle[];
@@ -1280,9 +1283,17 @@ export function ProductWorkspace({
      *  falls back to the modal's neutral wording since a batch can span
      *  categories. */
     category?: GenerationStyleCategory;
+    /** Single-photo variant only, and only when AI Edit is actually
+     *  available for this photo (mirrors the same wrongProduct gate used
+     *  for the AuditWorkspace onEdit prop below). */
+    onEditInstead?: () => void;
     onSelect: (style: GenerationStyle) => void;
   };
   const [stylePicker, setStylePicker] = useState<StylePickerState | null>(null);
+  // Bumped to imperatively open AuditWorkspace's own edit modal from outside
+  // (the picker lives in this component, the modal's open state lives
+  // inside AuditWorkspace) -- see requestEditOpen's doc comment there.
+  const [editRequestToken, setEditRequestToken] = useState(0);
 
   const handleImprove = useCallback(() => {
     const photo = photosRef.current.find((p) => p.id === activeId);
@@ -1294,11 +1305,18 @@ export function ProductWorkspace({
       supportingPhotoRole: photo.rubric.supporting_photo_role,
     });
     if (styles.length === 0) return;
+    const wrongProduct = photo.supportingRole === "unrelated_or_wrong_product";
     setStylePicker({
       variant: "single",
       styles,
       recommended: photo.kind === "main" ? recommendedMainStyle(category) : null,
       category,
+      onEditInstead: wrongProduct
+        ? undefined
+        : () => {
+            setStylePicker(null);
+            setEditRequestToken((t) => t + 1);
+          },
       onSelect: (style) => {
         setStylePicker(null);
         void runImprove(false, undefined, undefined, style);
@@ -1928,6 +1946,7 @@ export function ProductWorkspace({
         checkedBuyerQuestionIds={checkedBuyerQuestionIds}
         onToggleBuyerQuestion={handleToggleBuyerQuestion}
         animate
+        requestEditOpen={editRequestToken}
       />
       {/* Version strip hidden: seller sees one current improved preview, not 1/2/3 picker. */}
       {/* Generation history preserved in database for analytics and debugging. */}
@@ -1940,6 +1959,7 @@ export function ProductWorkspace({
           styles={stylePicker.styles}
           recommended={stylePicker.recommended}
           category={stylePicker.category}
+          onEditInstead={stylePicker.onEditInstead}
           onSelect={stylePicker.onSelect}
           onClose={() => setStylePicker(null)}
         />
