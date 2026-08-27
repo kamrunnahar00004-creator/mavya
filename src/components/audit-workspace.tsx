@@ -276,12 +276,17 @@ export function AuditWorkspace({
     </button>
   ) : null;
 
-  const scoreAnotherButton = (
+  // Hidden per founder decision (2026-08-27): redundant with the dashboard,
+  // which already gets a seller back to score another photo. Logic/wiring
+  // (onCta, PrimaryButton) kept intact, not deleted, for a smarter future
+  // version of this CTA -- SHOW_SCORE_ANOTHER_BUTTON is the one switch.
+  const SHOW_SCORE_ANOTHER_BUTTON = false;
+  const scoreAnotherButton = SHOW_SCORE_ANOTHER_BUTTON ? (
     <PrimaryButton onClick={onCta} variant="primary">
       Score another photo
       <ArrowRight className="h-4 w-4" aria-hidden="true" />
     </PrimaryButton>
-  );
+  ) : null;
 
   // A NEWLY ARRIVED preview must PRESENT itself: after a refresh mid-flow the
   // workspace mounts locked, and the polled attempt-1 result used to appear

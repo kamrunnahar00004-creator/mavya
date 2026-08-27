@@ -51,6 +51,11 @@ import {
   shouldHydrateCompletedRating,
 } from "@/lib/rating-poll";
 
+// Hidden per founder decision (2026-08-27): "Fix X photos" (bulk one-click
+// fix) deferred until it can be built smarter. Flip to true to bring it
+// back -- all the underlying logic stays live, only the button is gated.
+const SHOW_FIX_ALL_BUTTON = false;
+
 export type InitialJob = {
   id: string;
   status: GenerationJobStatus;
@@ -1847,7 +1852,13 @@ export function ProductWorkspace({
           e.target.value = "";
         }}
       />
-      {fixAllEligiblePhotos.length >= 2 && fixAllAvailableStyles.length > 0 && (
+      {/* Hidden per founder decision (2026-08-27): "Fix X photos" deferred
+          until it can be built smarter. Logic/wiring (fixAllEligiblePhotos,
+          fixAllAvailableStyles, handleFixAll) kept intact, not deleted --
+          SHOW_FIX_ALL_BUTTON is the one switch. */}
+      {SHOW_FIX_ALL_BUTTON &&
+        fixAllEligiblePhotos.length >= 2 &&
+        fixAllAvailableStyles.length > 0 && (
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-6 pt-4">
           <button
             type="button"

@@ -44,6 +44,28 @@ describe("Fix-all UI wiring (product-workspace.tsx)", () => {
     expect(workspace).toContain("fixAllEligiblePhotos.length >= 2");
   });
 
+  it("Fix all is hidden by founder decision (2026-08-27), logic kept live behind one switch", () => {
+    expect(workspace).toContain("const SHOW_FIX_ALL_BUTTON = false;");
+    expect(workspace).toContain("{SHOW_FIX_ALL_BUTTON &&");
+    // The eligibility/style logic itself must still be intact, not deleted --
+    // only the render is gated, so flipping the switch is the only change
+    // needed to bring the button back.
+    expect(workspace).toContain("const fixAllEligiblePhotos = useMemo(");
+    expect(workspace).toContain("const fixAllAvailableStyles = useMemo(");
+    expect(workspace).toContain("const handleFixAll = useCallback(");
+  });
+
+  it("Score another photo is hidden by the same founder decision, redundant with the dashboard", () => {
+    expect(auditWorkspace).toContain(
+      "const SHOW_SCORE_ANOTHER_BUTTON = false;"
+    );
+    expect(auditWorkspace).toContain(
+      "const scoreAnotherButton = SHOW_SCORE_ANOTHER_BUTTON ? ("
+    );
+    // onCta wiring stays live for a future re-enable.
+    expect(auditWorkspace).toContain("<PrimaryButton onClick={onCta}");
+  });
+
   it("the button's own label is honest -- never claims every photo will be fixed", () => {
     expect(workspace).toContain("`Fix ${fixAllEligiblePhotos.length} photos`");
     expect(workspace).toContain('"Starting fixes…"');
