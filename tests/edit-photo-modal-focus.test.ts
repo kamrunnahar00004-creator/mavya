@@ -14,7 +14,11 @@ const picker = readFileSync(
 describe("EditPhotoModal claims focus on open", () => {
   it("focuses its textarea on mount", () => {
     expect(modal).toContain("const textareaRef = useRef<HTMLTextAreaElement>(null);");
+    expect(modal).toContain(
+      "const previouslyFocused = document.activeElement as HTMLElement | null;",
+    );
     expect(modal).toContain("textareaRef.current?.focus();");
+    expect(modal).toContain("return () => previouslyFocused?.focus();");
     expect(modal).toContain("ref={textareaRef}");
   });
 

@@ -6,6 +6,10 @@ const source = readFileSync(
   path.resolve("src/components/style-picker-modal.tsx"),
   "utf8",
 );
+const auditWorkspace = readFileSync(
+  path.resolve("src/components/audit-workspace.tsx"),
+  "utf8",
+);
 
 describe("StylePickerModal", () => {
   it("imports only the client-safe policy module, never the server prompt module", () => {
@@ -46,6 +50,13 @@ describe("StylePickerModal", () => {
     expect(source).toContain("onClick={onClose}");
   });
 
+  it("does not reset focus when an inline onClose callback changes identity", () => {
+    expect(source).toContain("const onCloseRef = useRef(onClose);");
+    expect(source).toContain("onCloseRef.current();");
+    expect(source).toContain("}, []);");
+    expect(source).not.toContain("}, [onClose]);\n\n  return (");
+  });
+
   it("does not repeat the detail-review warning -- it already lives on every result screen", () => {
     // CLAUDE.md rule 4 ("Review labels, text, patterns, personalization,
     // measurements, colors, and included pieces") is satisfied by the
@@ -55,6 +66,9 @@ describe("StylePickerModal", () => {
     expect(source).not.toContain("Review labels, text, patterns");
     expect(source).not.toContain("Every style keeps the real product");
     expect(source).toContain("Same automatic fixes, different presentation.");
+    expect(auditWorkspace).toContain(
+      "Review labels, text,\n                  patterns, personalization, measurements, colors, and included pieces",
+    );
   });
 
   it("uses the app's existing design tokens, not new ad-hoc colors", () => {

@@ -714,7 +714,9 @@ export function AuditWorkspace({
                   </span>
                 </span>
                 <span className="text-[var(--color-ink-soft)]">
-                  AI-improved preview, saved to this product. Label text and small patterns may differ. Do not publish unless they match your physical product.
+                  AI-improved preview, saved to this product. Review labels, text,
+                  patterns, personalization, measurements, colors, and included pieces
+                  before using this photo.
                 </span>
               </div>
             )}

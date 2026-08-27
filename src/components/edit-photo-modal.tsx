@@ -60,7 +60,9 @@ export function EditPhotoModal({
   // Effects of a newly mounted component run after the cleanups of one
   // unmounting in the same commit, so this reliably wins that race.
   useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     textareaRef.current?.focus();
+    return () => previouslyFocused?.focus();
   }, []);
 
   const safeSuggestedChips = suggestedChips?.filter(isEditChipSafeLabel);
@@ -156,7 +158,8 @@ export function EditPhotoModal({
         </div>
         <p className="mt-1.5 px-1 text-[12px] text-white/70">
           Mavya aims to preserve your product while applying your edit. Review labels,
-          patterns, colors, and details before using the result.
+          text, patterns, personalization, measurements, colors, and included pieces
+          before using the result.
         </p>
       </form>
     </div>
