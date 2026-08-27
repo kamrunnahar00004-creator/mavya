@@ -186,18 +186,23 @@ export function AuditWorkspace({
   const isExtra = panelMode === "extra";
   const [revealed, setRevealed] = useState(!animate);
   const [editModalOpen, setEditModalOpen] = useState(false);
-  // Skips the initial render (so an initial 0/undefined never auto-opens
-  // the modal) and only opens on a genuine subsequent change.
-  const prevRequestEditOpen = useRef(requestEditOpen);
-  useEffect(() => {
-    if (
-      requestEditOpen !== undefined &&
-      requestEditOpen !== prevRequestEditOpen.current
-    ) {
+  // Adjusted DURING render (React's documented pattern for this), not in a
+  // useEffect: an effect only runs after the browser has already painted
+  // the picker-closed/modal-still-closed frame, which is exactly the
+  // one-frame flash a seller reported seeing between "AI Edit" closing the
+  // picker and the edit modal appearing. Comparing against state (not a
+  // ref) and calling setState here makes React discard this render and
+  // redo it before anything commits to the DOM, so the modal opens in the
+  // SAME paint the picker disappears in -- no visible gap. Initializing
+  // handledRequestEditOpen to requestEditOpen's own starting value is what
+  // skips the initial mount (they're equal, so nothing opens on first render).
+  const [handledRequestEditOpen, setHandledRequestEditOpen] = useState(requestEditOpen);
+  if (requestEditOpen !== handledRequestEditOpen) {
+    setHandledRequestEditOpen(requestEditOpen);
+    if (requestEditOpen !== undefined) {
       setEditModalOpen(true);
     }
-    prevRequestEditOpen.current = requestEditOpen;
-  }, [requestEditOpen]);
+  }
   const [versionMenuOpen, setVersionMenuOpen] = useState(false);
   const [improveElapsed, setImproveElapsed] = useState(0);
   const [improveStatusIdx, setImproveStatusIdx] = useState(0);
