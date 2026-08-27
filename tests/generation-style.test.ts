@@ -61,6 +61,17 @@ describe("generation-style: category-aware picker labels", () => {
   it("uses neutral wording when a bulk request has no single category", () => {
     expect(generationStyleLabel("lifestyle")).toBe("Model / Lifestyle");
   });
+
+  it("has specific lifestyle labels for every category that can offer lifestyle", () => {
+    for (const category of CATEGORY_IDS) {
+      const styles = availableGenerationStyles({ category, role: "main" });
+      if (styles.includes("lifestyle")) {
+        expect(generationStyleLabel("lifestyle", category)).not.toBe(
+          "Model / Lifestyle",
+        );
+      }
+    }
+  });
 });
 
 describe("generation-style: honest bulk availability", () => {

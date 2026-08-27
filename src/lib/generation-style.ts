@@ -78,15 +78,13 @@ export function generationStyleLabel(
 ): string {
   if (style === "matches_original") return "Matches Original";
   if (style === "studio") return "Studio";
-  if (category === "jewelry" || category === "apparel") {
-    return "Model wearing it";
-  }
-  if (category === "bags") return "Model carrying it";
-  if (category === "wall_art" || category === "home_decor") {
-    return "Styled room";
-  }
-  if (category === "mugs" || category === "candles") {
-    return "Lifestyle scene";
+  if (
+    category &&
+    category !== "other" &&
+    isLifestyleAllowedCategory(category)
+  ) {
+    const label = LIFESTYLE_LABEL_BY_CATEGORY[category];
+    if (label) return label;
   }
   return "Model / Lifestyle";
 }
@@ -146,7 +144,7 @@ const BLOCKED_SUPPORTING_ROLES: ReadonlySet<SupportingPhotoRole> = new Set([
  * defaulted to excluded/conservative). Every digital category is excluded
  * -- lifestyle/studio styling does not apply to screenshots and mockups.
  */
-const LIFESTYLE_ALLOWED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
+const LIFESTYLE_ALLOWED_CATEGORY_IDS = [
   "jewelry", // taxonomy.ts: "a clean model-worn close-up is acceptable when it clearly improves comprehension"
   "apparel", // worn by definition
   "bags", // taxonomy.ts scoring note: "scale (on-shoulder or beside a known object)"
@@ -154,7 +152,31 @@ const LIFESTYLE_ALLOWED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
   "home_decor", // taxonomy.ts: "believable room context if it aids scale" -- already endorsed
   "mugs", // taxonomy.ts: "...lifestyle props unless explicitly requested" -- selecting this style IS that explicit request
   "candles", // same "unless explicitly requested" carve-out as mugs
-] as CanonicalCategory[]);
+] as const satisfies readonly CanonicalCategory[];
+
+type LifestyleAllowedCategory = (typeof LIFESTYLE_ALLOWED_CATEGORY_IDS)[number];
+
+const LIFESTYLE_ALLOWED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set(
+  LIFESTYLE_ALLOWED_CATEGORY_IDS,
+);
+
+const LIFESTYLE_LABEL_BY_CATEGORY = {
+  jewelry: "Model wearing it",
+  apparel: "Model wearing it",
+  bags: "Model carrying it",
+  wall_art: "Styled room",
+  home_decor: "Styled room",
+  mugs: "Lifestyle scene",
+  candles: "Lifestyle scene",
+} as const satisfies Record<LifestyleAllowedCategory, string>;
+
+function isLifestyleAllowedCategory(
+  category: CanonicalCategory,
+): category is LifestyleAllowedCategory {
+  return (LIFESTYLE_ALLOWED_CATEGORY_IDS as readonly CanonicalCategory[]).includes(
+    category,
+  );
+}
 
 /** Lifestyle is available for these categories, but is not the safest first
  * choice for a cold main-photo fix. Model-worn context is the clearest default

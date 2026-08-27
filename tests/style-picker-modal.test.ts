@@ -48,8 +48,26 @@ describe("StylePickerModal", () => {
 
   it("does not promise perfect product preservation", () => {
     expect(source).toContain("Mavya aims to preserve the real product");
-    expect(source).toContain("Review every result before using it");
+    expect(source).toContain("Review labels, text, patterns");
+    expect(source).toContain("measurements, colors, and included pieces");
     expect(source).not.toContain("Every style keeps the real product");
+  });
+
+  it("matches CLAUDE.md's exact required review-warning field list", () => {
+    // Rule 4: "Always warn sellers to verify labels, text, patterns,
+    // personalization, measurements, colors, and included pieces on
+    // AI-improved photos." -- every field must be present, not a subset.
+    for (const field of [
+      "labels",
+      "text",
+      "patterns",
+      "personalization",
+      "measurements",
+      "colors",
+      "included pieces",
+    ]) {
+      expect(source).toContain(field);
+    }
   });
 
   it("uses the app's existing design tokens, not new ad-hoc colors", () => {

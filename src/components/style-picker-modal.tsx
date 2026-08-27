@@ -133,7 +133,9 @@ export function StylePickerModal({
         </div>
         <p className="mb-4 text-[13px] text-[var(--color-ink-muted)]">
           The seller decides. Mavya aims to preserve the real product while
-          changing its presentation. Review every result before using it.
+          changing its presentation. Review labels, text, patterns,
+          personalization, measurements, colors, and included pieces before
+          using it.
         </p>
 
         <div className="flex flex-col gap-2">
