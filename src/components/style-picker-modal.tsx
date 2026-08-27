@@ -116,29 +116,28 @@ export function StylePickerModal({
         ref={dialogRef}
         role="document"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-[420px] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-soft-strong)]"
+        className="w-full max-w-[480px] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-6 shadow-[var(--shadow-soft-strong)]"
       >
-        <div className="mb-1 flex items-center justify-between">
-          <h2 className="text-[16px] font-semibold text-[var(--color-ink)]">
-            Choose a style
-          </h2>
+        <div className="mb-5 flex items-start justify-between">
+          <div>
+            <h2 className="text-[19px] font-semibold text-[var(--color-ink)]">
+              Choose a style
+            </h2>
+            <p className="mt-0.5 text-[13px] text-[var(--color-ink-muted)]">
+              Same automatic fixes, different presentation.
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Cancel"
-            className="inline-flex h-9 w-9 items-center justify-center rounded-full text-[var(--color-ink-soft)] hover:bg-[var(--color-page-deep)]"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--color-ink-soft)] hover:bg-[var(--color-page-deep)]"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
         </div>
-        <p className="mb-4 text-[13px] text-[var(--color-ink-muted)]">
-          The seller decides. Mavya aims to preserve the real product while
-          changing its presentation. Review labels, text, patterns,
-          personalization, measurements, colors, and included pieces before
-          using it.
-        </p>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-3">
           {styles.map((style) => {
             const copy = STYLE_COPY[style];
             const label = generationStyleLabel(style, category);
@@ -151,27 +150,27 @@ export function StylePickerModal({
                 type="button"
                 onClick={() => onSelect(style)}
                 className={cn(
-                  "flex min-h-[44px] items-start gap-3 rounded-[var(--radius-lg)] border p-3 text-left transition-colors",
+                  "flex min-h-[44px] items-center gap-4 rounded-[var(--radius-xl)] border p-4 text-left transition-colors",
                   "border-[var(--color-border)] hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)]",
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]",
                 )}
               >
-                <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-page-deep)] text-[var(--color-neutral-dark)]">
-                  <Icon className="h-[18px] w-[18px]" aria-hidden="true" />
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary-hover)]">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span className="flex-1">
                   <span className="flex flex-wrap items-center gap-2">
-                    <span className="text-[14px] font-semibold text-[var(--color-ink)]">
+                    <span className="text-[15px] font-semibold text-[var(--color-ink)]">
                       {label}
                     </span>
                     {isRecommended ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-hover)]">
+                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[11px] font-semibold text-white">
                         <Check className="h-3 w-3" aria-hidden="true" />
                         Recommended
                       </span>
                     ) : null}
                   </span>
-                  <span className="mt-0.5 block text-[12.5px] leading-snug text-[var(--color-ink-muted)]">
+                  <span className="mt-0.5 block text-[13px] leading-snug text-[var(--color-ink-muted)]">
                     {copy.description}
                   </span>
                 </span>
@@ -181,7 +180,7 @@ export function StylePickerModal({
         </div>
 
         {variant === "bulk" ? (
-          <p className="mt-3 text-[12px] leading-snug text-[var(--color-ink-soft)]">
+          <p className="mt-4 text-[12px] leading-snug text-[var(--color-ink-soft)]">
             Your choice applies to every eligible photo.
           </p>
         ) : null}

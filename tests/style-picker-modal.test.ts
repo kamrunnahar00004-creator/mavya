@@ -46,28 +46,15 @@ describe("StylePickerModal", () => {
     expect(source).toContain("onClick={onClose}");
   });
 
-  it("does not promise perfect product preservation", () => {
-    expect(source).toContain("Mavya aims to preserve the real product");
-    expect(source).toContain("Review labels, text, patterns");
-    expect(source).toContain("measurements, colors, and included pieces");
+  it("does not repeat the detail-review warning -- it already lives on every result screen", () => {
+    // CLAUDE.md rule 4 ("Review labels, text, patterns, personalization,
+    // measurements, colors, and included pieces") is satisfied by the
+    // existing warning in audit-workspace.tsx, shown on every AI-improved
+    // result. Repeating the full list here (founder feedback, 2026-08-27)
+    // just made the popup wordy without adding new information.
+    expect(source).not.toContain("Review labels, text, patterns");
     expect(source).not.toContain("Every style keeps the real product");
-  });
-
-  it("matches CLAUDE.md's exact required review-warning field list", () => {
-    // Rule 4: "Always warn sellers to verify labels, text, patterns,
-    // personalization, measurements, colors, and included pieces on
-    // AI-improved photos." -- every field must be present, not a subset.
-    for (const field of [
-      "labels",
-      "text",
-      "patterns",
-      "personalization",
-      "measurements",
-      "colors",
-      "included pieces",
-    ]) {
-      expect(source).toContain(field);
-    }
+    expect(source).toContain("Same automatic fixes, different presentation.");
   });
 
   it("uses the app's existing design tokens, not new ad-hoc colors", () => {
