@@ -5,7 +5,15 @@ import { useRouter } from "next/navigation";
 import { AuditWorkspace } from "@/components/audit-workspace";
 import { AnalyzingState } from "@/components/analyzing-state";
 import { FeedbackNudge } from "@/components/feedback-nudge";
+import { StylePickerModal } from "@/components/style-picker-modal";
 import type { SlotView } from "@/components/photo-slot-strip";
+import {
+  availableGenerationStyles,
+  normalizeGenerationStyleCategory,
+  recommendedMainStyle,
+  GENERATION_STYLES,
+  type GenerationStyle,
+} from "@/lib/generation-style";
 import {
   rubricToAuditResult,
   rubricToDemoState,
@@ -1123,7 +1131,8 @@ export function ProductWorkspace({
     async (
       retry: boolean,
       editInstruction?: string,
-      editSource: "original" | "preview" = "preview"
+      editSource: "original" | "preview" = "preview",
+      generationStyle?: GenerationStyle
     ) => {
       const photo = photosRef.current.find((p) => p.id === activeId);
       if (!photo || photo.improveStatus === "generating") return;
@@ -1180,6 +1189,7 @@ export function ProductWorkspace({
             retry,
             previousJobId: useBase ? photo.lastJobId : undefined,
             unresolvedIssues: retry && !isEdit ? photo.unresolved ?? undefined : undefined,
+            generationStyle,
           }),
         });
         const payload = (await res.json().catch(() => null)) as
@@ -1251,7 +1261,38 @@ export function ProductWorkspace({
   // Version selection UI hidden: server-side score-based selection handles auto-replacement.
   // Seller explicitly chooses "Use improved photo" or "Keep original" via main UI.
 
-  const handleImprove = useCallback(() => runImprove(false), [runImprove]);
+  // One-click fix always opens the style picker first -- matches_original,
+  // studio, and lifestyle are never silently chosen for the seller. AI Edit
+  // (handleEdit) is unchanged: the seller already describes the exact
+  // change in words there, so no style popup applies to that flow.
+  type StylePickerState = {
+    variant: "single" | "bulk";
+    styles: GenerationStyle[];
+    recommended: GenerationStyle | null;
+    onSelect: (style: GenerationStyle) => void;
+  };
+  const [stylePicker, setStylePicker] = useState<StylePickerState | null>(null);
+
+  const handleImprove = useCallback(() => {
+    const photo = photosRef.current.find((p) => p.id === activeId);
+    if (!photo || !photo.rubric) return;
+    const category = normalizeGenerationStyleCategory(photo.rubric.detected_category);
+    const styles = availableGenerationStyles({
+      category,
+      role: photo.kind,
+      supportingPhotoRole: photo.rubric.supporting_photo_role,
+    });
+    if (styles.length === 0) return;
+    setStylePicker({
+      variant: "single",
+      styles,
+      recommended: photo.kind === "main" ? recommendedMainStyle(category) : null,
+      onSelect: (style) => {
+        setStylePicker(null);
+        void runImprove(false, undefined, undefined, style);
+      },
+    });
+  }, [activeId, runImprove]);
   const handleEdit = useCallback(
     (instruction: string, source: "original" | "preview") =>
       runImprove(false, instruction, source),
@@ -1376,11 +1417,31 @@ export function ProductWorkspace({
       ),
     [photos]
   );
+  // Union of every eligible photo's available styles, in canonical order --
+  // a style only appears here if at least one photo would actually accept
+  // it, so the bulk picker never offers a choice that skips every photo.
+  const fixAllAvailableStyles = useMemo(() => {
+    const union = new Set<GenerationStyle>();
+    for (const p of fixAllEligiblePhotos) {
+      if (!p.rubric) continue;
+      const category = normalizeGenerationStyleCategory(p.rubric.detected_category);
+      for (const style of availableGenerationStyles({
+        category,
+        role: p.kind,
+        supportingPhotoRole: p.rubric.supporting_photo_role,
+      })) {
+        union.add(style);
+      }
+    }
+    union.add("matches_original"); // always the safe baseline, even if the loop above found nothing
+    return GENERATION_STYLES.filter((style) => union.has(style));
+  }, [fixAllEligiblePhotos]);
+
   const [bulkFixBusy, setBulkFixBusy] = useState(false);
   const bulkFixBusyRef = useRef(false);
   const bulkFixKeyRef = useRef<{ productId: string; key: string } | null>(null);
 
-  const handleFixAll = useCallback(async () => {
+  const handleFixAll = useCallback(async (generationStyle: GenerationStyle) => {
     if (bulkFixBusyRef.current) return;
     bulkFixBusyRef.current = true;
     setBulkFixBusy(true);
@@ -1434,7 +1495,7 @@ export function ProductWorkspace({
       const res = await fetch("/api/generate/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, idempotencyKey }),
+        body: JSON.stringify({ productId, idempotencyKey, generationStyle }),
       });
       const data: unknown = await res.json().catch(() => null);
 
@@ -1781,7 +1842,17 @@ export function ProductWorkspace({
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-6 pt-4">
           <button
             type="button"
-            onClick={() => void handleFixAll()}
+            onClick={() =>
+              setStylePicker({
+                variant: "bulk",
+                styles: fixAllAvailableStyles,
+                recommended: null,
+                onSelect: (style) => {
+                  setStylePicker(null);
+                  void handleFixAll(style);
+                },
+              })
+            }
             disabled={bulkFixBusy}
             className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-default disabled:opacity-70"
           >
@@ -1842,6 +1913,15 @@ export function ProductWorkspace({
       {/* Generation history preserved in database for analytics and debugging. */}
       {workflowSettled && feedbackWorkflowId && (
         <FeedbackNudge key={feedbackWorkflowId} workflowId={feedbackWorkflowId} />
+      )}
+      {stylePicker && (
+        <StylePickerModal
+          variant={stylePicker.variant}
+          styles={stylePicker.styles}
+          recommended={stylePicker.recommended}
+          onSelect={stylePicker.onSelect}
+          onClose={() => setStylePicker(null)}
+        />
       )}
     </>
   );
