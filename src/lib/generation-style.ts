@@ -44,7 +44,7 @@ export function isGenerationStyle(value: unknown): value is GenerationStyle {
 
 /** Conservative bridge from persisted/model strings into the policy type. */
 export function normalizeGenerationStyleCategory(
-  value: unknown
+  value: unknown,
 ): GenerationStyleCategory {
   if (value === "other") return "other";
   return typeof value === "string" &&
@@ -55,8 +55,9 @@ export function normalizeGenerationStyleCategory(
 
 export type GenerationStyleOption = {
   id: GenerationStyle;
-  /** Category-aware display label, e.g. "Model / Lifestyle" for jewelry vs
-   *  "Styled scene" for candles. Populated by the caller (labelForStyle),
+  /** Category-aware display label, e.g. "Model wearing it" for jewelry vs
+   *  "Lifestyle scene" for candles. Populated by the caller
+   *  (generationStyleLabel),
    *  not hardcoded per option here, so the same availability data can
    *  drive different wording without duplicating the matrix. */
   label: string;
@@ -66,6 +67,39 @@ export type GenerationStyleOption = {
    *  supporting/bulk popup: never, per the approved architecture). */
   recommendedForMain: boolean;
 };
+
+/**
+ * Client-safe picker label. Persisted ids stay stable while seller-facing
+ * wording can describe the category-appropriate treatment honestly.
+ */
+export function generationStyleLabel(
+  style: GenerationStyle,
+  category?: GenerationStyleCategory,
+): string {
+  if (style === "matches_original") return "Matches Original";
+  if (style === "studio") return "Studio";
+  if (category === "jewelry" || category === "apparel") {
+    return "Model wearing it";
+  }
+  if (category === "bags") return "Model carrying it";
+  if (category === "wall_art" || category === "home_decor") {
+    return "Styled room";
+  }
+  if (category === "mugs" || category === "candles") {
+    return "Lifestyle scene";
+  }
+  return "Model / Lifestyle";
+}
+
+/** Canonically ordered styles supported by every photo in a bulk roster. */
+export function sharedGenerationStyles(
+  styleGroups: readonly (readonly GenerationStyle[])[],
+): GenerationStyle[] {
+  if (styleGroups.length === 0) return [];
+  return GENERATION_STYLES.filter((style) =>
+    styleGroups.every((group) => group.includes(style)),
+  );
+}
 
 /**
  * Informational/document-style supporting roles where a studio or
@@ -125,11 +159,8 @@ const LIFESTYLE_ALLOWED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
 /** Lifestyle is available for these categories, but is not the safest first
  * choice for a cold main-photo fix. Model-worn context is the clearest default
  * only where fit/scale is central to understanding the product. */
-const LIFESTYLE_RECOMMENDED_CATEGORIES: ReadonlySet<CanonicalCategory> = new Set([
-  "jewelry",
-  "apparel",
-  "bags",
-] as CanonicalCategory[]);
+const LIFESTYLE_RECOMMENDED_CATEGORIES: ReadonlySet<CanonicalCategory> =
+  new Set(["jewelry", "apparel", "bags"] as CanonicalCategory[]);
 
 /** Supporting photos must preserve their existing job. Studio treatment is
  * limited to roles where a cleaner controlled presentation does not replace
@@ -148,7 +179,7 @@ const LIFESTYLE_SUPPORTING_ROLES: ReadonlySet<SupportingPhotoRole> = new Set([
 ]);
 
 function isInformationalSupportingRole(
-  role: SupportingPhotoRole | undefined
+  role: SupportingPhotoRole | undefined,
 ): boolean {
   return Boolean(role && INFORMATIONAL_SUPPORTING_ROLES.includes(role));
 }
@@ -186,12 +217,18 @@ export function availableGenerationStyles(args: {
   ) {
     return [];
   }
-  if (role === "supporting" && isInformationalSupportingRole(supportingPhotoRole)) {
+  if (
+    role === "supporting" &&
+    isInformationalSupportingRole(supportingPhotoRole)
+  ) {
     return ["matches_original"];
   }
   if (role === "supporting") {
     const styles: GenerationStyle[] = ["matches_original"];
-    if (supportingPhotoRole && STUDIO_SUPPORTING_ROLES.has(supportingPhotoRole)) {
+    if (
+      supportingPhotoRole &&
+      STUDIO_SUPPORTING_ROLES.has(supportingPhotoRole)
+    ) {
       styles.push("studio");
     }
     if (
@@ -220,7 +257,7 @@ export function availableGenerationStyles(args: {
  * doc comment on how callers must treat this.
  */
 export function recommendedMainStyle(
-  category: GenerationStyleCategory
+  category: GenerationStyleCategory,
 ): GenerationStyle | null {
   if (category === "other") return "matches_original";
   if (categoryById(category)?.kind === "digital") return null;

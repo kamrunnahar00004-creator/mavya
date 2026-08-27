@@ -1,8 +1,13 @@
 "use client";
 
 import { Aperture, Check, Image as ImageIcon, User, X } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
-import type { GenerationStyle } from "@/lib/generation-style";
+import {
+  generationStyleLabel,
+  type GenerationStyle,
+  type GenerationStyleCategory,
+} from "@/lib/generation-style";
 
 /**
  * "single" = one photo (main or supporting) via its own one-click fix.
@@ -11,7 +16,6 @@ import type { GenerationStyle } from "@/lib/generation-style";
 export type StylePickerVariant = "single" | "bulk";
 
 type StyleCopy = {
-  label: string;
   description: string;
   icon: typeof ImageIcon;
 };
@@ -22,17 +26,15 @@ type StyleCopy = {
 // (mirrors the same client/server split generation-style.ts documents).
 const STYLE_COPY: Record<GenerationStyle, StyleCopy> = {
   matches_original: {
-    label: "Matches Original",
-    description: "Same scene, fixes lighting, background, and framing.",
+    description:
+      "Keeps the same scene and adjusts lighting, background, and framing.",
     icon: ImageIcon,
   },
   studio: {
-    label: "Studio",
     description: "Clean neutral studio background and controlled light.",
     icon: Aperture,
   },
   lifestyle: {
-    label: "Model / Lifestyle",
     description: "Shown worn, used, or in a styled real-world scene.",
     icon: User,
   },
@@ -45,6 +47,9 @@ type Props = {
   /** Rendered as a badge on this one option. Only meaningful for a main
    *  photo's "single" popup -- pass null/omit for supporting and bulk. */
   recommended?: GenerationStyle | null;
+  /** Category-specific wording is used for a single photo. Bulk may span
+   *  categories, so it deliberately uses the neutral lifestyle label. */
+  category?: GenerationStyleCategory;
   onSelect: (style: GenerationStyle) => void;
   onClose: () => void;
 };
@@ -59,9 +64,46 @@ export function StylePickerModal({
   variant,
   styles,
   recommended,
+  category,
   onSelect,
   onClose,
 }: Props) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const firstOptionRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    firstOptionRef.current?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
+      );
+      if (!focusable || focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose]);
+
   return (
     <div
       role="dialog"
@@ -69,11 +111,9 @@ export function StylePickerModal({
       aria-label="Choose a style"
       className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(15,13,11,0.72)] px-4 backdrop-blur-sm"
       onClick={onClose}
-      onKeyDown={(e) => {
-        if (e.key === "Escape") onClose();
-      }}
     >
       <div
+        ref={dialogRef}
         role="document"
         onClick={(e) => e.stopPropagation()}
         className="w-full max-w-[420px] rounded-[var(--radius-2xl)] bg-[var(--color-surface)] p-5 shadow-[var(--shadow-soft-strong)]"
@@ -92,24 +132,26 @@ export function StylePickerModal({
           </button>
         </div>
         <p className="mb-4 text-[13px] text-[var(--color-ink-muted)]">
-          The seller decides. Every style keeps the real product; only the
-          presentation changes.
+          The seller decides. Mavya aims to preserve the real product while
+          changing its presentation. Review every result before using it.
         </p>
 
         <div className="flex flex-col gap-2">
           {styles.map((style) => {
             const copy = STYLE_COPY[style];
+            const label = generationStyleLabel(style, category);
             const Icon = copy.icon;
             const isRecommended = variant === "single" && recommended === style;
             return (
               <button
                 key={style}
+                ref={style === styles[0] ? firstOptionRef : undefined}
                 type="button"
                 onClick={() => onSelect(style)}
                 className={cn(
                   "flex min-h-[44px] items-start gap-3 rounded-[var(--radius-lg)] border p-3 text-left transition-colors",
                   "border-[var(--color-border)] hover:border-[var(--color-primary)] hover:bg-[var(--color-tint)]",
-                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]"
+                  "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]",
                 )}
               >
                 <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-page-deep)] text-[var(--color-neutral-dark)]">
@@ -118,7 +160,7 @@ export function StylePickerModal({
                 <span className="flex-1">
                   <span className="flex flex-wrap items-center gap-2">
                     <span className="text-[14px] font-semibold text-[var(--color-ink)]">
-                      {copy.label}
+                      {label}
                     </span>
                     {isRecommended ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-primary-hover)]">
@@ -138,8 +180,7 @@ export function StylePickerModal({
 
         {variant === "bulk" ? (
           <p className="mt-3 text-[12px] leading-snug text-[var(--color-ink-soft)]">
-            Applies to every eligible photo. A photo that does not support
-            this style keeps its current version instead.
+            Your choice applies to every eligible photo.
           </p>
         ) : null}
       </div>

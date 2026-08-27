@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 const source = readFileSync(
   path.resolve("src/components/style-picker-modal.tsx"),
-  "utf8"
+  "utf8",
 );
 
 describe("StylePickerModal", () => {
@@ -18,10 +18,8 @@ describe("StylePickerModal", () => {
     expect(source).not.toContain("ABSOLUTE PRODUCT-FIDELITY FLOOR");
   });
 
-  it("renders all three style labels with distinct client-safe copy", () => {
-    expect(source).toContain("Matches Original");
-    expect(source).toContain("Studio");
-    expect(source).toContain("Model / Lifestyle");
+  it("gets category-aware labels from the client-safe policy module", () => {
+    expect(source).toContain("generationStyleLabel(style, category)");
   });
 
   it("selecting a card both picks the style and closes -- no separate submit step", () => {
@@ -29,19 +27,29 @@ describe("StylePickerModal", () => {
   });
 
   it("recommended badge only renders for the single/main variant, never bulk", () => {
-    expect(source).toContain('const isRecommended = variant === "single" && recommended === style;');
+    expect(source).toContain(
+      'const isRecommended = variant === "single" && recommended === style;',
+    );
   });
 
   it("bulk variant shows the non-absolute grey note; single variant does not", () => {
     expect(source).toContain('variant === "bulk"');
-    expect(source).toContain("Applies to every eligible photo");
-    expect(source).toContain("keeps its current version instead");
+    expect(source).toContain("Your choice applies to every eligible photo");
   });
 
   it("provides an explicit close affordance and backs out on Escape/backdrop click", () => {
     expect(source).toContain('aria-label="Cancel"');
-    expect(source).toContain('e.key === "Escape"');
+    expect(source).toContain('event.key === "Escape"');
+    expect(source).toContain('document.addEventListener("keydown", onKeyDown)');
+    expect(source).toContain("firstOptionRef.current?.focus()");
+    expect(source).toContain("previouslyFocused?.focus()");
     expect(source).toContain("onClick={onClose}");
+  });
+
+  it("does not promise perfect product preservation", () => {
+    expect(source).toContain("Mavya aims to preserve the real product");
+    expect(source).toContain("Review every result before using it");
+    expect(source).not.toContain("Every style keeps the real product");
   });
 
   it("uses the app's existing design tokens, not new ad-hoc colors", () => {
@@ -57,9 +65,7 @@ describe("StylePickerModal", () => {
   });
 
   it("uses lucide icons, never emoji, for the style options", () => {
-    expect(source).not.toMatch(
-      /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u
-    );
+    expect(source).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u);
     expect(source).toContain('from "lucide-react"');
   });
 });

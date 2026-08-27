@@ -100,10 +100,15 @@ describe("Fix-all UI wiring (product-workspace.tsx)", () => {
   });
 
   it("a network failure keeps the stored key (no removeItem in the catch block)", () => {
-    const catchIdx = workspace.indexOf("} catch {\n      // Network failure");
-    const financeIdx = workspace.indexOf("bulkFixBusyRef.current = false;");
+    const commentIdx = workspace.indexOf(
+      "// Network failure: the request may have already reached the server.",
+    );
+    const catchIdx = workspace.lastIndexOf("} catch {", commentIdx);
+    const finallyIdx = workspace.indexOf("} finally {", commentIdx);
+    expect(commentIdx).toBeGreaterThan(-1);
     expect(catchIdx).toBeGreaterThan(-1);
-    const catchBlock = workspace.slice(catchIdx, financeIdx);
+    expect(finallyIdx).toBeGreaterThan(catchIdx);
+    const catchBlock = workspace.slice(catchIdx, finallyIdx);
     expect(catchBlock).not.toContain("removeItem");
     expect(catchBlock).not.toContain("clearIdempotencyKey");
   });
@@ -143,10 +148,11 @@ describe("Fix-all UI wiring (product-workspace.tsx)", () => {
   });
 
   it("the action band renders in ProductWorkspace, as a sibling before AuditWorkspace (not inside it)", () => {
-    const bandIdx = workspace.indexOf("fixAllEligiblePhotos.length >= 2 && (");
+    const bandIdx = workspace.indexOf("fixAllEligiblePhotos.length >= 2 &&");
     const auditIdx = workspace.indexOf("<AuditWorkspace\n        key={active.id}");
     expect(bandIdx).toBeGreaterThan(-1);
     expect(bandIdx).toBeLessThan(auditIdx);
+    expect(workspace).toContain("fixAllAvailableStyles.length > 0");
   });
 
   it("the landing-page demo path never references the bulk fix-all wiring", () => {

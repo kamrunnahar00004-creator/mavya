@@ -11,8 +11,9 @@ import {
   availableGenerationStyles,
   normalizeGenerationStyleCategory,
   recommendedMainStyle,
-  GENERATION_STYLES,
+  sharedGenerationStyles,
   type GenerationStyle,
+  type GenerationStyleCategory,
 } from "@/lib/generation-style";
 import {
   rubricToAuditResult,
@@ -1269,6 +1270,11 @@ export function ProductWorkspace({
     variant: "single" | "bulk";
     styles: GenerationStyle[];
     recommended: GenerationStyle | null;
+    /** Single-photo variant only -- lets the popup show a category-aware
+     *  label ("Model wearing it" vs "Lifestyle scene"). Bulk omits this and
+     *  falls back to the modal's neutral wording since a batch can span
+     *  categories. */
+    category?: GenerationStyleCategory;
     onSelect: (style: GenerationStyle) => void;
   };
   const [stylePicker, setStylePicker] = useState<StylePickerState | null>(null);
@@ -1287,6 +1293,7 @@ export function ProductWorkspace({
       variant: "single",
       styles,
       recommended: photo.kind === "main" ? recommendedMainStyle(category) : null,
+      category,
       onSelect: (style) => {
         setStylePicker(null);
         void runImprove(false, undefined, undefined, style);
@@ -1417,24 +1424,26 @@ export function ProductWorkspace({
       ),
     [photos]
   );
-  // Union of every eligible photo's available styles, in canonical order --
-  // a style only appears here if at least one photo would actually accept
-  // it, so the bulk picker never offers a choice that skips every photo.
+  // Intersection of every eligible photo's available styles -- a style only
+  // appears here if EVERY eligible photo would accept it, so "Fix all"
+  // never offers a choice that silently skips some of the roster (Codex
+  // review: a union let "Fix 5 photos" mean "up to 5, some may be skipped").
+  // matches_original always survives this since availableGenerationStyles()
+  // guarantees it for every photo (tested in generation-style.test.ts).
   const fixAllAvailableStyles = useMemo(() => {
-    const union = new Set<GenerationStyle>();
-    for (const p of fixAllEligiblePhotos) {
-      if (!p.rubric) continue;
-      const category = normalizeGenerationStyleCategory(p.rubric.detected_category);
-      for (const style of availableGenerationStyles({
-        category,
-        role: p.kind,
-        supportingPhotoRole: p.rubric.supporting_photo_role,
-      })) {
-        union.add(style);
-      }
-    }
-    union.add("matches_original"); // always the safe baseline, even if the loop above found nothing
-    return GENERATION_STYLES.filter((style) => union.has(style));
+    const styleGroups = fixAllEligiblePhotos
+      .filter((p) => p.rubric)
+      .map((p) => {
+        const category = normalizeGenerationStyleCategory(
+          p.rubric!.detected_category
+        );
+        return availableGenerationStyles({
+          category,
+          role: p.kind,
+          supportingPhotoRole: p.rubric!.supporting_photo_role,
+        });
+      });
+    return sharedGenerationStyles(styleGroups);
   }, [fixAllEligiblePhotos]);
 
   const [bulkFixBusy, setBulkFixBusy] = useState(false);
@@ -1838,7 +1847,7 @@ export function ProductWorkspace({
           e.target.value = "";
         }}
       />
-      {fixAllEligiblePhotos.length >= 2 && (
+      {fixAllEligiblePhotos.length >= 2 && fixAllAvailableStyles.length > 0 && (
         <div className="mx-auto flex max-w-[1200px] flex-wrap items-center gap-3 px-6 pt-4">
           <button
             type="button"
@@ -1919,6 +1928,7 @@ export function ProductWorkspace({
           variant={stylePicker.variant}
           styles={stylePicker.styles}
           recommended={stylePicker.recommended}
+          category={stylePicker.category}
           onSelect={stylePicker.onSelect}
           onClose={() => setStylePicker(null)}
         />

@@ -2,20 +2,27 @@ import { describe, expect, it } from "vitest";
 import {
   availableGenerationStyles,
   GENERATION_STYLES,
+  generationStyleLabel,
   isGenerationStyle,
   normalizeGenerationStyleCategory,
   recommendedMainStyle,
+  sharedGenerationStyles,
   type GenerationStyle,
 } from "@/lib/generation-style";
 import { CATEGORY_IDS, categoryById } from "@/lib/taxonomy";
 
 describe("generation-style: stable ids", () => {
   it("the three style ids match the Codex-approved architecture exactly", () => {
-    expect(GENERATION_STYLES).toEqual(["matches_original", "studio", "lifestyle"]);
+    expect(GENERATION_STYLES).toEqual([
+      "matches_original",
+      "studio",
+      "lifestyle",
+    ]);
   });
 
   it("validates request values without coercion", () => {
-    for (const style of GENERATION_STYLES) expect(isGenerationStyle(style)).toBe(true);
+    for (const style of GENERATION_STYLES)
+      expect(isGenerationStyle(style)).toBe(true);
     for (const invalid of [undefined, null, "", "Studio", "model", 1]) {
       expect(isGenerationStyle(invalid)).toBe(false);
     }
@@ -29,15 +36,66 @@ describe("generation-style: stable ids", () => {
   });
 });
 
+describe("generation-style: category-aware picker labels", () => {
+  it("keeps the two universal labels stable", () => {
+    expect(generationStyleLabel("matches_original", "jewelry")).toBe(
+      "Matches Original",
+    );
+    expect(generationStyleLabel("studio", "candles")).toBe("Studio");
+  });
+
+  it("uses model wording only for categories actually shown on a person", () => {
+    expect(generationStyleLabel("lifestyle", "jewelry")).toBe(
+      "Model wearing it",
+    );
+    expect(generationStyleLabel("lifestyle", "apparel")).toBe(
+      "Model wearing it",
+    );
+    expect(generationStyleLabel("lifestyle", "bags")).toBe("Model carrying it");
+    expect(generationStyleLabel("lifestyle", "candles")).toBe(
+      "Lifestyle scene",
+    );
+    expect(generationStyleLabel("lifestyle", "home_decor")).toBe("Styled room");
+  });
+
+  it("uses neutral wording when a bulk request has no single category", () => {
+    expect(generationStyleLabel("lifestyle")).toBe("Model / Lifestyle");
+  });
+});
+
+describe("generation-style: honest bulk availability", () => {
+  it("returns only styles available to every eligible photo", () => {
+    expect(
+      sharedGenerationStyles([
+        ["matches_original", "studio", "lifestyle"],
+        ["matches_original", "studio"],
+      ]),
+    ).toEqual(["matches_original", "studio"]);
+  });
+
+  it("keeps informational photos from silently being skipped by Fix all", () => {
+    expect(
+      sharedGenerationStyles([
+        ["matches_original", "studio", "lifestyle"],
+        ["matches_original"],
+      ]),
+    ).toEqual(["matches_original"]);
+  });
+
+  it("returns no choice for an empty roster", () => {
+    expect(sharedGenerationStyles([])).toEqual([]);
+  });
+});
+
 describe("generation-style: matches_original is the physical-photo baseline", () => {
   it("every physical category, main and supporting, includes matches_original", () => {
     for (const category of CATEGORY_IDS) {
       if (categoryById(category)?.kind === "digital") continue;
       expect(availableGenerationStyles({ category, role: "main" })).toContain(
-        "matches_original"
+        "matches_original",
       );
       expect(
-        availableGenerationStyles({ category, role: "supporting" })
+        availableGenerationStyles({ category, role: "supporting" }),
       ).toContain("matches_original");
     }
   });
@@ -46,26 +104,35 @@ describe("generation-style: matches_original is the physical-photo baseline", ()
 describe("generation-style: category + role availability matrix", () => {
   it("jewelry main offers all three styles (model-worn is explicitly allowed by taxonomy.ts)", () => {
     expect(
-      availableGenerationStyles({ category: "jewelry", role: "main" }).sort()
+      availableGenerationStyles({ category: "jewelry", role: "main" }).sort(),
     ).toEqual(["lifestyle", "matches_original", "studio"].sort());
   });
 
   it("candles never offer lifestyle unless explicitly requested via this exact picker, and that carve-out is honored", () => {
-    const styles = availableGenerationStyles({ category: "candles", role: "main" });
+    const styles = availableGenerationStyles({
+      category: "candles",
+      role: "main",
+    });
     expect(styles).toContain("studio");
     expect(styles).toContain("lifestyle");
   });
 
   it("categories whose taxonomy explicitly forbids lifestyle props never offer lifestyle", () => {
     for (const excluded of ["soap", "crochet_plush"] as const) {
-      const styles = availableGenerationStyles({ category: excluded, role: "main" });
+      const styles = availableGenerationStyles({
+        category: excluded,
+        role: "main",
+      });
       expect(styles).not.toContain("lifestyle");
       expect(styles).toContain("studio"); // studio (clean presentation) still fine
     }
   });
 
   it("vintage offers studio but conservatively recommends matches_original", () => {
-    const styles = availableGenerationStyles({ category: "vintage", role: "main" });
+    const styles = availableGenerationStyles({
+      category: "vintage",
+      role: "main",
+    });
     expect(styles).toContain("studio");
     expect(styles).not.toContain("lifestyle");
     expect(recommendedMainStyle("vintage")).toBe("matches_original");
@@ -73,7 +140,7 @@ describe("generation-style: category + role availability matrix", () => {
 
   it("digital categories offer no styles because generation is blocked server-side", () => {
     const digitalCategories = CATEGORY_IDS.filter(
-      (id) => categoryById(id)?.kind === "digital"
+      (id) => categoryById(id)?.kind === "digital",
     );
     expect(digitalCategories.length).toBeGreaterThan(0);
     for (const category of digitalCategories) {
@@ -83,9 +150,9 @@ describe("generation-style: category + role availability matrix", () => {
   });
 
   it("defines a conservative policy for the model's other category", () => {
-    expect(availableGenerationStyles({ category: "other", role: "main" })).toEqual([
-      "matches_original",
-    ]);
+    expect(
+      availableGenerationStyles({ category: "other", role: "main" }),
+    ).toEqual(["matches_original"]);
     expect(recommendedMainStyle("other")).toBe("matches_original");
   });
 
@@ -124,7 +191,7 @@ describe("generation-style: category + role availability matrix", () => {
           category: "jewelry",
           role: "supporting",
           supportingPhotoRole,
-        })
+        }),
       ).toEqual([]);
     }
   });
@@ -145,14 +212,14 @@ describe("generation-style: category + role availability matrix", () => {
         category: "jewelry",
         role: "supporting",
         supportingPhotoRole: "in_use",
-      })
+      }),
     ).toEqual(["matches_original", "lifestyle"]);
     expect(
       availableGenerationStyles({
         category: "jewelry",
         role: "supporting",
         supportingPhotoRole: "packaging",
-      })
+      }),
     ).toEqual(["matches_original"]);
   });
 });
@@ -161,9 +228,9 @@ describe("generation-style: recommendation is data-only, one category signal at 
   it("returns exactly one recommended style per category, or null", () => {
     for (const category of CATEGORY_IDS) {
       const rec = recommendedMainStyle(category);
-      expect(rec === null || GENERATION_STYLES.includes(rec as GenerationStyle)).toBe(
-        true
-      );
+      expect(
+        rec === null || GENERATION_STYLES.includes(rec as GenerationStyle),
+      ).toBe(true);
     }
   });
 
@@ -181,9 +248,14 @@ describe("generation-style: recommendation is data-only, one category signal at 
   });
 
   it("does not recommend lifestyle merely because it is available", () => {
-    for (const category of ["candles", "mugs", "wall_art", "home_decor"] as const) {
+    for (const category of [
+      "candles",
+      "mugs",
+      "wall_art",
+      "home_decor",
+    ] as const) {
       expect(availableGenerationStyles({ category, role: "main" })).toContain(
-        "lifestyle"
+        "lifestyle",
       );
       expect(recommendedMainStyle(category)).toBe("studio");
     }
