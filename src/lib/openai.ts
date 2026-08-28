@@ -10,6 +10,8 @@ import { DETECTED_CATEGORY_VALUES } from "@/lib/taxonomy";
 import { ISSUE_FAMILIES, PILLAR_KEYS } from "@/lib/rubric";
 
 const OPENAI_BASE = "https://api.openai.com/v1";
+const OPENAI_JSON_TIMEOUT_MS = 45_000;
+const OPENAI_IMAGE_TIMEOUT_MS = 120_000;
 
 export const RUBRIC_RESPONSE_SCHEMA = {
   name: "mavya_photo_audit",
@@ -379,6 +381,7 @@ export async function visionScoreCall(args: {
         },
       ],
     }),
+    signal: AbortSignal.timeout(OPENAI_JSON_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -418,6 +421,7 @@ export async function checklistCall(args: {
         { role: "user", content: args.userMessage },
       ],
     }),
+    signal: AbortSignal.timeout(OPENAI_JSON_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -473,6 +477,7 @@ export async function visionCompareCall(args: {
         },
       ],
     }),
+    signal: AbortSignal.timeout(OPENAI_JSON_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -513,6 +518,7 @@ export async function imageEditCall(args: {
       Authorization: `Bearer ${getOpenAIKey()}`,
     },
     body: form,
+    signal: AbortSignal.timeout(OPENAI_IMAGE_TIMEOUT_MS),
   });
 
   if (!res.ok) {
