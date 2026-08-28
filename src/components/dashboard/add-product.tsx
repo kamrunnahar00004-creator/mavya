@@ -15,6 +15,7 @@ import {
   X,
 } from "lucide-react";
 import { prepareUploadImage } from "@/lib/client-image";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import {
   parseRatingQueueResponse,
   ratingQueueErrorMessage,
@@ -100,6 +101,7 @@ export function AddProductCard({
   const [step, setStep] = useState<Step>("idle");
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
@@ -109,6 +111,12 @@ export function AddProductCard({
   const [resumeNotice, setResumeNotice] = useState<string | null>(null);
 
   const busy = step !== "idle" || batchSubmitting || pendingFinalization !== null;
+  const dialogRef = useDialogFocus<HTMLDivElement>({
+    open: open && step === "idle",
+    onClose: close,
+    canClose: !busy,
+    initialFocusRef: nameInputRef,
+  });
 
   // File objects cannot survive a refresh. A saved identity lets the init
   // request remain idempotent and lets this recovery pass explicitly close
@@ -738,6 +746,7 @@ export function AddProductCard({
             onClick={close}
           >
             <div
+              ref={dialogRef}
               className={cn(
                 "relative w-full rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-7 shadow-[var(--shadow-soft-strong)] sm:p-8",
                 showBatchGrid ? "max-w-[720px]" : "max-w-[480px]"
@@ -766,6 +775,7 @@ export function AddProductCard({
                   Name (optional)
                 </span>
                 <input
+                  ref={nameInputRef}
                   type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}

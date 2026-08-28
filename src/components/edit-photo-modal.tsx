@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 import {
   EDIT_CHIP_SAFE_LABELS,
   isEditChipSafeLabel,
@@ -52,18 +53,12 @@ export function EditPhotoModal({
 }: Props) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // This modal can be opened from the style picker, whose own unmount
-  // cleanup unconditionally restores focus to the button that opened it --
-  // which sits BEHIND this modal. Without claiming focus here, that path
-  // leaves a keyboard user focused on the page behind an open dialog.
-  // Effects of a newly mounted component run after the cleanups of one
-  // unmounting in the same commit, so this reliably wins that race.
-  useEffect(() => {
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    textareaRef.current?.focus();
-    return () => previouslyFocused?.focus();
-  }, []);
+  const dialogRef = useDialogFocus<HTMLDivElement>({
+    open: true,
+    onClose,
+    canClose: !loading,
+    initialFocusRef: textareaRef,
+  });
 
   const safeSuggestedChips = suggestedChips?.filter(isEditChipSafeLabel);
   const exampleChips =
@@ -80,6 +75,7 @@ export function EditPhotoModal({
 
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label="AI Edit"

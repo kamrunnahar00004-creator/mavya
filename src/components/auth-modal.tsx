@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { Eye, EyeOff, Loader2, X } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadPendingPhotos } from "@/lib/pending-photos";
 import { cn } from "@/lib/utils";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 
 /**
  * Paid-only beta routing after a successful sign-in (server-verified via
@@ -78,6 +79,13 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const emailRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useDialogFocus<HTMLDivElement>({
+    open: true,
+    onClose,
+    canClose: !loading,
+    initialFocusRef: emailRef,
+  });
 
   const isSignup = mode === "signup";
 
@@ -163,12 +171,41 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
     }
   }
 
+  async function handleForgotPassword() {
+    const address = email.trim();
+    setError(null);
+    setNotice(null);
+    if (!address) {
+      setError("Enter your email first, then choose Forgot password.");
+      emailRef.current?.focus();
+      return;
+    }
+    setLoading(true);
+    try {
+      const supabase = createSupabaseBrowserClient();
+      const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(
+        "/auth/reset-password"
+      )}`;
+      const { error } = await supabase.auth.resetPasswordForEmail(address, {
+        redirectTo,
+      });
+      if (error) throw error;
+      setNotice("Check your email for a password reset link.");
+    } catch {
+      // Keep the response generic so account existence is never disclosed.
+      setNotice("Check your email for a password reset link.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   // The header's backdrop-filter makes it a containing block for position:fixed
   // descendants, so portal the overlay to <body> to cover the full viewport.
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-label={isSignup ? "Create your account" : "Log in"}
@@ -230,6 +267,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
           )}
           <Field label="Email">
             <input
+              ref={emailRef}
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -243,9 +281,14 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
             label="Password"
             aside={
               !isSignup ? (
-                <span className="text-[12.5px] text-[var(--color-ink-soft)]">
+                <button
+                  type="button"
+                  onClick={() => void handleForgotPassword()}
+                  disabled={loading}
+                  className="text-[12.5px] font-medium text-[var(--color-primary)] hover:underline disabled:opacity-60"
+                >
                   Forgot password?
-                </span>
+                </button>
               ) : undefined
             }
           >
@@ -288,10 +331,10 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
           )}
 
           {error && (
-            <p className="text-[13px] font-medium text-[var(--color-weak)]">{error}</p>
+            <p role="alert" className="text-[13px] font-medium text-[var(--color-weak)]">{error}</p>
           )}
           {notice && (
-            <p className="text-[13px] font-medium text-[var(--color-ink)]">{notice}</p>
+            <p role="status" className="text-[13px] font-medium text-[var(--color-ink)]">{notice}</p>
           )}
 
           <button
