@@ -591,6 +591,24 @@ export function ProductWorkspace({
     };
   }, []);
 
+  // Coalesces the server refresh that terminal ratings need. See the call
+  // site for why: without this, every photo in a batch triggered its own full
+  // server re-render as it settled.
+  const coverageRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleCoverageRefresh = useCallback(() => {
+    if (coverageRefreshTimer.current) clearTimeout(coverageRefreshTimer.current);
+    coverageRefreshTimer.current = setTimeout(() => {
+      coverageRefreshTimer.current = null;
+      if (mountedRef.current) router.refresh();
+    }, 1200);
+  }, [router]);
+  useEffect(
+    () => () => {
+      if (coverageRefreshTimer.current) clearTimeout(coverageRefreshTimer.current);
+    },
+    []
+  );
+
   // When each photo's background refinement STARTED, keyed by photo id.
   // AuditWorkspace is rendered as <AuditWorkspace key={active.id}>, so it is
   // fully remounted on every photo switch and cannot hold this itself -- its
@@ -718,9 +736,15 @@ export function ProductWorkspace({
             });
           }
           // Coverage is computed from pointer-current audits on the server.
-          // Refresh after every terminal rating outcome so the panel cannot
-          // remain stuck on an old ready/still-checking verdict.
-          router.refresh();
+          // A terminal rating therefore does need a refresh -- but this fires PER
+          // PHOTO: a ten-photo batch settling produced up to ten full server
+          // re-renders in a burst -- each one re-running auth, entitlement,
+          // the hydration queries, and one generation_jobs query per photo --
+          // at exactly the moment the seller is watching the screen. The
+          // rubric itself was already applied to local state by the patch()
+          // above, so the refresh is only needed once the dust settles.
+          // Coalesce: the last photo to finish wins, one refresh for the batch.
+          scheduleCoverageRefresh();
         } catch {
           // A brief network failure is transient. A sustained one becomes a
           // visible, retryable delayed state instead of an endless spinner.
@@ -731,7 +755,7 @@ export function ProductWorkspace({
         }
       }, 2500);
     },
-    [patch, router]
+    [patch, router, scheduleCoverageRefresh]
   );
 
   // ------------------------------------------------------------------

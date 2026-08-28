@@ -102,6 +102,7 @@ export function AddProductCard({
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const appendInputRef = useRef<HTMLInputElement | null>(null);
 
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const [batchSubmitting, setBatchSubmitting] = useState(false);
@@ -253,7 +254,16 @@ export function AddProductCard({
     }
   }
 
-  async function chooseFiles(fileList: FileList | File[]) {
+  /** `append` adds to the batch already on screen instead of replacing it,
+   *  which is what the grid's "Add more photos" needs -- without it a seller
+   *  who dropped below two usable photos had no route forward except
+   *  discarding the whole selection. */
+  async function chooseFiles(
+    fileList: FileList | File[],
+    options?: { append?: boolean }
+  ) {
+    const append = options?.append === true;
+    const existing = append ? batch ?? [] : [];
     if (busy) return;
     const files = Array.from(fileList);
     const images = files.filter((f) => f.type.startsWith("image/"));
@@ -315,7 +325,7 @@ export function AddProductCard({
     // authenticated dashboard's own product-add flow.
     if (onGateFailed) trackClientEvent("photo_uploaded");
 
-    if (images.length === 1) {
+    if (images.length === 1 && !append) {
       setError(null);
       setPreviewUrl((old) => {
         if (old) URL.revokeObjectURL(old);
@@ -325,9 +335,14 @@ export function AddProductCard({
       return;
     }
 
+    const room = MAX_BATCH_FILES - existing.length;
+    if (append && room <= 0) {
+      setError(`You can rate up to ${MAX_BATCH_FILES} photos at once.`);
+      return;
+    }
     let kept = images;
-    if (kept.length > MAX_BATCH_FILES) {
-      kept = kept.slice(0, MAX_BATCH_FILES);
+    if (kept.length > room) {
+      kept = kept.slice(0, room);
       setError(`Only the first ${MAX_BATCH_FILES} photos were kept.`);
     } else {
       setError(null);
@@ -337,13 +352,19 @@ export function AddProductCard({
       requestId: crypto.randomUUID(),
       file,
       hash: "",
-      role: i === 0 ? "main" : "supporting",
+      // Appended photos are always supporting: the existing selection already
+      // has a main, and silently reassigning it would undo the seller's pick.
+      role: !append && i === 0 ? "main" : "supporting",
       previewUrl: URL.createObjectURL(file),
       status: "preparing",
     }));
-    setBatch(prepared);
+    setBatch([...existing, ...prepared]);
 
-    const seenHashes: string[] = [];
+    // Seed with the hashes already in the grid so an appended photo is caught
+    // as a duplicate of one the seller picked earlier, not just of its own batch.
+    const seenHashes: string[] = existing
+      .map((item) => item.hash)
+      .filter((hash): hash is string => Boolean(hash));
     for (const item of prepared) {
       try {
         const readyFile = await prepareUploadImage(item.file);
@@ -667,6 +688,7 @@ export function AddProductCard({
               onMove={moveItem}
               onSubmit={submitBatch}
               onCancel={cancelBatchSelection}
+              onAddMore={() => appendInputRef.current?.click()}
             />
           )}
           <input
@@ -849,6 +871,7 @@ export function AddProductCard({
                     onMove={moveItem}
                     onSubmit={submitBatch}
                     onCancel={cancelBatchSelection}
+                    onAddMore={() => appendInputRef.current?.click()}
                   />
                 )}
                 <input
@@ -859,6 +882,21 @@ export function AddProductCard({
                   hidden
                   onChange={(e) => {
                     if (e.target.files?.length) void chooseFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                {/* Separate input so "Add more photos" extends the current
+                    selection rather than replacing it. */}
+                <input
+                  ref={appendInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  hidden
+                  onChange={(e) => {
+                    if (e.target.files?.length) {
+                      void chooseFiles(e.target.files, { append: true });
+                    }
                     e.target.value = "";
                   }}
                 />
@@ -896,6 +934,7 @@ function BatchGrid({
   onMove,
   onSubmit,
   onCancel,
+  onAddMore,
 }: {
   batch: BatchItem[];
   submitting: boolean;
@@ -906,6 +945,7 @@ function BatchGrid({
   onMove: (requestId: string, direction: -1 | 1) => void;
   onSubmit: () => void;
   onCancel: () => void;
+  onAddMore: () => void;
 }) {
   const allReady = batch.every((b) => b.status === "ready" || b.status === "failed");
   const usableCount = batch.filter((b) => b.status !== "failed").length;
@@ -1029,16 +1069,39 @@ function BatchGrid({
               : `Saving ${progress.done} of ${progress.total}…`}
           </span>
         ) : (
-          <button
-            type="button"
-            onClick={onSubmit}
-            disabled={!finalizationPending && (!allReady || usableCount < 2)}
-            className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {finalizationPending
-              ? "Finish upload"
-              : `Rate ${usableCount} photo${usableCount === 1 ? "" : "s"}`}
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            {/* The submit button is disabled below two usable photos, and the
+                explanation used to live only inside submitBatch -- which a
+                disabled button can never call, so the seller saw a greyed-out
+                "Rate 1 photo" with a red badge and no instruction. Selecting
+                the same file twice is an easy picker mistake, and the grid
+                had no way to add more, so Start over was the only exit.
+                Say why, and offer the way forward. */}
+            {!finalizationPending && allReady && usableCount < 2 && (
+              <span className="text-[13px] text-[var(--color-ink-muted)]">
+                Add at least 2 different photos to rate them together.
+              </span>
+            )}
+            {!finalizationPending && (
+              <button
+                type="button"
+                onClick={onAddMore}
+                className="rounded-full border border-[var(--color-border)] bg-white px-5 py-3 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+              >
+                Add more photos
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSubmit}
+              disabled={!finalizationPending && (!allReady || usableCount < 2)}
+              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {finalizationPending
+                ? "Finish upload"
+                : `Rate ${usableCount} photo${usableCount === 1 ? "" : "s"}`}
+            </button>
+          </div>
         )}
       </div>
     </div>

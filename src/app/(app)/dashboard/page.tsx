@@ -52,9 +52,14 @@ export default async function DashboardPage() {
     )
   );
 
-  const cards = rows.map((r, index) => ({
+  const cards = rows.map((r) => ({
     id: r.product_id,
-    name: r.product_name?.trim() || `Product ${index + 1}`,
+    // Derived from the product's own id, NOT its position in this list.
+    // An index-based fallback silently renamed every unnamed listing whenever
+    // a sibling was deleted -- the listing the seller knew as "Product 3"
+    // became "Product 2", including in the delete confirmation, which then
+    // named a different product than they had in mind.
+    name: r.product_name?.trim() || `Product ${r.product_id.slice(0, 4)}`,
     thumbnailUrl: r.storage_path ? signedUrls.get(r.storage_path) ?? null : null,
     storagePath: r.storage_path,
     score: typeof r.score === "number" ? r.score : null,
