@@ -1597,7 +1597,22 @@ export function ProductWorkspace({
         setNotice(err instanceof Error ? err.message : "Unsupported browser.");
         return;
       }
-      const prepared = await prepareUploadImage(inputFile);
+      // Preparation decodes the file in the browser and CAN reject -- most
+      // often for an image the browser cannot decode at all (an iPhone HEIC
+      // is the common case). This used to sit outside the try below, and
+      // addSupporting is called fire-and-forget as `void addSupporting(f)`,
+      // so the rejection was swallowed: the seller picked a photo and
+      // absolutely nothing happened -- no slot, no spinner, no error.
+      // add-product.tsx has always guarded the same call; this path had not.
+      let prepared: File;
+      try {
+        prepared = await prepareUploadImage(inputFile);
+      } catch {
+        setNotice(
+          "That image could not be read. Save it as a JPG or PNG and try again."
+        );
+        return;
+      }
       const blobUrl = URL.createObjectURL(prepared);
       setPhotos((prev) => [...prev, analyzingPhoto(tempId, blobUrl)]);
       setActiveId(tempId);
