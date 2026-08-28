@@ -81,6 +81,10 @@ type Props = {
   backgroundRefining?: boolean;
   /** Epoch ms when the active slot started improving. Preserves countdown across slot switches. */
   improveStartedAt?: number;
+  /** Epoch ms when the background refinement started. Same purpose as
+   *  improveStartedAt: the countdown must survive the remount that a photo
+   *  switch causes, rather than restarting from the full estimate. */
+  backgroundStartedAt?: number;
   improveError?: string;
   /** Truthful pipeline-stage label from the generation job (replaces rotating copy). */
   improveStage?: string;
@@ -155,6 +159,7 @@ export function AuditWorkspace({
   editLoading = false,
   backgroundRefining = false,
   improveStartedAt,
+  backgroundStartedAt,
   improveError,
   improveStage,
   freePreview = false,
@@ -380,7 +385,13 @@ export function AuditWorkspace({
 
   useEffect(() => {
     if (!backgroundRefining) return;
-    const start = Date.now();
+    // Anchored to a PROP, not to mount. AuditWorkspace is rendered as
+    // <AuditWorkspace key={active.id}>, so switching photos remounts it --
+    // a bare Date.now() here restarted the countdown from the top every time
+    // the seller looked at another photo mid-refinement, reporting far more
+    // time remaining than was actually left. improveStartedAt (the effect
+    // directly above) already solved this the same way.
+    const start = backgroundStartedAt ?? Date.now();
     const reset = window.setTimeout(() => setBackgroundElapsed(0), 0);
     const tick = window.setInterval(
       () => setBackgroundElapsed(Math.floor((Date.now() - start) / 1000)),
@@ -390,7 +401,7 @@ export function AuditWorkspace({
       window.clearTimeout(reset);
       window.clearInterval(tick);
     };
-  }, [backgroundRefining]);
+  }, [backgroundRefining, backgroundStartedAt]);
 
   const backgroundRemaining = IMPROVE_ESTIMATE_SECONDS - backgroundElapsed;
   const backgroundCountdown =

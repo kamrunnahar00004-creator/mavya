@@ -56,6 +56,12 @@ import {
 // back -- all the underlying logic stays live, only the button is gated.
 const SHOW_FIX_ALL_BUTTON = false;
 
+/** Consecutive non-OK status responses tolerated while a newly added
+ *  supporting photo is rating, before it surfaces as retryable rather than
+ *  spinning forever. Mirrors the bounded policy pollRating already applies
+ *  through ratingPollRecoveryAction. */
+const MAX_SUPPORTING_STATUS_FAILURES = 12;
+
 export type InitialJob = {
   id: string;
   status: GenerationJobStatus;
@@ -584,6 +590,26 @@ export function ProductWorkspace({
       Object.values(timers).forEach(clearInterval);
     };
   }, []);
+
+  // When each photo's background refinement STARTED, keyed by photo id.
+  // AuditWorkspace is rendered as <AuditWorkspace key={active.id}>, so it is
+  // fully remounted on every photo switch and cannot hold this itself -- its
+  // countdown used to restart from the full estimate each time. This ref
+  // lives on ProductWorkspace, which survives those switches, so the child
+  // can anchor to the real start instead. Derived in one place rather than
+  // stamped at each of the sites that flip backgroundRefining, which set it
+  // from a boolean that may be turning off as well as on.
+  const backgroundStartedAtRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const started = backgroundStartedAtRef.current;
+    for (const p of photos) {
+      if (p.backgroundRefining) {
+        if (!started[p.id]) started[p.id] = Date.now();
+      } else if (started[p.id]) {
+        delete started[p.id];
+      }
+    }
+  }, [photos]);
 
   const active = photos.find((p) => p.id === activeId) ?? null;
 
@@ -1400,6 +1426,17 @@ export function ProductWorkspace({
       });
       if (!res.ok) throw new Error("delete_failed");
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      // Stop BOTH pollers for this photo. Without this the rating interval
+      // kept requesting status every 2.5s for a photo that no longer exists,
+      // for the life of the page -- and on reaching a terminal state it still
+      // called router.refresh(), so a deleted photo triggered a full server
+      // re-render seconds after the seller removed it.
+      stopPolling(photo.id);
+      const ratingTimer = pollTimers.current[`rating:${photo.id}`];
+      if (ratingTimer) {
+        clearInterval(ratingTimer);
+        delete pollTimers.current[`rating:${photo.id}`];
+      }
       delete ratingPollAnomalies.current[photo.id];
       setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
       setNotice(null);
@@ -1408,7 +1445,7 @@ export function ProductWorkspace({
     } catch {
       setNotice("The photo could not be removed. Try again.");
     }
-  }, [activeId, router]);
+  }, [activeId, router, stopPolling]);
 
   const handleSelectSlot = useCallback((id: string) => {
     setActiveId(id);
@@ -1646,6 +1683,7 @@ export function ProductWorkspace({
 
         // Keep the local slot responsive while the persisted server job runs.
         // If this component unmounts, the job continues and appears on refresh.
+        let statusFailures = 0;
         for (;;) {
           await new Promise((resolve) => window.setTimeout(resolve, 2000));
           if (!mountedRef.current) return;
@@ -1653,7 +1691,19 @@ export function ProductWorkspace({
             `/api/score/jobs?id=${encodeURIComponent(queued.jobId)}`,
             { cache: "no-store" }
           );
-          if (!statusRes.ok) continue;
+          // A non-OK response used to `continue` forever: an expired session
+          // (401) or a sustained 5xx left the photo analyzing permanently,
+          // with no error, no retry, and a request every 2s for the life of
+          // the page. Bound it the same way pollRating already bounds its own
+          // anomalies, and surface the retryable delayed state instead.
+          if (!statusRes.ok) {
+            statusFailures += 1;
+            if (statusFailures < MAX_SUPPORTING_STATUS_FAILURES) continue;
+            throw new Error(
+              "Rating is taking longer than expected. Check its status again."
+            );
+          }
+          statusFailures = 0;
           const status = (await statusRes.json()) as {
             status?: string;
             message?: string | null;
@@ -1949,6 +1999,7 @@ export function ProductWorkspace({
           active.improveStatus === "generating" && active.pendingOp === "edit"
         }
         backgroundRefining={active.backgroundRefining}
+        backgroundStartedAt={backgroundStartedAtRef.current[active.id]}
         improveStartedAt={active.improveStartedAt}
         improveStage={active.improveStage}
         improveError={active.improveError}

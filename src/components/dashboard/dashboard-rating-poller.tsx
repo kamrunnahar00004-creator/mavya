@@ -41,12 +41,22 @@ export function DashboardRatingPoller({ jobs }: { jobs: readonly ActiveRating[] 
         if (!res.ok) throw new Error("rating_poll_failed");
         const body = (await res.json()) as { jobs?: RatingPayload[] };
         failures = 0;
+        // Auto-navigating is only unambiguous when the seller is waiting on
+        // ONE rating. With several in flight this used to take whichever the
+        // response happened to list first and move the page there, taking
+        // control mid-browse -- a race between products decided which one won.
+        // With more than one, refresh so every card updates in place and the
+        // seller chooses.
         const completed = body.jobs?.find((job) => job.status === "completed");
         const completedProduct = completed?.jobId
           ? productByJob.get(completed.jobId)
           : undefined;
         if (completedProduct) {
-          router.push(`/dashboard/product/${completedProduct}`);
+          if (jobs.length === 1) {
+            router.push(`/dashboard/product/${completedProduct}`);
+          } else {
+            router.refresh();
+          }
           return;
         }
         const terminal = body.jobs?.some(
