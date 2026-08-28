@@ -7,7 +7,11 @@ import {
   sanitizeEditInstruction,
   MAX_EDIT_INSTRUCTION_LEN,
 } from "@/lib/improve-photo";
-import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  getApiUserId,
+  getSessionUser,
+  createSupabaseServerClient,
+} from "@/lib/supabase/server";
 import { apiError, logEvent, type ApiErrorCode } from "@/lib/errors";
 import { generationDisabled } from "@/lib/usage";
 import { getEntitlement } from "@/lib/entitlements";
@@ -187,8 +191,12 @@ async function jobPayload(
  * RLS scopes the select to the authenticated user's own jobs.
  */
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser();
-  if (!user) return apiError("unauthenticated", "Log in first.");
+  // Presence check only -- this handler never filters by the id, and every
+  // row below is scoped by RLS through the caller's own token. Uses local
+  // JWT verification rather than an Auth-server round trip because the
+  // client polls this route every few seconds per generating photo.
+  const userId = await getApiUserId();
+  if (!userId) return apiError("unauthenticated", "Log in first.");
 
   const id = req.nextUrl.searchParams.get("id");
   const key = req.nextUrl.searchParams.get("key");

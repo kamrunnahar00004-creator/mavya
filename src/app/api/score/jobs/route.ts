@@ -1,5 +1,9 @@
 import { after, NextRequest, NextResponse } from "next/server";
-import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
+import {
+  getApiUserId,
+  getSessionUser,
+  createSupabaseServerClient,
+} from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { rateLimit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request-ip";
@@ -117,8 +121,13 @@ export async function POST(req: NextRequest) {
 
 /** Refresh-safe status for a dashboard card or product workspace. */
 export async function GET(req: NextRequest) {
-  const user = await getSessionUser();
-  if (!user) return apiError("unauthenticated", "Log in first.");
+  // Presence check only -- this handler never filters by the id, and every
+  // row below is scoped by RLS through the caller's own token. Uses local
+  // JWT verification rather than an Auth-server round trip because the
+  // client polls this route every 2-2.5s per rating photo and per dashboard
+  // card, which made this the single hottest auth path in the product.
+  const userId = await getApiUserId();
+  if (!userId) return apiError("unauthenticated", "Log in first.");
   const jobId = req.nextUrl.searchParams.get("id");
   const photoId = req.nextUrl.searchParams.get("photoId");
   if (!jobId && !photoId) return apiError("bad_request", "Missing rating job id.");
