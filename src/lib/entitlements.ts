@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/errors";
 import { getPlanPolicy, resolvePlan, type BillingCadence, type PlanKey, type PriceRegistry } from "@/lib/plans";
@@ -148,8 +149,18 @@ export function entitlementFromRow(
   return { ...base, ...planFields, active: false, reason: "inactive", periodKey: null };
 }
 
-/** Load the entitlement for a user (server-only; service role read). */
-export async function getEntitlement(userId: string): Promise<Entitlement> {
+/**
+ * Load the entitlement for a user (server-only; service role read).
+ *
+ * Wrapped in React cache() so several callers inside ONE request share a
+ * single subscriptions read, matching how the identity helpers in
+ * supabase/server.ts already behave. Per-user and read-only, so deduping is
+ * safe; the cache does not outlive the request, so a webhook write is never
+ * masked from the next one.
+ */
+export const getEntitlement = cache(async function getEntitlement(
+  userId: string
+): Promise<Entitlement> {
   try {
     const admin = createSupabaseAdminClient();
     const { data, error } = await admin
@@ -172,4 +183,4 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
     // of returning a closed entitlement.
     return entitlementFromRow(null, EMPTY_PLAN_REGISTRY);
   }
-}
+})

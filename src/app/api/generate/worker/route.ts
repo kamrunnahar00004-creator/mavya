@@ -13,6 +13,7 @@ import {
 } from "@/lib/rating-jobs";
 import { drainStorageCleanup } from "@/lib/storage-cleanup";
 import { logEvent } from "@/lib/errors";
+import { timingSafeEqualString } from "@/lib/secret-compare";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,9 @@ export const maxDuration = 240;
 async function handle(req: NextRequest) {
   const secret = process.env.CRON_SECRET || process.env.WORKER_SECRET;
   const auth = req.headers.get("authorization");
-  if (!secret || auth !== `Bearer ${secret}`) {
+  const presented = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+  // Fails closed when the secret is unset, and compares in constant time.
+  if (!secret || !presented || !timingSafeEqualString(presented, secret)) {
     return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 

@@ -1,5 +1,5 @@
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-import { rateLimit } from "@/lib/rate-limit";
+import { weightedRateLimit } from "@/lib/rate-limit";
 import { logEvent, type ApiErrorCode } from "@/lib/errors";
 
 /**
@@ -58,12 +58,23 @@ export async function withinGlobalBudget(action: BillableAction): Promise<boolea
   const limit = Number(process.env.GLOBAL_DAILY_AI_ACTIONS || 2000);
   if (!Number.isFinite(limit) || limit <= 0) return true;
   const weight = Math.max(1, ACTION_COSTS[action]);
-  // Consume `weight` slots from a single global daily bucket.
-  for (let i = 0; i < weight; i++) {
-    const res = await rateLimit("global:ai-day", limit, 24 * 60 * 60 * 1000);
-    if (!res.ok) return false;
-  }
-  return true;
+  // ONE atomic weighted consume, not a loop of single increments.
+  //
+  // This used to call rateLimit() `weight` times in sequence, which was wrong
+  // twice over. It added weight-1 avoidable Redis round trips to the start of
+  // every generation (cost 5, so four of them). And it was not atomic: if the
+  // third increment hit the limit, the two slots already taken were never
+  // returned, so every REJECTED request permanently burned part of the daily
+  // ceiling. Near the cap that compounds -- the budget trips earlier than
+  // configured and stays tripped, denying a paid feature on usage that never
+  // happened.
+  const res = await weightedRateLimit(
+    "global:ai-day",
+    weight,
+    limit,
+    24 * 60 * 60 * 1000
+  );
+  return res.ok;
 }
 
 export type ConsumeResult =
