@@ -1,6 +1,9 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://mavya.app";
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://mavya.app").replace(
+  /\/+$/,
+  ""
+);
 
 /**
  * The authenticated routes are already unreachable to a crawler -- middleware
@@ -13,7 +16,14 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/dashboard/", "/settings", "/auth/"],
+        disallow: [
+          "/api/",
+          "/dashboard",
+          "/settings",
+          "/auth/",
+          "/feedback",
+          "/subscription/",
+        ],
       },
     ],
     sitemap: `${SITE_URL}/sitemap.xml`,

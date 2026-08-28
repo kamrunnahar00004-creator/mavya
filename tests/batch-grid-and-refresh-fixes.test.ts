@@ -77,6 +77,14 @@ describe("UI-04: the batch grid is not a dead end", () => {
     expect(addProduct).toContain("if (images.length === 1 && !append) {");
   });
 
+  it("keeps the existing selection if an append is interrupted by an auth gate", () => {
+    expect(addProduct).toContain("const selectedForRecovery: PendingPhotoItem[] = append");
+    expect(addProduct).toContain(
+      "...existing.map((item) => ({ file: item.file, role: item.role }))"
+    );
+    expect(addProduct).toContain("const items = selectedForRecovery.slice(0, MAX_BATCH_FILES);");
+  });
+
   it("appended photos never steal the main slot the seller already chose", () => {
     expect(addProduct).toContain('role: !append && i === 0 ? "main" : "supporting",');
   });
@@ -88,5 +96,12 @@ describe("UI-04: the batch grid is not a dead end", () => {
 
   it("duplicate detection sees photos picked in an earlier round", () => {
     expect(addProduct).toContain("const seenHashes: string[] = existing");
+  });
+
+  it("does not allow another append while existing hashes are still preparing", () => {
+    const start = addProduct.indexOf("onClick={onAddMore}");
+    const end = addProduct.indexOf("Add more photos", start);
+    expect(end).toBeGreaterThan(start);
+    expect(addProduct.slice(start, end)).toContain("disabled={!allReady}");
   });
 });

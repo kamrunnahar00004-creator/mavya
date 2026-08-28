@@ -26,7 +26,10 @@ const fraunces = Fraunces({
   style: ["normal"],
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://mavya.app";
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? "https://mavya.app").replace(
+  /\/+$/,
+  ""
+);
 const TITLE = "Mavya - Rate your Etsy first photo";
 const DESCRIPTION =
   "See what is costing your listing clicks. Mavya scores your hero product photo and tells you the one thing to fix first.";
@@ -46,22 +49,20 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: TITLE,
   description: DESCRIPTION,
-  alternates: { canonical: "/" },
   icons: {
     icon: "/assets/mavya-logo.png",
   },
   openGraph: {
     type: "website",
-    url: "/",
     siteName: "Mavya",
     title: TITLE,
     description: DESCRIPTION,
     images: [
       {
         url: "/assets/candle-proof-after.webp",
-        width: 1200,
-        height: 630,
-        alt: "An Etsy product photo before and after Mavya's AI improvement",
+        width: 1083,
+        height: 1453,
+        alt: "A candle product photo improved with Mavya",
       },
     ],
   },

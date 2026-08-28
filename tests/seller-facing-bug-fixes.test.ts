@@ -47,7 +47,7 @@ describe("UI-02: a supporting photo cannot spin forever", () => {
 });
 
 describe("UI-03: deleting a photo stops its pollers", () => {
-  it("clears both the generation timer and the rating timer", () => {
+  it("clears the generation timer, rating timer, and upload-time status loop", () => {
     const start = workspace.indexOf("const handleRemovePhoto = useCallback");
     const end = workspace.indexOf("const handleSelectSlot", start);
     expect(end).toBeGreaterThan(start);
@@ -55,6 +55,8 @@ describe("UI-03: deleting a photo stops its pollers", () => {
     expect(fn).toContain("stopPolling(photo.id);");
     expect(fn).toContain("pollTimers.current[`rating:${photo.id}`]");
     expect(fn).toContain("delete ratingPollAnomalies.current[photo.id];");
+    expect(fn).toContain("cancelledSupportingRatingPolls.current.add(photo.id);");
+    expect(workspace.match(/cancelledSupportingRatingPolls\.current\.has\(tempId\)/g)).toHaveLength(4);
   });
 
   it("declares stopPolling as a dependency rather than relying on it being stable", () => {
@@ -69,6 +71,12 @@ describe("BUG-03: the refinement countdown survives a photo switch", () => {
     expect(auditWorkspace).toContain("const start = backgroundStartedAt ?? Date.now();");
     expect(auditWorkspace).toContain("backgroundStartedAt?: number;");
     expect(auditWorkspace).toContain("}, [backgroundRefining, backgroundStartedAt]);");
+  });
+
+  it("shows elapsed time immediately after a photo-switch remount", () => {
+    expect(auditWorkspace).toContain(
+      "setBackgroundElapsed(Math.floor((Date.now() - start) / 1000))"
+    );
   });
 
   it("the start time is owned by the parent, which is not remounted", () => {

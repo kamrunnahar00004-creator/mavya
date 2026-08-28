@@ -543,6 +543,7 @@ export function ProductWorkspace({
   const photosRef = useRef<Photo[]>(photos);
   const extraInputRef = useRef<HTMLInputElement | null>(null);
   const pollTimers = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  const cancelledSupportingRatingPolls = useRef<Set<string>>(new Set());
   const ratingPollAnomalies = useRef<
     Record<string, { requestFailures: number; malformed: number }>
   >({});
@@ -1449,6 +1450,7 @@ export function ProductWorkspace({
         body: JSON.stringify({ photoId: photo.id }),
       });
       if (!res.ok) throw new Error("delete_failed");
+      cancelledSupportingRatingPolls.current.add(photo.id);
       setPhotos((prev) => prev.filter((p) => p.id !== photo.id));
       // Stop BOTH pollers for this photo. Without this the rating interval
       // kept requesting status every 2.5s for a photo that no longer exists,
@@ -1675,6 +1677,7 @@ export function ProductWorkspace({
         return;
       }
       const blobUrl = URL.createObjectURL(prepared);
+      cancelledSupportingRatingPolls.current.delete(tempId);
       setPhotos((prev) => [...prev, analyzingPhoto(tempId, blobUrl)]);
       setActiveId(tempId);
       setNotice(null);
@@ -1710,11 +1713,15 @@ export function ProductWorkspace({
         let statusFailures = 0;
         for (;;) {
           await new Promise((resolve) => window.setTimeout(resolve, 2000));
-          if (!mountedRef.current) return;
+          if (
+            !mountedRef.current ||
+            cancelledSupportingRatingPolls.current.has(tempId)
+          ) return;
           const statusRes = await fetch(
             `/api/score/jobs?id=${encodeURIComponent(queued.jobId)}`,
             { cache: "no-store" }
           );
+          if (cancelledSupportingRatingPolls.current.has(tempId)) return;
           // A non-OK response used to `continue` forever: an expired session
           // (401) or a sustained 5xx left the photo analyzing permanently,
           // with no error, no retry, and a request every 2s for the life of
@@ -1734,6 +1741,7 @@ export function ProductWorkspace({
             rubric?: RubricJson | null;
             storagePath?: string | null;
           };
+          if (cancelledSupportingRatingPolls.current.has(tempId)) return;
           if (
             status.status === "queued" ||
             status.status === "waiting_dependency" ||
@@ -1759,11 +1767,14 @@ export function ProductWorkspace({
           break;
         }
       } catch (err) {
+        if (cancelledSupportingRatingPolls.current.has(tempId)) return;
         setPhotos((prev) => prev.filter((p) => p.id !== tempId));
         setActiveId(photosRef.current.find((p) => p.kind === "main")?.id ?? "");
         setNotice(err instanceof Error ? err.message : "That photo could not be graded.");
         // A terminal failure can change which photos are applicable.
         router.refresh();
+      } finally {
+        cancelledSupportingRatingPolls.current.delete(tempId);
       }
     },
     [patch, productId, router]

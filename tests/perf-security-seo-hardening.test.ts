@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 
 const read = (f: string) => readFileSync(path.resolve(f), "utf8");
@@ -95,20 +96,50 @@ describe("SEO-01 / SEO-02: shared links and crawlability", () => {
   it("has Open Graph and a large Twitter card", () => {
     expect(layout).toContain("openGraph:");
     expect(layout).toContain('card: "summary_large_image"');
-    expect(layout).toContain("alternates: { canonical:");
   });
 
-  it("points at an image that actually exists", () => {
+  it("points at an image that exists and declares its real dimensions", async () => {
     const match = layout.match(/url: "(\/assets\/[^"]+)"/);
     expect(match).not.toBeNull();
-    expect(existsSync(path.resolve("public" + match![1]))).toBe(true);
+    const imagePath = path.resolve("public" + match![1]);
+    expect(existsSync(imagePath)).toBe(true);
+    const dimensions = await sharp(imagePath).metadata();
+    const declared = layout.match(/width: (\d+),\s+height: (\d+),/);
+    expect(declared).not.toBeNull();
+    expect(Number(declared![1])).toBe(dimensions.width);
+    expect(Number(declared![2])).toBe(dimensions.height);
+  });
+
+  it("does not make every route canonical to home", () => {
+    expect(layout).not.toContain("alternates: { canonical:");
+    const subscribeLayout = read("src/app/(app)/subscribe/layout.tsx");
+    expect(subscribeLayout).toContain('alternates: { canonical: "/subscribe" }');
   });
 
   it("ships robots and sitemap routes that exclude authenticated surface", () => {
     const robots = read("src/app/robots.ts");
-    expect(robots).toContain('disallow: ["/api/", "/dashboard/", "/settings", "/auth/"]');
+    for (const route of [
+      '"/api/"',
+      '"/dashboard"',
+      '"/settings"',
+      '"/auth/"',
+      '"/feedback"',
+      '"/subscription/"',
+    ]) {
+      expect(robots).toContain(route);
+    }
     const sitemap = read("src/app/sitemap.ts");
     expect(sitemap).toContain("SITE_URL");
     expect(sitemap).not.toContain("/dashboard");
+  });
+
+  it("normalizes a configured site URL before appending paths", () => {
+    for (const source of [
+      layout,
+      read("src/app/robots.ts"),
+      read("src/app/sitemap.ts"),
+    ]) {
+      expect(source).toContain('.replace(\n  /\\/+$/,\n  ""\n)');
+    }
   });
 });

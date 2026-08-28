@@ -109,11 +109,27 @@ async function redisWeightedRateLimit(
 ): Promise<RateLimitResult> {
   try {
     const namespacedKey = `rlw:${key}`;
-    const count = await getRedis().incrby(namespacedKey, weight);
-    if (count === weight) {
-      await getRedis().pexpire(namespacedKey, windowMs);
-    }
-    return count <= max ? { ok: true } : { ok: false, reason: "limited" };
+    const result = await getRedis().eval(
+      `
+local weight = tonumber(ARGV[1])
+local maximum = tonumber(ARGV[2])
+local window = tonumber(ARGV[3])
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+
+if current + weight > maximum then
+  return 0
+end
+
+local count = redis.call('INCRBY', KEYS[1], weight)
+if count == weight then
+  redis.call('PEXPIRE', KEYS[1], window)
+end
+return 1
+`,
+      [namespacedKey],
+      [weight, max, windowMs]
+    );
+    return Number(result) === 1 ? { ok: true } : { ok: false, reason: "limited" };
   } catch (err) {
     console.error("[rate-limit] durable store failed:", err);
     return { ok: false, reason: "store_error" };
@@ -129,11 +145,13 @@ function memoryWeightedRateLimit(
   const now = Date.now();
   const win = weightedBuckets.get(key);
   if (!win || win.resetAt <= now) {
+    if (weight > max) return { ok: false, reason: "limited" };
     weightedBuckets.set(key, { count: weight, resetAt: now + windowMs });
-    return weight <= max ? { ok: true } : { ok: false, reason: "limited" };
+    return { ok: true };
   }
+  if (win.count + weight > max) return { ok: false, reason: "limited" };
   win.count += weight;
-  return win.count <= max ? { ok: true } : { ok: false, reason: "limited" };
+  return { ok: true };
 }
 
 export async function weightedRateLimit(

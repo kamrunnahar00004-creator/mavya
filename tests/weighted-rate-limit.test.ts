@@ -6,8 +6,8 @@ import { weightedRateLimit, weightedRateLimitMany } from "../src/lib/rate-limit"
  * Weighted rate limiter added for bulk photo-batch init (Codex review,
  * 2026-08-22): a 10-file batch must consume 10 units of budget in one
  * atomic check, not 1. Exercises the in-memory fallback path (no Upstash
- * env vars set in the test environment); the Redis path uses the same
- * incrby-based logic against a real store in production.
+ * env vars set in the test environment); source assertions below pin the
+ * equivalent check-before-consume ordering in the Redis Lua path.
  */
 describe("weightedRateLimit", () => {
   it("allows a single request within budget", async () => {
@@ -35,6 +35,36 @@ describe("weightedRateLimit", () => {
     const second = await weightedRateLimit(key, 5, 10, 60_000);
     // 6 + 5 = 11 > 10
     expect(second.ok).toBe(false);
+  });
+
+  it("does not consume capacity when a weighted request is rejected", async () => {
+    const key = `test:${crypto.randomUUID()}`;
+    expect(await weightedRateLimit(key, 6, 10, 60_000)).toEqual({ ok: true });
+    expect(await weightedRateLimit(key, 5, 10, 60_000)).toEqual({
+      ok: false,
+      reason: "limited",
+    });
+    expect(await weightedRateLimit(key, 4, 10, 60_000)).toEqual({ ok: true });
+  });
+
+  it("does not create a spent bucket for an oversized first request", async () => {
+    const key = `test:${crypto.randomUUID()}`;
+    expect(await weightedRateLimit(key, 11, 10, 60_000)).toEqual({
+      ok: false,
+      reason: "limited",
+    });
+    expect(await weightedRateLimit(key, 10, 10, 60_000)).toEqual({ ok: true });
+  });
+
+  it("checks the Redis budget before incrementing it", () => {
+    const source = readFileSync("src/lib/rate-limit.ts", "utf8");
+    const start = source.indexOf("async function redisWeightedRateLimit");
+    const end = source.indexOf("function memoryWeightedRateLimit", start);
+    const redisPath = source.slice(start, end);
+    expect(redisPath.indexOf("if current + weight > maximum")).toBeGreaterThan(-1);
+    expect(redisPath.indexOf("if current + weight > maximum")).toBeLessThan(
+      redisPath.indexOf("redis.call('INCRBY'")
+    );
   });
 
   it("keeps separate keys independent", async () => {

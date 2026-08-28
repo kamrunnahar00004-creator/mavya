@@ -61,9 +61,11 @@ describe("landing page multi-photo dropzone (up to 10, same component as the das
 
   it("caps a pre-auth pick at MAX_BATCH_FILES and preserves main-first ordering for the stash", () => {
     expect(addProduct).toContain(
-      "images.length > MAX_BATCH_FILES ? images.slice(0, MAX_BATCH_FILES) : images"
+      "const items = selectedForRecovery.slice(0, MAX_BATCH_FILES);"
     );
-    expect(addProduct).toContain('role: i === 0 ? "main" : "supporting"');
+    expect(addProduct).toContain(
+      'role: i === 0 ? ("main" as const) : ("supporting" as const)'
+    );
   });
 
   it("recovery replays through the exact same chooseFiles() path a live pick uses -- no separate resume implementation", () => {

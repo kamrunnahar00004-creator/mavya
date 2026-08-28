@@ -392,7 +392,10 @@ export function AuditWorkspace({
     // time remaining than was actually left. improveStartedAt (the effect
     // directly above) already solved this the same way.
     const start = backgroundStartedAt ?? Date.now();
-    const reset = window.setTimeout(() => setBackgroundElapsed(0), 0);
+    const reset = window.setTimeout(
+      () => setBackgroundElapsed(Math.floor((Date.now() - start) / 1000)),
+      0
+    );
     const tick = window.setInterval(
       () => setBackgroundElapsed(Math.floor((Date.now() - start) / 1000)),
       1000

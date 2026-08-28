@@ -277,14 +277,22 @@ export function AddProductCard({
     // refresh, billing outage, OAuth redirect, or checkout round-trip cannot
     // lose the files. Nothing uploads or scores until both gates pass.
     if (onGateFailed) {
-      const kept = images.length > MAX_BATCH_FILES ? images.slice(0, MAX_BATCH_FILES) : images;
-      const items: PendingPhotoItem[] = kept.map((file, i) => ({
-        file,
-        role: i === 0 ? "main" : "supporting",
-      }));
+      const selectedForRecovery: PendingPhotoItem[] = append
+        ? [
+            ...existing.map((item) => ({ file: item.file, role: item.role })),
+            ...images.map((file) => ({
+              file,
+              role: "supporting" as const,
+            })),
+          ]
+        : images.map((file, i) => ({
+            file,
+            role: i === 0 ? ("main" as const) : ("supporting" as const),
+          }));
+      const items = selectedForRecovery.slice(0, MAX_BATCH_FILES);
       const { durable } = await savePendingPhotos(items);
       const stashWarnings = [
-        images.length > MAX_BATCH_FILES
+        selectedForRecovery.length > MAX_BATCH_FILES
           ? `Only the first ${MAX_BATCH_FILES} photos were kept.`
           : null,
         durable
@@ -1086,7 +1094,8 @@ function BatchGrid({
               <button
                 type="button"
                 onClick={onAddMore}
-                className="rounded-full border border-[var(--color-border)] bg-white px-5 py-3 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+                disabled={!allReady}
+                className="rounded-full border border-[var(--color-border)] bg-white px-5 py-3 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Add more photos
               </button>
