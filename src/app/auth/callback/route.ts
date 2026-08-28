@@ -50,6 +50,12 @@ export async function GET(request: NextRequest) {
       if (!userId) {
         return NextResponse.redirect(`${origin}/?auth=login&error=oauth`);
       }
+      // Password recovery must reach the password form before billing gates.
+      // The destination is still normalized to a same-origin path above and
+      // exchangeCodeForSession has established the recovery session.
+      if (next === "/auth/reset-password") {
+        return NextResponse.redirect(`${origin}${next}`);
+      }
       const entitlement = await getEntitlement(userId);
       if (entitlement.active) {
         return NextResponse.redirect(`${origin}${next ?? "/dashboard"}`);
