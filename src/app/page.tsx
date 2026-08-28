@@ -1,17 +1,27 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AppHeader } from "@/components/app-header";
 import { AuthModal } from "@/components/auth-modal";
 import { UploadWorkspace } from "@/components/upload-workspace";
 import { ProductProofSection } from "@/components/product-proof-section";
-import { AnalyzingState } from "@/components/analyzing-state";
-import { AuditWorkspace } from "@/components/audit-workspace";
-import { InvalidUploadState } from "@/components/invalid-upload-state";
 import { DEMO_STATES, VERIFY_AMBER_DEMO } from "@/data/demo-states";
 import { loadPendingPhotos, clearPendingPhotos, type PendingPhotoItem } from "@/lib/pending-photos";
+
+// Screenshot/demo states are never entered in normal production use. Keep
+// their large result UI out of the landing page's initial client bundle.
+const AnalyzingState = dynamic(() =>
+  import("@/components/analyzing-state").then((module) => module.AnalyzingState)
+);
+const AuditWorkspace = dynamic(() =>
+  import("@/components/audit-workspace").then((module) => module.AuditWorkspace)
+);
+const InvalidUploadState = dynamic(() =>
+  import("@/components/invalid-upload-state").then((module) => module.InvalidUploadState)
+);
 
 type Mode = "upload" | "analyzing" | "invalid" | "weak" | "strong" | "verify";
 
