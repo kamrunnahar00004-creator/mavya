@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useDialogFocus } from "@/lib/use-dialog-focus";
 
 type Props = {
   id: string;
@@ -24,7 +25,6 @@ type Props = {
   score: number | null;
   /** Highest-priority recommended fix (only for sub-8 photos). */
   topFix?: string | null;
-  ratingJobId?: string | null;
   ratingStatus?:
     | "queued"
     | "waiting_dependency"
@@ -60,7 +60,6 @@ export function ProductCard({
   storagePath,
   score,
   topFix,
-  ratingJobId,
   ratingStatus,
   ratingError,
 }: Props) {
@@ -74,52 +73,40 @@ export function ProductCard({
   const [imgSrc, setImgSrc] = useState<string | null>(thumbnailUrl);
   const refreshedRef = useRef(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const menuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const deleteCancelRef = useRef<HTMLButtonElement | null>(null);
+  const deleteDialogRef = useDialogFocus<HTMLDivElement>({
+    open: confirming,
+    onClose: () => setConfirming(false),
+    canClose: !busy,
+    initialFocusRef: deleteCancelRef,
+  });
 
   useEffect(() => {
-    if (
-      !ratingJobId ||
-      (ratingStatus !== "queued" &&
-        ratingStatus !== "waiting_dependency" &&
-        ratingStatus !== "scoring")
-    ) {
-      return;
+    if (!menuOpen) return;
+    menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [menuOpen]);
+
+  function onMenuKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const items = [...(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? [])];
+    if (items.length === 0) return;
+    const index = Math.max(0, items.indexOf(document.activeElement as HTMLButtonElement));
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setMenuOpen(false);
+      menuTriggerRef.current?.focus();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      items[(index + 1) % items.length].focus();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      items[(index - 1 + items.length) % items.length].focus();
+    } else if (event.key === "Home" || event.key === "End") {
+      event.preventDefault();
+      items[event.key === "Home" ? 0 : items.length - 1].focus();
     }
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/score/jobs?id=${encodeURIComponent(ratingJobId)}`, {
-          cache: "no-store",
-        });
-        if (!res.ok || cancelled) return;
-        const body = (await res.json()) as { status?: string };
-        if (cancelled) return;
-        if (body.status === "completed") {
-          // Rating finished while the seller is still on the dashboard: take
-          // them straight into the result. Safe by construction: navigating
-          // anywhere unmounts this card and cancels this poll, so a delayed
-          // pull-back from another page is impossible.
-          router.push(`/dashboard/product/${id}`);
-          return;
-        }
-        if (
-          body.status &&
-          body.status !== "queued" &&
-          body.status !== "waiting_dependency" &&
-          body.status !== "scoring"
-        ) {
-          router.refresh();
-        }
-      } catch {
-        // The durable worker continues; the next poll can recover the UI.
-      }
-    };
-    void poll();
-    const timer = window.setInterval(() => void poll(), 2000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [id, ratingJobId, ratingStatus, router]);
+  }
 
   // Expired signed URL: re-sign once through the authenticated endpoint.
   async function refreshThumb() {
@@ -292,9 +279,18 @@ export function ProductCard({
 
         {!renaming && (
           <button
+            ref={menuTriggerRef}
             type="button"
             aria-label="Product actions"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
             onClick={() => setMenuOpen((v) => !v)}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown" && !menuOpen) {
+                event.preventDefault();
+                setMenuOpen(true);
+              }
+            }}
             className={cn(
               "inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-[var(--color-ink-soft)] transition-all hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)]",
               "opacity-100 sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100",
@@ -320,9 +316,16 @@ export function ProductCard({
             className="fixed inset-0 z-10 cursor-default"
             onClick={() => setMenuOpen(false)}
           />
-          <div className="absolute right-2 top-full z-30 mt-1 w-40 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-soft-strong)]">
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label="Product actions"
+            onKeyDown={onMenuKeyDown}
+            className="absolute right-2 top-full z-30 mt-1 w-40 overflow-hidden rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white py-1 shadow-[var(--shadow-soft-strong)]"
+          >
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
                 setMenuOpen(false);
                 setValue(name);
@@ -336,7 +339,9 @@ export function ProductCard({
             </button>
             <button
               type="button"
+              role="menuitem"
               onClick={() => {
+                menuTriggerRef.current?.focus();
                 setMenuOpen(false);
                 setConfirming(true);
               }}
@@ -360,6 +365,7 @@ export function ProductCard({
             onClick={() => !busy && setConfirming(false)}
           >
             <div
+              ref={deleteDialogRef}
               className="dialog-pop w-full max-w-[400px] rounded-[var(--radius-2xl)] bg-white p-7 shadow-[var(--shadow-soft-strong)]"
               onClick={(e) => e.stopPropagation()}
             >
@@ -386,6 +392,7 @@ export function ProductCard({
 
               <div className="mt-6 flex flex-col-reverse gap-2.5 sm:flex-row sm:justify-end">
                 <button
+                  ref={deleteCancelRef}
                   type="button"
                   onClick={() => setConfirming(false)}
                   disabled={busy}

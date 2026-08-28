@@ -3,6 +3,7 @@ import Link from "next/link";
 import { AlertCircle, ImageUp } from "lucide-react";
 import { AddProductCard } from "@/components/dashboard/add-product";
 import { ProductCard } from "@/components/dashboard/product-card";
+import { DashboardRatingPoller } from "@/components/dashboard/dashboard-rating-poller";
 import { createSupabaseServerClient, getProtectedPageIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { signThumbUrls } from "@/lib/batch-sign-urls";
@@ -62,6 +63,15 @@ export default async function DashboardPage() {
     ratingStatus: r.rating_status,
     ratingError: r.rating_error,
   }));
+  const activeRatings = cards
+    .filter(
+      (card) =>
+        card.ratingJobId &&
+        (card.ratingStatus === "queued" ||
+          card.ratingStatus === "waiting_dependency" ||
+          card.ratingStatus === "scoring")
+    )
+    .map((card) => ({ jobId: card.ratingJobId!, productId: card.id }));
 
   const pastDueBanner = pastDue ? (
     <div className="mx-auto mt-6 flex max-w-[1200px] items-start gap-2.5 rounded-[var(--radius-xl)] border border-[var(--color-weak)]/40 bg-[var(--color-weak-soft)] p-4">
@@ -141,6 +151,7 @@ export default async function DashboardPage() {
 
   return (
     <main className="mx-auto max-w-[1200px] px-6 py-10">
+      <DashboardRatingPoller jobs={activeRatings} />
       {pastDueBanner && <div className="mb-6">{pastDueBanner}</div>}
       <h1 className="font-display text-[30px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
         Your products
@@ -167,7 +178,6 @@ export default async function DashboardPage() {
             storagePath={c.storagePath}
             score={c.score}
             topFix={c.topFix}
-            ratingJobId={c.ratingJobId}
             ratingStatus={c.ratingStatus}
             ratingError={c.ratingError}
           />

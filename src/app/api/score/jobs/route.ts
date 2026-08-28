@@ -9,6 +9,7 @@ import { persistPhotoAndQueueRating, kickRatingWorker } from "@/lib/photo-persis
 import {
   recoverStaleRatingJobs,
   requeueReadyDependencyRatingJobs,
+  runQueuedRatingJobsById,
   runQueuedRatingOnce,
 } from "@/lib/rating-jobs";
 
@@ -117,16 +118,80 @@ export async function POST(req: NextRequest) {
 
 /** Refresh-safe status for a dashboard card or product workspace. */
 export async function GET(req: NextRequest) {
-  // This GET is not read-only: below it can recover a stale rating, requeue a
-  // dependency, and start paid scoring work. Keep fresh Auth-server
-  // verification before any of that; a locally valid JWT may outlive an
-  // account deletion or ban.
+  // Polling can recover, requeue, and start paid rating work below, so this
+  // endpoint retains fresh Auth-server verification. Dashboard callers batch
+  // their job ids into one request to remove the former per-card auth fan-out.
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in first.");
   const jobId = req.nextUrl.searchParams.get("id");
   const photoId = req.nextUrl.searchParams.get("photoId");
-  if (!jobId && !photoId) return apiError("bad_request", "Missing rating job id.");
+  const batchIds = [...new Set(
+    (req.nextUrl.searchParams.get("ids") ?? "")
+      .split(",")
+      .map((id) => id.trim())
+      .filter(Boolean)
+  )];
+  if (batchIds.length > 40 || batchIds.some((id) => !/^[a-zA-Z0-9-]{8,100}$/.test(id))) {
+    return apiError("bad_request", "Invalid rating job ids.");
+  }
+  if (!jobId && !photoId && batchIds.length === 0) {
+    return apiError("bad_request", "Missing rating job id.");
+  }
   const supabase = await createSupabaseServerClient();
+  if (batchIds.length > 0) {
+    const { data: jobs, error } = await supabase
+      .from("rating_jobs")
+      .select("id, product_id, photo_id, status, error_code, error_message")
+      .in("id", batchIds)
+      .limit(40);
+    if (error) return apiError("internal_error", "Could not check ratings.");
+
+    const activeJobs = (jobs ?? []).filter((job) =>
+      ["queued", "waiting_dependency", "scoring"].includes(job.status)
+    );
+    if (activeJobs.length > 0) {
+      after(async () => {
+        // Recovery and requeue are cheap bookkeeping -- safe to do for every
+        // active job in the batch.
+        for (const job of activeJobs) {
+          try {
+            if (job.status === "scoring") {
+              await recoverStaleRatingJobs(job.id);
+            }
+            if (job.status === "waiting_dependency") {
+              await requeueReadyDependencyRatingJobs(job.id);
+            }
+          } catch {
+            logEvent("rating.batch_poll_recovery_failed", {});
+          }
+        }
+        // SCORING is not cheap: each one is a full vision call bounded at 45s
+        // by the provider deadline. Draining up to 40 of them sequentially in
+        // one callback would blow past this route's 240s maxDuration long
+        // before finishing, so the tail would be killed and its invocation
+        // wasted -- and the dashboard re-fires this poll every few seconds.
+        // runQueuedRatingJobsById is the bounded runner the worker already
+        // uses: it dedupes, hard-caps at MAX_SUPPORTING_PHOTOS + 1, and runs
+        // at concurrency 3. The atomic queued->scoring claim makes an overlap
+        // with a concurrent tick harmless.
+        const runnable = activeJobs
+          .filter(
+            (job) =>
+              job.status === "queued" || job.status === "waiting_dependency"
+          )
+          .map((job) => job.id);
+        if (runnable.length > 0) {
+          try {
+            await runQueuedRatingJobsById(runnable, 3);
+          } catch {
+            logEvent("rating.batch_poll_trigger_failed", {});
+          }
+        }
+      });
+    }
+    return NextResponse.json({ jobs: jobs?.map((job) => payload(job as ExistingJob)) ?? [] });
+  }
+
   let query = supabase
     .from("rating_jobs")
     .select("id, product_id, photo_id, status, error_code, error_message")

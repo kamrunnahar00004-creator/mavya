@@ -16,19 +16,23 @@ function handler(src: string, method: "GET" | "POST"): string {
 
 describe("poll authorization boundary", () => {
   it("retains fresh user verification because both GETs can start paid work", () => {
-    // Neither of these handlers is read-only. /api/generate can recover a
-    // stale job and kick queued generation; /api/score/jobs can recover,
-    // requeue, and start paid scoring. Locally-verified JWT claims are
-    // therefore insufficient here: a valid token can outlive an account
-    // deletion or ban, and the side effects below spend money.
     for (const src of [generate, ratingJobs]) {
       const get = handler(src, "GET");
       expect(get).toContain("await getSessionUser()");
       expect(get).not.toContain("getApiUserId");
     }
-    // The side effects that make the above non-negotiable.
     expect(generate).toContain("runQueuedGenerationOnce");
     expect(ratingJobs).toContain("runQueuedRatingOnce");
     expect(server).not.toContain("export const getApiUserId");
+  });
+
+  it("batches dashboard rating ids behind one fresh authentication check", () => {
+    const get = handler(ratingJobs, "GET");
+    expect(get).toContain('searchParams.get("ids")');
+    expect(get).toContain('.in("id", batchIds)');
+    expect(get).toContain("batchIds.length > 40");
+    expect(get.indexOf("await getSessionUser()")).toBeLessThan(
+      get.indexOf('.in("id", batchIds)')
+    );
   });
 });

@@ -68,8 +68,17 @@ describe("durable rating jobs", () => {
     expect(overviewLib).toContain('rpc("dashboard_overview")');
     expect(overviewLib).toContain("legacyDashboardOverview");
     expect(productCard).toContain("Rating…");
-    expect(productCard).toContain("window.setInterval");
+    // Polling itself moved OUT of the card: one batched dashboard poller now
+    // replaces the former per-card timer (which issued one authenticated
+    // request per rating card every 2s). The card still refreshes for its own
+    // rename/delete writes, so that assertion stays here; the polling
+    // assertions follow the behavior to its new home rather than being
+    // dropped, so the architecture stays pinned.
+    expect(productCard).not.toContain("window.setInterval");
     expect(productCard).toContain("router.refresh()");
+    const poller = read("src/components/dashboard/dashboard-rating-poller.tsx");
+    expect(poller).toContain("/api/score/jobs?ids=");
+    expect(poller).toContain("router.refresh()");
   });
 
   it("recovers stale work and keeps expensive worker operations bounded", () => {
