@@ -192,8 +192,10 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
       if (error) throw error;
       setNotice("Check your email for a password reset link.");
     } catch {
-      // Keep the response generic so account existence is never disclosed.
-      setNotice("Check your email for a password reset link.");
+      // Supabase returns success for unknown addresses, so a real error here
+      // is transport/configuration/rate-limit failure, not account-existence
+      // evidence. Do not tell the seller to check an email we know was not sent.
+      setError("Could not send the reset email. Wait a minute and try again.");
     } finally {
       setLoading(false);
     }

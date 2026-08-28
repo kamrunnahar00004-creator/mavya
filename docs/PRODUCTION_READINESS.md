@@ -128,6 +128,13 @@ internals are never sent to the browser. Structured logs via `logEvent()`
 | `STRIPE_PRICE_ID` | the $19/month recurring price |
 | `WORKER_SECRET` (and/or Vercel `CRON_SECRET`) | authorizes /api/generate/worker |
 
+Supabase Auth production setup must also include a custom SMTP provider,
+an allowlisted `/auth/callback` redirect for every deployed origin, reviewed
+password-reset/email rate limits, and CAPTCHA enabled for sign-up, sign-in, and
+password recovery. These controls live in the Supabase dashboard and cannot be
+made authoritative by an application-only limiter because the Auth API is
+necessarily reachable with the public anon key.
+
 ## Migrations
 
 Apply in order in the Supabase SQL editor: `0001_init.sql`, `0002_feedback.sql`,

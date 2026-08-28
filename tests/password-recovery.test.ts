@@ -11,7 +11,8 @@ describe("password recovery", () => {
   it("sends a reset email without disclosing account existence", () => {
     expect(modal).toContain("resetPasswordForEmail");
     expect(modal).toContain('"/auth/reset-password"');
-    expect(modal.match(/Check your email for a password reset link\./g)).toHaveLength(2);
+    expect(modal).toContain("Check your email for a password reset link.");
+    expect(modal).toContain("Could not send the reset email. Wait a minute and try again.");
   });
 
   it("lets an exchanged recovery session bypass only the billing redirect", () => {

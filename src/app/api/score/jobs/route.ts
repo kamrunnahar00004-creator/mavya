@@ -174,12 +174,13 @@ export async function GET(req: NextRequest) {
         // uses: it dedupes, hard-caps at MAX_SUPPORTING_PHOTOS + 1, and runs
         // at concurrency 3. The atomic queued->scoring claim makes an overlap
         // with a concurrent tick harmless.
-        const runnable = activeJobs
-          .filter(
-            (job) =>
-              job.status === "queued" || job.status === "waiting_dependency"
-          )
-          .map((job) => job.id);
+        // Ready queued work goes first. A large set of supporting photos that
+        // are still waiting on their main-photo dependency must not consume
+        // the runner's ten-job cap and starve unrelated queued products.
+        const runnable = [
+          ...activeJobs.filter((job) => job.status === "queued"),
+          ...activeJobs.filter((job) => job.status === "waiting_dependency"),
+        ].map((job) => job.id);
         if (runnable.length > 0) {
           try {
             await runQueuedRatingJobsById(runnable, 3);

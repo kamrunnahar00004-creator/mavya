@@ -31,10 +31,15 @@ describe("batched rating poll keeps its background work bounded", () => {
     expect(cb).toContain("runQueuedRatingJobsById(runnable, 3)");
   });
 
-  it("only queued and waiting_dependency jobs are handed to the runner", () => {
+  it("prioritizes queued jobs so waiting dependencies cannot consume the cap", () => {
     const cb = batchAfterCallback();
-    expect(cb).toContain('job.status === "queued" || job.status === "waiting_dependency"');
-    expect(cb).toContain(".map((job) => job.id)");
+    const queued = cb.indexOf('activeJobs.filter((job) => job.status === "queued")');
+    const waiting = cb.indexOf(
+      'activeJobs.filter((job) => job.status === "waiting_dependency")'
+    );
+    expect(queued).toBeGreaterThan(-1);
+    expect(waiting).toBeGreaterThan(queued);
+    expect(cb.slice(queued, waiting)).not.toContain("runQueuedRatingJobsById");
   });
 
   it("cheap recovery still runs for every active job in the batch", () => {
