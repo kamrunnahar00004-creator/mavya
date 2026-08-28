@@ -82,39 +82,6 @@ export const getProtectedPageIdentity = cache(async () => {
 });
 
 /**
- * Cheap authenticated-presence check for READ-ONLY, HIGH-FREQUENCY API routes.
- *
- * getSessionUser below asks the Supabase Auth server to confirm the user on
- * every call. That round trip is correct for mutations, but the status pollers
- * hit their routes every 2-4 seconds PER PHOTO and PER DASHBOARD CARD, so a
- * listing being rated pays it several times a second purely to re-confirm an
- * identity that has not changed. This helper verifies the same JWT locally
- * against cached signing keys instead -- the exact primitive the middleware
- * already trusts to gate the entire dashboard.
- *
- * SAFE HERE, AND ONLY HERE, for two specific reasons:
- *  1. The callers use the identity as a PRESENCE CHECK only. They never filter
- *     by the returned id -- every row they read is scoped by RLS through the
- *     caller own cookie-bound token, which this helper does not change.
- *  2. The tradeoff claims-verification makes is that a token stays valid until
- *     it expires even if the account was deleted or banned mid-session. For a
- *     read of your own job status that is harmless: the rows are gone, so the
- *     read returns not-found anyway. For anything that SPENDS money, grants
- *     access, or mutates state, it is not acceptable -- those keep
- *     getSessionUser.
- *
- * Do not reach for this in a mutating route. If a route needs the freshest
- * Auth record, or filters by user id itself, use getSessionUser.
- */
-export const getApiUserId = cache(async (): Promise<string | null> => {
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.auth.getClaims();
-  if (error || !data?.claims) return null;
-  const sub = data.claims.sub;
-  return typeof sub === "string" && sub ? sub : null;
-});
-
-/**
  * Return the freshest Auth-server user record for API authorization and other
  * mutation paths. This intentionally retains getUser() semantics; Phase B only
  * changes protected page navigation, where verified JWT claims are sufficient.
