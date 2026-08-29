@@ -203,7 +203,27 @@ export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 // diagnosed fixes rather than ignoring them: a "plain background" fix is
 // executed as improve-this-background-in-place, keeping the seller's own
 // backdrop, hands, and surface, with an explicit may-do / must-not-do list.
-export const GENERATION_PROMPT_VERSION = "gen-v4";
+// gen-v5 (2026-08-29, Codex prompt audit findings 1/3 plus a self-review
+// finding on gen-v4). Three prompt self-contradictions, all the same shape as
+// the two fixed in gen-v4/supporting-v20: two rules teaching opposite lessons
+// about the same feature, where the model picks whichever is louder.
+//   1. RESTRAINED_PROMPT ordered "stains, dirty-looking marks" removed while
+//      vintage/condition guidance requires wear and patina preserved. On a
+//      second-hand listing the mark IS the disclosure, so erasing it is a
+//      misrepresentation, not a cleanup. Narrowed to loose SCENE debris;
+//      anything on the product itself is condition and must survive.
+//   2. RESTRAINED_PROMPT listed "or hands" as removable clutter, which
+//      directly contradicted gen-v4's own Matches Original override ("never
+//      remove a hand or person that is holding or wearing the product"). v4
+//      fixed the style block and left the base prompt arguing with it.
+//      Hands holding/wearing/demonstrating are now explicitly not clutter.
+//   3. SUPPORTING_IMPROVE_PROMPT offered "readability of text" in its
+//      may-improve list two paragraphs after declaring that unclear text must
+//      be kept "visually unchanged rather than guessing". Legibility is now
+//      scoped to whole-image exposure/contrast/rotation/crop, with glyph-level
+//      redrawing forbidden outright -- a legible wrong number is worse for the
+//      buyer than an illegible right one.
+export const GENERATION_PROMPT_VERSION = "gen-v5";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
 
 /** Rubric version for a scoring mode. */

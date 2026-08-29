@@ -76,7 +76,7 @@ export function generationStyleLabel(
   style: GenerationStyle,
   category?: GenerationStyleCategory,
 ): string {
-  if (style === "matches_original") return "Matches Original";
+  if (style === "matches_original") return "Polish this photo";
   if (style === "studio") return "Studio";
   if (
     category &&
@@ -100,15 +100,35 @@ export function sharedGenerationStyles(
 }
 
 /**
- * Informational/document-style supporting roles where a studio or
- * lifestyle treatment does not make sense at all -- the photo's entire
- * job is to communicate exact information (a size chart, an ingredients
- * label, a device mockup), not to look appealing. These roles get
- * "matches_original" only, regardless of category.
+ * Informational/document-style supporting roles whose entire job is to
+ * communicate EXACT information: a size chart, an ingredients label, a care
+ * card, a spec sheet, a bundle layout, a device mockup. The buyer makes a
+ * purchase decision on the literal characters, numbers, and item counts in
+ * these photos.
  *
- * These roles retain only the existing restrained treatment. They must not
- * be restaged into studio/lifestyle scenes because their text, measurements,
- * contents, or display context are the information being sold.
+ * These roles get NO generative styles at all (Codex prompt audit,
+ * 2026-08-29, finding 4/5). Until 2026-08-29 they returned
+ * ["matches_original"], which was wrong in a way that was easy to miss:
+ * "matches_original" is a STYLE, not a pipeline. Every style, that one
+ * included, still routes through the generative image model in
+ * improve-photo.ts. So a size chart reading "Chest: 40 in" was being handed
+ * to a model that redraws the whole frame, and no amount of prompt text
+ * ("TEXT AND NUMBERS ARE SACRED") can make a diffusion model guarantee
+ * exact glyphs. A silently altered measurement reaches the buyer as fact,
+ * and bundle_layout carries the same risk for item COUNTS.
+ *
+ * The block is enforced here rather than in the UI because
+ * generation-queue.ts rejects any style outside availableGenerationStyles()
+ * (see its "generate.style_rejected" path), so returning [] is an
+ * authoritative server-side block for every entry point -- one-click fix,
+ * Fix all, retry, AND seller-directed AI Edit -- not merely a hidden button.
+ *
+ * FOLLOW-UP (not built here, deliberately out of scope): these photos
+ * usually only need exposure, contrast, rotation, and crop, which are
+ * deterministic non-generative operations `sharp` already provides. Offering
+ * that as a separate non-AI path is the right way to give these roles a fix
+ * again. Blocking first is the safe half; do not re-enable the generative
+ * path to restore the feature.
  */
 const INFORMATIONAL_SUPPORTING_ROLES: readonly SupportingPhotoRole[] = [
   "size_chart",
@@ -178,11 +198,25 @@ function isLifestyleAllowedCategory(
   );
 }
 
-/** Lifestyle is available for these categories, but is not the safest first
- * choice for a cold main-photo fix. Model-worn context is the clearest default
- * only where fit/scale is central to understanding the product. */
+/** Lifestyle stays AVAILABLE for every category in the allowlist; this set
+ * controls only which category gets the badge on its MAIN photo.
+ *
+ * Narrowed to apparel on 2026-08-29 (Codex style-picker audit). Jewelry and
+ * bags were dropped for two independent reasons. First, Etsy expects the
+ * first listing image to depict the actual item, and a generated model shot
+ * is a synthetic scene -- a bad thing to nudge every seller toward by
+ * default. Second, the model-worn view is only the clearest presentation
+ * when fit or scale is the buyer's actual doubt; for jewelry and bags the
+ * dominant doubt is usually detail, finish, and material, which a hand or
+ * neck obstructs rather than clarifies. Both now fall through to studio.
+ * Apparel keeps it because a garment's fit IS the product question, and a
+ * flat garment genuinely under-describes it.
+ *
+ * Per-photo conditional suggestion (badge lifestyle only when the audit's own
+ * diagnosed doubt is scale/fit) is the better long-term rule and is Codex's
+ * stated target; this is the category-level correction available today. */
 const LIFESTYLE_RECOMMENDED_CATEGORIES: ReadonlySet<CanonicalCategory> =
-  new Set(["jewelry", "apparel", "bags"] as CanonicalCategory[]);
+  new Set(["apparel"] as CanonicalCategory[]);
 
 /** Supporting photos must preserve their existing job. Studio treatment is
  * limited to roles where a cleaner controlled presentation does not replace
@@ -200,10 +234,29 @@ const LIFESTYLE_SUPPORTING_ROLES: ReadonlySet<SupportingPhotoRole> = new Set([
   "in_use",
 ]);
 
-function isInformationalSupportingRole(
-  role: SupportingPhotoRole | undefined,
+/** Membership set for the runtime check. The SOURCE list above stays typed
+ *  as SupportingPhotoRole[], so a typo in a role name is still a compile
+ *  error; only the lookup is widened. */
+const INFORMATIONAL_SUPPORTING_ROLE_SET: ReadonlySet<string> = new Set(
+  INFORMATIONAL_SUPPORTING_ROLES,
+);
+
+/**
+ * Exported so fix-eligibility.ts and the workspace UI can mirror this block
+ * without keeping a second hand-maintained copy of the role list. Two lists
+ * that must agree is how "Fix all" ends up offering photos the queue refuses.
+ *
+ * Accepts a loose string because callers sit at different boundaries: the
+ * queue and fix-eligibility hold a typed SupportingPhotoRole off the parsed
+ * rubric, while the client workspace holds a widened `string | undefined`
+ * hydrated from the server payload. Narrowing the parameter would have forced
+ * a cast at the UI call site, and a cast there is precisely how a role that
+ * must be blocked slips through unblocked.
+ */
+export function isInformationalSupportingRole(
+  role: string | null | undefined,
 ): boolean {
-  return Boolean(role && INFORMATIONAL_SUPPORTING_ROLES.includes(role));
+  return Boolean(role && INFORMATIONAL_SUPPORTING_ROLE_SET.has(role));
 }
 
 /**
@@ -243,7 +296,10 @@ export function availableGenerationStyles(args: {
     role === "supporting" &&
     isInformationalSupportingRole(supportingPhotoRole)
   ) {
-    return ["matches_original"];
+    // No generative style is safe here -- see INFORMATIONAL_SUPPORTING_ROLES.
+    // Returning [] is what actually blocks generation; callers must surface a
+    // reason rather than silently doing nothing.
+    return [];
   }
   if (role === "supporting") {
     const styles: GenerationStyle[] = ["matches_original"];

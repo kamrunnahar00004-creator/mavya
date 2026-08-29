@@ -65,7 +65,14 @@ describe("StylePickerModal", () => {
     // just made the popup wordy without adding new information.
     expect(source).not.toContain("Review labels, text, patterns");
     expect(source).not.toContain("Every style keeps the real product");
-    expect(source).toContain("Same automatic fixes, different presentation.");
+    // Replaced 2026-08-29: "same automatic fixes" was a false
+    // simplification. Studio and Lifestyle can replace the scene, add a
+    // person, and execute the SAME diagnosed fix in a materially different
+    // way, so the styles are not one outcome in three outfits.
+    expect(source).not.toContain("Same automatic fixes");
+    expect(source).toContain(
+      "Choose how the improved photo should be presented.",
+    );
     expect(auditWorkspace).toContain(
       "Review labels, text,\n                  patterns, personalization, measurements, colors, and included pieces",
     );
@@ -95,9 +102,17 @@ describe("StylePickerModal", () => {
 
     it("reuses the exact existing AI Edit tooltip copy, not a rephrased duplicate", () => {
       expect(source).toContain("AI Edit");
-      expect(source).toContain(
-        "Type what you want changed and AI redraws it.",
-      );
+      // Rewritten 2026-08-29: AI Edit silently drops product-change
+      // requests (improve-photo.ts), so the old open-ended invitation
+      // promised a scope the backend does not honour.
+      const editCopy = "Describe a background, lighting, crop, or cleanup change.";
+      expect(source).toContain(editCopy);
+      // The picker card and the standalone button's tooltip are the SAME
+      // sentence on purpose. Updating one and forgetting the other is exactly
+      // how they drifted when this copy was first changed.
+      expect(auditWorkspace).toContain(editCopy);
+      expect(source).not.toContain("AI redraws it");
+      expect(auditWorkspace).not.toContain("AI redraws it");
     });
 
     it("is a real dialog button, not outside the focus trap", () => {

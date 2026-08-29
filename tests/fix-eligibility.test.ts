@@ -240,3 +240,60 @@ describe("isFixAllDisplayEligible (Fix-all UI client hint)", () => {
     ).toBe(true);
   });
 });
+
+describe("fix-eligibility mirrors the informational-role generation block", () => {
+  const INFORMATIONAL = [
+    "size_chart",
+    "ingredients_materials",
+    "bundle_layout",
+    "feature_spec",
+    "care_instruction",
+    "printed_example",
+    "device_mockup",
+    "planner_preview",
+  ] as const;
+
+  it("marks every informational supporting photo not_generatable", () => {
+    // These have no available generation style at all since 2026-08-29, so
+    // generation-queue.ts would reject them. If this bucket disagreed, "Fix
+    // all" would count them in "Fix 5 photos" and then silently deliver 4.
+    for (const supporting_photo_role of INFORMATIONAL) {
+      expect(
+        computeFixEligibilityBucket(
+          rubric({ overall_score: 4.2, supporting_photo_role }),
+          "supporting",
+        ),
+      ).toBe("not_generatable");
+    }
+  });
+
+  it("leaves the SAME roles generatable on a main photo", () => {
+    // supporting_photo_role is a supporting-photo concept; the block is
+    // deliberately role-scoped so a stray value on a main photo cannot
+    // disable its fix button.
+    expect(
+      computeFixEligibilityBucket(
+        rubric({ overall_score: 4.2, supporting_photo_role: "size_chart" }),
+        "main",
+      ),
+    ).not.toBe("not_generatable");
+  });
+
+  it("still rates an informational photo -- only the FIX is blocked", () => {
+    // CLAUDE.md rule 2: every uploaded product photo may be assessed. The
+    // block removes an unsafe generative action, never the seller's rating.
+    const bucket = computeFixEligibilityBucket(
+      rubric({ overall_score: 4.2, supporting_photo_role: "size_chart" }),
+      "supporting",
+    );
+    expect(isFixAllEligible(bucket)).toBe(false);
+  });
+
+  it("derives the role list from generation-style.ts, not a second copy", () => {
+    const source = readFileSync("src/lib/fix-eligibility.ts", "utf8");
+    expect(source).toContain("isInformationalSupportingRole");
+    // Two hand-maintained lists that must agree is exactly how the UI ends up
+    // offering a photo the server then refuses.
+    expect(source).not.toContain('"size_chart"');
+  });
+});

@@ -298,7 +298,7 @@ export function AuditWorkspace({
       type="button"
       onClick={() => setEditModalOpen(true)}
       aria-label="AI Edit"
-      title="Type what you want changed and AI redraws it."
+      title="Describe a background, lighting, crop, or cleanup change."
       className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
     >
       <Wrench className="h-4 w-4" aria-hidden="true" />

@@ -27,15 +27,20 @@ type StyleCopy = {
 const STYLE_COPY: Record<GenerationStyle, StyleCopy> = {
   matches_original: {
     description:
-      "Keeps the same scene and adjusts lighting, background, and framing.",
+      "Keeps this scene. Cleans distractions and improves light and framing.",
     icon: ImageIcon,
   },
   studio: {
-    description: "Clean neutral studio background and controlled light.",
+    description:
+      "Places the same product in a simple white or light-gray studio setup.",
     icon: Aperture,
   },
   lifestyle: {
-    description: "Shown worn, used, or in a styled real-world scene.",
+    // Says outright that a NEW scene/person is generated. The old wording
+    // ("shown worn, used...") read as if an existing photo were being
+    // restyled, which is the one thing this style does not do.
+    description:
+      "Creates a new worn or in-use scene. Review product details carefully.",
     icon: User,
   },
 };
@@ -136,7 +141,7 @@ export function StylePickerModal({
               Choose a style
             </h2>
             <p className="mt-0.5 text-[13px] text-[var(--color-ink-muted)]">
-              Same automatic fixes, different presentation.
+              Choose how the improved photo should be presented.
             </p>
           </div>
           <button
@@ -178,7 +183,7 @@ export function StylePickerModal({
                     {isRecommended ? (
                       <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[11px] font-semibold text-white">
                         <Check className="h-3 w-3" aria-hidden="true" />
-                        Recommended
+                        Suggested
                       </span>
                     ) : null}
                   </span>
@@ -211,7 +216,7 @@ export function StylePickerModal({
                   AI Edit
                 </span>
                 <span className="mt-0.5 block text-[13px] leading-snug text-[var(--color-ink-muted)]">
-                  Type what you want changed and AI redraws it.
+                  Describe a background, lighting, crop, or cleanup change.
                 </span>
               </span>
             </button>

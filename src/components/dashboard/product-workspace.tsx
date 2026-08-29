@@ -9,6 +9,7 @@ import { StylePickerModal } from "@/components/style-picker-modal";
 import type { SlotView } from "@/components/photo-slot-strip";
 import {
   availableGenerationStyles,
+  isInformationalSupportingRole,
   normalizeGenerationStyleCategory,
   recommendedMainStyle,
   sharedGenerationStyles,
@@ -1355,8 +1356,20 @@ export function ProductWorkspace({
       role: photo.kind,
       supportingPhotoRole: photo.rubric.supporting_photo_role,
     });
-    if (styles.length === 0) return;
     const wrongProduct = photo.supportingRole === "unrelated_or_wrong_product";
+    if (styles.length === 0) {
+      // Never bail out silently: an unexplained dead button reads as a broken
+      // app, and the informational-role block (generation-style.ts) now sends
+      // real, correctly-rated photos down this path.
+      setNotice(
+        wrongProduct
+          ? "This photo shows a different product than your listing, so it cannot be improved."
+          : isInformationalSupportingRole(photo.rubric.supporting_photo_role)
+            ? "AI improvement is off for photos that carry information buyers rely on, like size charts, ingredient lists, care instructions, and what's-included layouts. Improving a photo means redrawing it, and a redraw cannot guarantee a measurement, ingredient, or item count survives unchanged. Your rating for this photo is still ready."
+            : "AI improvement is not available for this photo. Your rating is still ready."
+      );
+      return;
+    }
     setStylePicker({
       variant: "single",
       styles,
@@ -1888,7 +1901,19 @@ export function ProductWorkspace({
   // cannot preserve exact text/layout; Edit stays so the seller can direct
   // changes, and rating is always available.
   const digital = active.isDigital;
-  const contextBanner = graphic
+  // Informational supporting photos (size chart, ingredients, care card,
+  // bundle layout, spec sheet, mockup) have NO available generation style at
+  // all since 2026-08-29, because a generative redraw cannot guarantee that a
+  // measurement, ingredient, or item COUNT survives unchanged. Every
+  // generative entry point must close together, seller-directed AI Edit
+  // included: it posts to the same queue and would otherwise be refused with
+  // a message about styles, which explains nothing to the seller.
+  const informationalDocument =
+    active.kind === "supporting" &&
+    isInformationalSupportingRole(active.supportingRole);
+  const contextBanner = informationalDocument
+    ? "This photo carries information a buyer will rely on, so AI improvement is off for it. Improving a photo means redrawing it, and a redraw cannot guarantee a measurement, ingredient, or item count survives unchanged. Your rating is ready below."
+    : graphic
     ? "This is a listing graphic, not a plain product photo. We rated it on how clearly and honestly it helps a buyer, and one-click fix is off because generation cannot preserve its text and layout."
     : digital
     ? "Digital product detected. We scored how clearly the thumbnail shows what the buyer receives, not physical photography."
@@ -2021,11 +2046,12 @@ export function ProductWorkspace({
         onRemovePhoto={active.kind === "supporting" ? handleRemovePhoto : undefined}
         onCta={() => router.push("/dashboard")}
         onImprove={
-          oneClickGenerationAllowed({ wrongProduct, digital, graphic })
+          oneClickGenerationAllowed({ wrongProduct, digital, graphic }) &&
+          !informationalDocument
             ? handleImprove
             : undefined
         }
-        onEdit={wrongProduct ? undefined : handleEdit}
+        onEdit={wrongProduct || informationalDocument ? undefined : handleEdit}
         versionOptions={versionOptions}
         onSelectVersion={handleSelectVersion}
         versionBusy={versionBusy}

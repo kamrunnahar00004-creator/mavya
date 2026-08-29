@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   availableGenerationStyles,
@@ -38,8 +39,11 @@ describe("generation-style: stable ids", () => {
 
 describe("generation-style: category-aware picker labels", () => {
   it("keeps the two universal labels stable", () => {
+    // Renamed 2026-08-29. "Matches Original" read as a guarantee of
+    // identity, which is the exact thing the founder queried when the style
+    // altered a background. The label now names the ACTION performed.
     expect(generationStyleLabel("matches_original", "jewelry")).toBe(
-      "Matches Original",
+      "Polish this photo",
     );
     expect(generationStyleLabel("studio", "candles")).toBe("Studio");
   });
@@ -84,13 +88,24 @@ describe("generation-style: honest bulk availability", () => {
     ).toEqual(["matches_original", "studio"]);
   });
 
-  it("keeps informational photos from silently being skipped by Fix all", () => {
+  it("narrows to what EVERY photo accepts, never the union", () => {
+    // A union would let "Fix 5 photos" mean "up to 5, some may be skipped".
     expect(
       sharedGenerationStyles([
         ["matches_original", "studio", "lifestyle"],
         ["matches_original"],
       ]),
     ).toEqual(["matches_original"]);
+  });
+
+  it("collapses to nothing when one photo in the roster accepts nothing", () => {
+    // This is why informational photos must be filtered OUT of the Fix-all
+    // roster upstream (fix-eligibility.ts) rather than left in it: since
+    // 2026-08-29 they return [], and one size chart left in the roster would
+    // otherwise disable Fix all for the entire product.
+    expect(
+      sharedGenerationStyles([["matches_original", "studio"], []]),
+    ).toEqual([]);
   });
 
   it("returns no choice for an empty roster", () => {
@@ -100,6 +115,9 @@ describe("generation-style: honest bulk availability", () => {
 
 describe("generation-style: matches_original is the physical-photo baseline", () => {
   it("every physical category, main and supporting, includes matches_original", () => {
+    // Scoped to photos with no informational supporting role. Those are
+    // blocked outright since 2026-08-29 and are covered separately below;
+    // this remains the baseline for every ordinary product photo.
     for (const category of CATEGORY_IDS) {
       if (categoryById(category)?.kind === "digital") continue;
       expect(availableGenerationStyles({ category, role: "main" })).toContain(
@@ -167,7 +185,7 @@ describe("generation-style: category + role availability matrix", () => {
     expect(recommendedMainStyle("other")).toBe("matches_original");
   });
 
-  it("an informational supporting role (size chart, ingredients, device mockup, etc.) only offers matches_original regardless of category", () => {
+  it("an informational supporting role (size chart, ingredients, device mockup, etc.) offers NO generative style at all", () => {
     const informationalRoles = [
       "size_chart",
       "ingredients_materials",
@@ -188,7 +206,28 @@ describe("generation-style: category + role availability matrix", () => {
         role: "supporting",
         supportingPhotoRole: role,
       });
-      expect(styles).toEqual(["matches_original"]);
+      expect(styles).toEqual([]);
+    }
+  });
+
+  it("does not hand informational photos to the generative model via matches_original", () => {
+    // THE BUG THIS FILE PREVIOUSLY ENCODED AS CORRECT. Until 2026-08-29 these
+    // roles returned ["matches_original"], which looked conservative and was
+    // not: matches_original is a STYLE, not a separate pipeline -- it still
+    // routes through the generative image model in improve-photo.ts. So a
+    // size chart reading "Chest: 40 in" was being handed to a model that
+    // redraws the whole frame, and no prompt wording makes a diffusion model
+    // guarantee exact glyphs. bundle_layout carries the same risk for COUNTS.
+    // If a non-generative sharp-based path is added later, it must be a new
+    // pipeline; re-adding a style here silently restores the defect.
+    for (const role of ["size_chart", "bundle_layout"] as const) {
+      expect(
+        availableGenerationStyles({
+          category: "apparel",
+          role: "supporting",
+          supportingPhotoRole: role,
+        }),
+      ).not.toContain("matches_original");
     }
   });
 
@@ -272,9 +311,57 @@ describe("generation-style: recommendation is data-only, one category signal at 
     }
   });
 
-  it("recommends lifestyle only where model/fit/scale is central", () => {
-    for (const category of ["jewelry", "apparel", "bags"] as const) {
-      expect(recommendedMainStyle(category)).toBe("lifestyle");
+  it("recommends lifestyle only where fit is the product question itself", () => {
+    expect(recommendedMainStyle("apparel")).toBe("lifestyle");
+  });
+
+  it("does not push jewelry or bags toward a generated model shot by default", () => {
+    // Narrowed 2026-08-29 (Codex style-picker audit). Etsy expects the first
+    // listing image to depict the actual item, so nudging every seller in
+    // these categories toward a synthetic model scene for their MAIN photo is
+    // the wrong default. The buyer's dominant doubt here is detail, finish,
+    // and material -- which a hand or neck obstructs rather than clarifies.
+    for (const category of ["jewelry", "bags"] as const) {
+      expect(recommendedMainStyle(category)).toBe("studio");
+      // Still OFFERED, just not badged: this is a default change, not a
+      // capability removal.
+      expect(
+        availableGenerationStyles({ category, role: "main" }),
+      ).toContain("lifestyle");
     }
+  });
+});
+
+describe("generation-style: every generative entry point closes together", () => {
+  const workspace = readFileSync(
+    "src/components/dashboard/product-workspace.tsx",
+    "utf8",
+  );
+
+  it("gates seller-directed AI Edit on the same informational-role check", () => {
+    // The style policy alone covers one-click fix, Fix all, and retry.
+    // audit-workspace.tsx also renders a STANDALONE AI Edit button, and AI
+    // Edit posts to the same queue with a style -- so without this gate a
+    // size chart still reached the generative model and came back with an
+    // unexplained "This generation style is not available for this photo."
+    expect(workspace).toContain("isInformationalSupportingRole(active.supportingRole)");
+    expect(workspace).toContain(
+      "onEdit={wrongProduct || informationalDocument ? undefined : handleEdit}",
+    );
+  });
+
+  it("hides one-click fix for the same photos", () => {
+    expect(workspace).toContain("!informationalDocument");
+  });
+
+  it("explains the block in the banner rather than leaving a dead panel", () => {
+    expect(workspace).toContain(
+      "This photo carries information a buyer will rely on, so AI improvement is off for it.",
+    );
+  });
+
+  it("still shows the rating -- only generation is withheld", () => {
+    // CLAUDE.md rule 2: every uploaded product photo may be assessed.
+    expect(workspace).toContain("Your rating is ready below.");
   });
 });

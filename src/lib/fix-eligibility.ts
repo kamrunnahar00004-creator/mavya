@@ -1,4 +1,5 @@
 import type { RubricJson } from "@/lib/rubric";
+import { isInformationalSupportingRole } from "@/lib/generation-style";
 import { bandForScore } from "@/lib/utils";
 
 export type FixEligibilityBucket =
@@ -62,6 +63,15 @@ export function computeFixEligibilityBucket(
     rubric.supporting_photo_role === "digital_preview" ||
     (role === "supporting" &&
       rubric.supporting_photo_role === "unrelated_or_wrong_product") ||
+    // Informational supporting roles have no available generation style at
+    // all (generation-style.ts), so the queue would refuse them. Excluding
+    // them here keeps "Fix all" honest in BOTH directions: the roster never
+    // promises a photo the server will skip, and -- less obvious -- the
+    // shared-style intersection in product-workspace.tsx never collapses to
+    // [] and disables "Fix all" for the whole product just because one size
+    // chart is present.
+    (role === "supporting" &&
+      isInformationalSupportingRole(rubric.supporting_photo_role)) ||
     rubric.generation_risk === "unsupported";
   if (notGeneratable) return "not_generatable";
 
