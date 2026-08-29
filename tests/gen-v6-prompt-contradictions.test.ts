@@ -13,7 +13,7 @@ const improve = readFileSync(path.resolve("src/lib/improve-photo.ts"), "utf8");
  */
 describe("gen-v6: the generation prompts no longer argue with themselves", () => {
   // The literal version pin deliberately lives in ONE place: the test file
-  // for the most recent prompt change (currently gen-v7). Re-pinning it here
+  // for the most recent prompt change. Re-pinning it here
   // would mean every future bump breaks every historical prompt test file
   // without catching anything the single pin does not already catch. The
   // assertions below are about prompt CONTENT and stay valid across bumps.

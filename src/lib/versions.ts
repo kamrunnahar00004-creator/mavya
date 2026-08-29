@@ -259,7 +259,17 @@ export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 // a measured conversion win; Codex audit item P2.4 warns specifically against
 // encoding market-research defaults as proven winners. Revisit against real
 // Etsy CTR when there is any.
-export const GENERATION_PROMPT_VERSION = "gen-v7";
+// gen-v8 (2026-08-29, Codex review of gen-v7). Three precision fixes:
+//   1. Later fixesBlock instructions could still erase either selected role:
+//      Lifestyle could become a white-background studio shot, while Studio
+//      could regain a prop/model from Click Appeal advice. Both styles now
+//      re-scope conflicting diagnosed fixes explicitly.
+//   2. Clear, glass, mirrored, silver, and highly reflective products now use
+//      neutral mid-grey rather than a colored mid-tone. A colored backdrop can
+//      show through or appear in reflections, falsely shifting product color.
+//   3. The pure-white rule now says the IMAGE boundary disappears into Etsy's
+//      white page, not that a dark product itself somehow loses its edge.
+export const GENERATION_PROMPT_VERSION = "gen-v8";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
 
 /** Rubric version for a scoring mode. */

@@ -11,23 +11,28 @@ const studio = generationStylePromptBlock({
   detectedCategory: "crochet_plush",
   role: "main",
 });
+const lifestyle = generationStylePromptBlock({
+  style: "lifestyle",
+  detectedCategory: "apparel",
+  role: "main",
+});
 
 /**
- * gen-v7. Studio previously hardcoded "a plain white or light-gray
+ * gen-v8. Studio previously hardcoded "a plain white or light-gray
  * background/surface". White is not what makes a shot a studio shot -- a
  * studio backdrop is seamless paper, which comes in every color -- and the
  * static default actively hurt two cases: an Etsy grid rendered on a white
  * page (the thumbnail has no edge) and a white or reflective product (the
  * silhouette disappears).
  */
-describe("gen-v7: Studio picks a backdrop tone instead of defaulting to white", () => {
+describe("gen-v8: style choices survive later audit fixes", () => {
   it("is pinned to a bumped version -- prompt text is part of the cache key", () => {
     // THE single literal pin for GENERATION_PROMPT_VERSION. score_cache and
     // generation reuse are keyed on the exact prompt string, so changed text
     // read under an unchanged version is a correctness bug, not just untidy.
     // When the next prompt change lands, MOVE this assertion into that
     // change's test file and delete it here -- do not add a second one.
-    expect(GENERATION_PROMPT_VERSION).toBe("gen-v7");
+    expect(GENERATION_PROMPT_VERSION).toBe("gen-v8");
   });
 
   it("no longer hardcodes a white or light-gray backdrop", () => {
@@ -43,18 +48,26 @@ describe("gen-v7: Studio picks a backdrop tone instead of defaulting to white", 
     expect(studio).toContain("gentle complementary or contrasting relationship");
   });
 
-  it("protects the case that motivated the change: a pale or reflective product", () => {
+  it("protects pale opaque products with a deeper low-saturation tone", () => {
     // A white mug on a white sweep has no outline at all. The founder's own
     // observation, and the reason a static default was wrong rather than
     // merely bland.
     expect(studio).toContain("MUST NOT BE PLACED ON WHITE OR NEAR-WHITE");
-    expect(studio).toContain("Its outline disappears entirely");
-    expect(studio).toContain("clearly deeper mid-tone");
+    expect(studio).toContain("clearly deeper low-saturation mid-tone");
+  });
+
+  it("uses neutral grey for transparent and reflective products", () => {
+    expect(studio).toContain("requires a NEUTRAL mid-grey backdrop");
+    expect(studio).toContain("not a colored tone");
+    expect(studio).toContain(
+      "show through transparent material or appear in reflections",
+    );
+    expect(studio).toContain("preserving the exact transparency");
   });
 
   it("never allows pure white, because the page behind it is already white", () => {
     expect(studio).toContain("Never use pure paper white");
-    expect(studio).toContain("no visible edge at all");
+    expect(studio).toContain("image boundary disappears into that page");
   });
 
   it("caps saturation so the backdrop cannot tint the product", () => {
@@ -63,6 +76,9 @@ describe("gen-v7: Studio picks a backdrop tone instead of defaulting to white", 
     // its apparent color, and a wrong color is a return and a bad review.
     expect(studio).toContain("Keep saturation LOW");
     expect(studio).toContain("never a strong, vivid, or bold color");
+    expect(studio).toContain(
+      "keep the same lightness but move it closer to neutral grey",
+    );
     expect(studio).toContain(
       "its real color, finish, and material must be completely unchanged",
     );
@@ -85,6 +101,23 @@ describe("gen-v7: Studio picks a backdrop tone instead of defaulting to white", 
     expect(studio).toContain("chosen backdrop tone");
     expect(studio).toContain("it is not prescribing the literal color white");
     expect(studio).toContain("including the audit's own phrasing");
+    expect(studio).toContain("If a fix asks for a prop, styled scene, model, hand");
+    expect(studio).toContain("STUDIO remains product-only with no props or people");
+    expect(studio).toContain("and the diagnosed fixes below");
+  });
+
+  it("keeps a selected lifestyle scene when later fixes ask for studio treatment", () => {
+    expect(lifestyle).toContain(
+      "HOW TO APPLY THE DIAGNOSED FIXES BELOW UNDER THIS STYLE",
+    );
+    expect(lifestyle).toContain(
+      "CLEANER VERSION OF THIS IN-USE OR STYLED CONTEXT",
+    );
+    expect(lifestyle).toContain("never as a studio or product-only conversion");
+    expect(lifestyle).toContain(
+      "retain the person, room, table setting, or use context",
+    );
+    expect(lifestyle).toContain("including the diagnosed fixes below");
   });
 
   it("the style block is still composed BEFORE the fixes block", () => {
