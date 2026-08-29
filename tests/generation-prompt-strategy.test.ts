@@ -89,6 +89,23 @@ describe("generation prompt strategy execution", () => {
   });
 
   it("passes the durable job style through both root and refinement execution", () => {
-    expect(refinement.match(/generationStyle: job\.generation_style/g)).toHaveLength(2);
+    // 4, not 2, since gen-v6: each worker now uses the persisted style TWICE --
+    // once to revalidate it against current policy, once to hand it to the
+    // generator. Queue-time authorization is not sufficient on its own because
+    // a durable row can outlive the policy deployment that would have refused
+    // it, and a refinement is inserted by the worker rather than by a request.
+    expect(refinement.match(/generationStyle: job\.generation_style/g)).toHaveLength(4);
+  });
+
+  it("revalidates the persisted style in BOTH workers before spending anything", () => {
+    expect(
+      refinement.match(/generationStyleAllowedForExecution\(\{/g)
+    ).toHaveLength(2);
+    // Order matters more than presence: an obsolete row must be refused before
+    // it can consume the global budget or the seller's workflow allowance.
+    const rootGate = refinement.lastIndexOf("generationStyleAllowedForExecution({");
+    const charge = refinement.indexOf("const charge = await consumeAllowance({");
+    expect(rootGate).toBeGreaterThan(-1);
+    expect(charge).toBeGreaterThan(rootGate);
   });
 });

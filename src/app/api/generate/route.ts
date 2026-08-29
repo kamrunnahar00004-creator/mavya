@@ -159,6 +159,8 @@ async function jobPayload(
     message:
       job.error_code === "insufficient_credits"
         ? "Your product improvement credit ran out"
+        : job.error_code === "unsupported_product"
+        ? "AI improvement is no longer available for this photo because exact product information cannot be guaranteed. Your rating is still ready."
         : job.error_code === "subscription_required" ||
           job.error_code === "subscription_past_due"
         ? "An active plan is needed to improve photos. Check Settings to update billing."

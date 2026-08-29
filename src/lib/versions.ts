@@ -223,7 +223,14 @@ export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 //      scoped to whole-image exposure/contrast/rotation/crop, with glyph-level
 //      redrawing forbidden outright -- a legible wrong number is worse for the
 //      buyer than an illegible right one.
-export const GENERATION_PROMPT_VERSION = "gen-v5";
+// gen-v6 (2026-08-29, Codex review of gen-v5). The hand correction above was
+// initially written as a global "never remove" rule in RESTRAINED_PROMPT. That
+// protected Matches Original but also overrode Studio/Lifestyle, whose selected
+// transformation may legitimately replace a hand-held scene. v6 classifies a
+// holding/modeling person as meaningful context, delegates keep/remove to the
+// selected style, and still forbids inventing product geometry hidden by them.
+// Matches Original keeps its stronger explicit prohibition in the style block.
+export const GENERATION_PROMPT_VERSION = "gen-v6";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
 
 /** Rubric version for a scoring mode. */

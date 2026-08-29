@@ -6,14 +6,15 @@ import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
 const improve = readFileSync(path.resolve("src/lib/improve-photo.ts"), "utf8");
 
 /**
- * gen-v5. Three self-contradictions in the generation prompts, all the same
+ * gen-v6. Three self-contradictions in the generation prompts, plus the
+ * style-scoping correction found while independently reviewing gen-v5.
  * shape as the two fixed in gen-v4/supporting-v20: two rules teaching
  * opposite lessons about the same feature, where the model obeys whichever
  * is louder or later rather than the one that is correct.
  */
-describe("gen-v5: the generation prompts no longer argue with themselves", () => {
+describe("gen-v6: the generation prompts no longer argue with themselves", () => {
   it("is pinned to a bumped version -- prompt text is part of the cache key", () => {
-    expect(GENERATION_PROMPT_VERSION).toBe("gen-v5");
+    expect(GENERATION_PROMPT_VERSION).toBe("gen-v6");
   });
 
   describe("condition is not dirt", () => {
@@ -43,25 +44,37 @@ describe("gen-v5: the generation prompts no longer argue with themselves", () =>
       expect(improve).not.toContain("messy bedding, floors, shelves, or hands");
     });
 
-    it("states outright that a holding or wearing hand is the subject", () => {
-      expect(improve).toContain("HANDS AND PEOPLE ARE NOT CLUTTER");
+    it("treats a holding or wearing hand as context, not generic clutter", () => {
       expect(improve).toContain(
-        "never remove a hand, arm, or person that is HOLDING, WEARING, MODELING, or DEMONSTRATING the product"
+        "is meaningful product context, not ordinary clutter"
       );
-      // The narrow, still-legitimate case survives.
       expect(improve).toContain(
-        "may be removed only when it is idle in the background and is touching nothing that is sold"
+        "An idle person in the background who touches nothing sold may be removed"
       );
     });
 
-    it("agrees with the Matches Original style block rather than contradicting it", () => {
-      expect(improve).toContain("HANDS AND PEOPLE ARE NOT CLUTTER");
+    it("delegates keep/remove to the selected style instead of overriding every style", () => {
+      expect(improve).toContain(
+        "Follow the SELECTED GENERATION STYLE below to decide whether that context stays"
+      );
+      expect(improve).not.toContain(
+        "never remove a hand, arm, or person that is HOLDING"
+      );
+      expect(improve).toContain(
+        "Under MATCHES ORIGINAL, do not remove intentional scale references"
+      );
+    });
+
+    it("keeps the strong no-removal guarantee inside Matches Original", () => {
       const strategy = readFileSync(
         path.resolve("src/lib/generation-prompt-strategy.ts"),
         "utf8"
       );
       expect(strategy).toContain(
         "remove a hand or person that is holding or wearing the product"
+      );
+      expect(improve).toContain(
+        "Never remove it when doing so would require inventing product surfaces or geometry hidden behind it"
       );
     });
   });

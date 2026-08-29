@@ -20,7 +20,11 @@ import { getEntitlement } from "@/lib/entitlements";
 import type { RubricJson } from "@/lib/rubric";
 import type { FidelityReport } from "@/lib/fidelity";
 import type { GenerationJobStatus } from "@/lib/generation-types";
-import type { GenerationStyle } from "@/lib/generation-style";
+import {
+  availableGenerationStyles,
+  normalizeGenerationStyleCategory,
+  type GenerationStyle,
+} from "@/lib/generation-style";
 
 /**
  * Bounded background refinement (attempt 2, the single automatic follow-up of
@@ -65,6 +69,24 @@ export type WorkflowJobRow = {
   unresolved_issues: string[] | null;
   updated_at: string;
 };
+
+/**
+ * Revalidate persisted jobs at execution time. Queue-time authorization remains
+ * the normal boundary, but durable rows can outlive a policy deployment and
+ * refinements are inserted directly by the worker. No old or recovered row may
+ * reach the image provider after its category/role/style combination is blocked.
+ */
+export function generationStyleAllowedForExecution(args: {
+  photoRole: string;
+  audit: Pick<RubricJson, "detected_category" | "supporting_photo_role">;
+  generationStyle: GenerationStyle;
+}): boolean {
+  return availableGenerationStyles({
+    category: normalizeGenerationStyleCategory(args.audit.detected_category),
+    role: args.photoRole === "main" ? "main" : "supporting",
+    supportingPhotoRole: args.audit.supporting_photo_role,
+  }).includes(args.generationStyle);
+}
 
 /**
  * Auto-select a completed SAFE candidate as the photo's visible version,
@@ -538,11 +560,6 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
       });
       return job.id;
     }
-    if (!(await withinGlobalBudget("generate"))) {
-      await fail("generation_disabled", "failed");
-      return job.id;
-    }
-
     // Load the owned photo and verify ownership via the product owner. The
     // worker has no user session, so ownership is enforced explicitly.
     const { data: photo } = await admin
@@ -569,6 +586,20 @@ export async function runQueuedRefinementOnce(jobId?: string): Promise<string | 
       return job.id;
     }
     const mode: ImproveMode = photo.role === "main" ? "main" : "extra";
+    if (
+      !generationStyleAllowedForExecution({
+        photoRole: photo.role,
+        audit: originalAudit,
+        generationStyle: job.generation_style,
+      })
+    ) {
+      await fail("unsupported_product", "rejected");
+      return job.id;
+    }
+    if (!(await withinGlobalBudget("generate"))) {
+      await fail("generation_disabled", "failed");
+      return job.id;
+    }
 
     // Parent attempt decides the refinement targeting.
     const { data: parent } = await admin
@@ -837,29 +868,6 @@ export async function runQueuedGenerationOnce(jobId?: string): Promise<string | 
       );
       return job.id;
     }
-    if (!(await withinGlobalBudget("generate"))) {
-      await fail("generation_disabled", "failed");
-      return job.id;
-    }
-
-    // Atomic workflow charge (idempotent by allowance key: a re-run of the
-    // same job can never double-charge).
-    const charge = await consumeAllowance({
-      userId: job.user_id,
-      kind: "workflow",
-      periodKey: entitlement.periodKey,
-      idempotencyKey: job.allowance_key ?? `${job.user_id}:workflow:${job.idempotency_key}`,
-      refId: job.id,
-    });
-    if (!charge.ok) {
-      await fail(
-        charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
-        "cancelled"
-      );
-      return job.id;
-    }
-    await patch({ charged: 1 });
-
     // Owned photo (worker has no session; ownership enforced explicitly).
     const { data: photo } = await admin
       .from("photos")
@@ -885,6 +893,42 @@ export async function runQueuedGenerationOnce(jobId?: string): Promise<string | 
       return job.id;
     }
     const mode: ImproveMode = photo.role === "main" ? "main" : "extra";
+    if (
+      !generationStyleAllowedForExecution({
+        photoRole: photo.role,
+        audit: originalAudit,
+        generationStyle: job.generation_style,
+      })
+    ) {
+      // This row may predate the current style policy. Reject it before global
+      // budget or allowance consumption; durable recovery must not revive an
+      // operation the current queue boundary would refuse.
+      await fail("unsupported_product", "cancelled");
+      return job.id;
+    }
+    if (!(await withinGlobalBudget("generate"))) {
+      await fail("generation_disabled", "failed");
+      return job.id;
+    }
+
+    // Atomic workflow charge (idempotent by allowance key: a re-run of the
+    // same job can never double-charge). Source and current style policy are
+    // validated first so an obsolete durable row cannot consume an allowance.
+    const charge = await consumeAllowance({
+      userId: job.user_id,
+      kind: "workflow",
+      periodKey: entitlement.periodKey,
+      idempotencyKey: job.allowance_key ?? `${job.user_id}:workflow:${job.idempotency_key}`,
+      refId: job.id,
+    });
+    if (!charge.ok) {
+      await fail(
+        charge.code === "insufficient_credits" ? "insufficient_credits" : "internal_error",
+        "cancelled"
+      );
+      return job.id;
+    }
+    await patch({ charged: 1 });
 
     const { data: originalBlob } = await admin.storage
       .from("product-photos")
