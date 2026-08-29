@@ -34,7 +34,7 @@ describe("generation prompt strategy execution", () => {
     expect(strategy).toContain("SELECTED GENERATION STYLE: MATCHES ORIGINAL");
     expect(strategy).toContain("SELECTED GENERATION STYLE: STUDIO");
     expect(strategy).toContain("SELECTED GENERATION STYLE: MODEL / LIFESTYLE");
-    expect(strategy).toContain("plain white or light-gray background/surface");
+    expect(strategy).toContain("one plain seamless backdrop and surface");
     expect(strategy).toContain("fit, scale, use, or placement");
   });
 

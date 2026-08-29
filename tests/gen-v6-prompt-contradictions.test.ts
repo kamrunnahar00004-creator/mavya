@@ -1,7 +1,6 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { GENERATION_PROMPT_VERSION } from "@/lib/versions";
 
 const improve = readFileSync(path.resolve("src/lib/improve-photo.ts"), "utf8");
 
@@ -13,9 +12,11 @@ const improve = readFileSync(path.resolve("src/lib/improve-photo.ts"), "utf8");
  * is louder or later rather than the one that is correct.
  */
 describe("gen-v6: the generation prompts no longer argue with themselves", () => {
-  it("is pinned to a bumped version -- prompt text is part of the cache key", () => {
-    expect(GENERATION_PROMPT_VERSION).toBe("gen-v6");
-  });
+  // The literal version pin deliberately lives in ONE place: the test file
+  // for the most recent prompt change (currently gen-v7). Re-pinning it here
+  // would mean every future bump breaks every historical prompt test file
+  // without catching anything the single pin does not already catch. The
+  // assertions below are about prompt CONTENT and stay valid across bumps.
 
   describe("condition is not dirt", () => {
     it("no longer orders stains and dirty-looking marks removed wholesale", () => {

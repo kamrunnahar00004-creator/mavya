@@ -230,7 +230,36 @@ export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 // holding/modeling person as meaningful context, delegates keep/remove to the
 // selected style, and still forbids inventing product geometry hidden by them.
 // Matches Original keeps its stronger explicit prohibition in the style block.
-export const GENERATION_PROMPT_VERSION = "gen-v6";
+// gen-v7 (2026-08-29, founder decision). Studio hardcoded "a plain white or
+// light-gray background/surface". Two problems with that default, both
+// observed rather than theoretical:
+//   1. Etsy renders search results on a WHITE page, so a white-backed
+//      thumbnail has no visible edge and dissolves into the grid.
+//   2. A white, cream, glass, or reflective product on a white backdrop loses
+//      its silhouette completely -- the worst case for exactly the products
+//      that most need the help.
+// White was never what made the shot a studio shot: a studio backdrop is
+// seamless paper, which comes in every color. v7 has the model choose ONE
+// flat, low-saturation tone that contrasts with the product, with an explicit
+// deeper-mid-tone rule for pale and reflective products.
+//
+// Saturation is capped deliberately. A strong backdrop bounces colored light
+// onto the product and shifts its apparent color, and "the color was not what
+// the photo showed" is a return, a refund, and a bad review. Pale tints bounce
+// almost nothing, so the separation is available without the fidelity cost.
+//
+// The override paragraph is the load-bearing part, and is the gen-v4 lesson
+// applied a second time: buildTargetedPrompt composes fixesBlock AFTER
+// styleBlock, and the audit's own priority_action really does say "using a
+// plain white or light gray background" (see tests/advice-quality.test.ts).
+// Without re-scoping that instruction explicitly, the later and more specific
+// fix text wins and the backdrop stays white regardless of this block.
+//
+// NOT VALIDATED BY CLICK DATA. A reasoned bet about thumbnail separation, not
+// a measured conversion win; Codex audit item P2.4 warns specifically against
+// encoding market-research defaults as proven winners. Revisit against real
+// Etsy CTR when there is any.
+export const GENERATION_PROMPT_VERSION = "gen-v7";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
 
 /** Rubric version for a scoring mode. */

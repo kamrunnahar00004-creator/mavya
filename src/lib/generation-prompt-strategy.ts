@@ -112,7 +112,17 @@ ${lock}`;
         : STUDIO_BY_CATEGORY[category] ??
           "Use a clean product-studio setup with soft even light and a plain neutral surface.";
     return `SELECTED GENERATION STYLE: STUDIO.
-The seller explicitly chose a controlled studio presentation. Replace only the surrounding presentation with a believable real-photo studio setup: soft color-accurate light, a plain white or light-gray background/surface, a natural contact shadow, no decorative props, no fake bokeh, and no glossy synthetic render look. This style instruction replaces earlier default scene-preservation or context-budget guidance where they conflict; it NEVER replaces product, text, framing, condition, or supporting-role preservation rules.
+The seller explicitly chose a controlled studio presentation. Replace only the surrounding presentation with a believable real-photo studio setup: soft color-accurate light, one plain seamless backdrop and surface, a natural contact shadow, no decorative props, no fake bokeh, and no glossy synthetic render look. This style instruction replaces earlier default scene-preservation or context-budget guidance where they conflict; it NEVER replaces product, text, framing, condition, or supporting-role preservation rules.
+
+BACKDROP TONE -- CHOOSE IT FOR THIS PRODUCT, NEVER DEFAULT TO WHITE: a studio backdrop is seamless paper, and seamless paper comes in every color. White is one option among many, not the definition of a studio shot. Choose ONE flat, low-saturation backdrop tone that makes THIS product read clearly and stand apart from it.
+- Aim for a gentle complementary or contrasting relationship with the product's dominant color so its edges are unmistakable. A warm orange product reads well on a pale cool blue; a cool blue product reads well on a warm sand or clay tone.
+- A WHITE, CREAM, PALE, CLEAR, GLASS, OR HIGHLY REFLECTIVE PRODUCT MUST NOT BE PLACED ON WHITE OR NEAR-WHITE. Its outline disappears entirely. Use a clearly deeper mid-tone (soft grey-blue, warm taupe, muted sage, dusty clay) so the silhouette is obvious.
+- Never choose a backdrop close to the product in either color or lightness.
+- Never use pure paper white, even behind a dark product. Use a soft off-white or warm neutral instead: the finished photo is displayed against a white page, and a pure-white backdrop leaves the product with no visible edge at all.
+- Keep saturation LOW. Pale, muted, and desaturated always; a soft tint, never a strong, vivid, or bold color. The backdrop must cast no colored light onto the product: its real color, finish, and material must be completely unchanged. If a tone would tint the product, go paler and greyer.
+- One flat, evenly lit tone. No gradient that reads as a colored gel, no vignette, no two-tone or patterned backdrop, and no visible seam, sweep line, or horizon.
+
+HOW TO APPLY THE DIAGNOSED FIXES BELOW UNDER THIS STYLE: the audit describes what is WRONG; this style decides HOW it is fixed. When a fix reads as "use a plain white or light gray background", "switch to a plain light gray background", "shoot against a clean backdrop", or similar, execute it as THIS style's chosen backdrop tone. The audit is reporting that the current background distracts from the product; it is not prescribing the literal color white. This instruction OVERRIDES any earlier or later wording that specifies white or light gray in particular, including the audit's own phrasing.
 
 CATEGORY-SPECIFIC STUDIO DIRECTION: ${categoryDirection}
 

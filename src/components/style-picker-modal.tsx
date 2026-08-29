@@ -32,7 +32,7 @@ const STYLE_COPY: Record<GenerationStyle, StyleCopy> = {
   },
   studio: {
     description:
-      "Places the same product in a simple white or light-gray studio setup.",
+      "Places the same product on a clean studio backdrop chosen to suit it.",
     icon: Aperture,
   },
   lifestyle: {
