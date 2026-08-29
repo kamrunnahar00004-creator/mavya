@@ -167,13 +167,43 @@ export const TAXONOMY_VERSION = 1;
 // score_cache is keyed on this exact string -- a photo cached under v18's
 // wording must never be silently treated as equivalent to v19's.
 // Bumped supporting only -- main-photo grading is untouched.
+// supporting-v20 (2026-08-29, founder-reported: a koi plush in a different
+// color scored as "Different product"). v18/v19 both attacked the model's
+// BIAS -- "benefit of the doubt", "1% plausible chance" -- and both left the
+// actual contradiction in place: the wrong-product bullet's own example was
+// COLOR-LED ("a black jar candle in a listing for a pink floral teacup
+// candle"), which taught the model that a color difference can justify
+// rejection, while the very next bullet said color changes are variations.
+// Two rules, opposite lessons, same feature. Confirmed live under v19: three
+// audits on 2026-08-29 returned "not the crochet plush koi fish with orange
+// and white" -- and scored 4.1-4.8 rather than the near-0 the verdict
+// prescribes, i.e. the model half-believed its own answer. v20 rewrites the
+// reject example to turn on BASE FORM (jar vs teacup vessel, no color words),
+// states outright that color/pattern/print/finish/size alone is never
+// sufficient evidence, and adds a self-check: name the base-form difference
+// or return "variation".
 export const RUBRIC_VERSION = "main-v22";
-export const SUPPORTING_RUBRIC_VERSION = "supporting-v19";
+export const SUPPORTING_RUBRIC_VERSION = "supporting-v20";
 export const CHECKLIST_PROMPT_VERSION = "checklist-v1";
 // gen-v3: persisted generation_style now controls execution. Matches Original,
 // Studio, and category-scoped Model/Lifestyle each receive a distinct server-
 // only strategy block while sharing the same strict fidelity and role floor.
-export const GENERATION_PROMPT_VERSION = "gen-v3";
+// gen-v4 (2026-08-29, founder-reported: "Matches Original sometimes completely
+// removes the background, making Studio"). Not a failure of the style block --
+// a failure of its AUTHORITY. buildTargetedPrompt composes
+// [RESTRAINED_PROMPT, categoryGuidance, styleBlock, fixesBlock, crop, light,
+// objective], and the audit's own priority_action frequently reads "use a
+// plain white or light gray background". That arrives AFTER the style block,
+// is far more specific, and is introduced as "Resolve the FIRST problem before
+// the others" -- so the model replaced the background exactly as instructed.
+// Studio and Lifestyle each already carried an explicit override ("replaces
+// earlier default scene-preservation guidance where they conflict"); Matches
+// Original alone had none, so it was the one style unable to defend itself
+// against the fixes block. v4 gives it a symmetric override that RE-SCOPES the
+// diagnosed fixes rather than ignoring them: a "plain background" fix is
+// executed as improve-this-background-in-place, keeping the seller's own
+// backdrop, hands, and surface, with an explicit may-do / must-not-do list.
+export const GENERATION_PROMPT_VERSION = "gen-v4";
 export const FIDELITY_PROMPT_VERSION = "fidelity-v2";
 
 /** Rubric version for a scoring mode. */

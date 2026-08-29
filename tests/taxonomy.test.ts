@@ -159,7 +159,10 @@ describe("canonical taxonomy", () => {
     // the doubt" bias, ambiguous evidence never gets the near-zero
     // wrong-product verdict. Bumped separately from v18 -- different prompt
     // text, and score_cache is keyed on this exact string.
-    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v19");
+    // v20 = the reject example was itself color-led ("a BLACK jar candle in
+    // a listing for a PINK FLORAL teacup candle"), teaching the very
+    // inference the variant rule forbids. Rewritten to turn on base form.
+    expect(SUPPORTING_RUBRIC_VERSION).toBe("supporting-v20");
   });
 });
 

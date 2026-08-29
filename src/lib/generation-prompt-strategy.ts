@@ -92,7 +92,13 @@ export function generationStylePromptBlock(args: {
 
   if (args.style === "matches_original") {
     return `SELECTED GENERATION STYLE: MATCHES ORIGINAL.
-Keep the source scene, viewpoint, pose, and overall visual intent recognizably the same. Improve only the diagnosed lighting, background cleanliness, framing, and clarity problems. Do not introduce a new studio setup, model, wearer, room, or lifestyle scene.
+The seller explicitly chose to KEEP this photo and have it improved, not replaced. Keep the source scene, surface, backdrop, viewpoint, pose, hands, and overall visual intent recognizably the same. This is a retouch of the seller's own photograph, not a new photograph of the same object.
+
+HOW TO APPLY THE DIAGNOSED FIXES BELOW UNDER THIS STYLE: the audit describes what is WRONG; this style decides HOW it is fixed. Any fix that reads as "use a plain/white/neutral background", "shoot against a clean backdrop", "remove the background", or similar MUST be executed as an IMPROVEMENT OF THE EXISTING BACKGROUND, never as a substitution. If the photo has a blue backdrop, the result still has that blue backdrop -- made even, clean, well lit, and free of genuine mess. Same for framing and lighting fixes: straighten, even out, and clarify what is there; do not restage the shot. This instruction OVERRIDES any earlier or later wording that asks for a plain, neutral, seamless, or studio background, including the audit's own phrasing and the general cleanliness guidance -- the seller has already told you they want their photo, improved.
+
+WHAT YOU MAY DO: improve exposure, white balance, contrast, and shadow detail; even out harsh or uneven light; sharpen genuine softness; remove real mess (lint, hair, dust, crumbs, stray clutter, distracting debris); tidy the existing surface; gently straighten a tilt; and, only when the scene looks bare and it genuinely helps, add ONE small, restrained, plausible supporting prop consistent with what is already there.
+
+WHAT YOU MUST NOT DO: replace or erase the background, cut the product out onto a new surface, introduce a seamless studio sweep, remove a hand or person that is holding or wearing the product, change the surface material, relight the scene as if photographed somewhere else, or add more than one prop. If the diagnosed fix cannot be honored without replacing the scene, improve the scene instead and leave the rest alone.
 
 ${immutableFloor}
 
