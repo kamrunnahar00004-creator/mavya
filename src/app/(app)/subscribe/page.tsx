@@ -82,7 +82,7 @@ const PLAN_DISPLAY: Record<
 function planFeatures(plan: (typeof PLAN_DISPLAY)[PurchasablePlanKey]): string[] {
   return [
     `${plan.activeListingLimit} active listings`,
-    `${plan.dailyFixes} photo fixes a day`,
+    `${plan.dailyFixes} image generations a day`,
     "Score every photo, fix any photo in one click",
     "Fix your whole listing at once",
     "Unlimited rescoring",
@@ -120,8 +120,8 @@ const FAQ_ITEMS: { q: string; a: string }[] = [
     a: "You get the same features and limits as monthly billing, but save about the cost of two months by paying once a year.",
   },
   {
-    q: "Do unused photo fixes roll over?",
-    a: "No. Your daily photo fix allowance resets every 24 hours and does not carry over.",
+    q: "Do unused image generations roll over?",
+    a: "No. Your daily image generation allowance resets every 24 hours and does not carry over.",
   },
   {
     q: "Can I use the improved photos on my listings?",
@@ -490,7 +490,7 @@ function SubscribeInner() {
                       raise the backstop once a Power customer exists rather
                       than block on it today. */}
                   <span className="mt-2 text-[14px] font-bold text-[var(--color-ink)]">
-                    Up to {(plan.dailyFixes * 30).toLocaleString()} photo fixes a month
+                    Up to {(plan.dailyFixes * 30).toLocaleString()} image generations a month
                   </span>
                   <span className="mt-1.5 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
 
