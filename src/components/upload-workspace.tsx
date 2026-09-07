@@ -37,8 +37,9 @@ export function UploadWorkspace({ onGateFailed, resumeSelection, onResumed }: Pr
         {/* LEFT — message */}
         <div className="text-center lg:text-left">
           <h1 className="font-display text-[38px] font-bold leading-[1.06] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[46px] lg:text-[50px]">
-            Your photos decide how much you sell on{" "}
-            <span style={{ color: "var(--color-primary)" }}>Etsy</span>
+            Your{" "}
+            <span style={{ color: "var(--color-primary)" }}>Etsy</span> photos
+            decide how much you sell
           </h1>
           <p className="mx-auto mt-5 max-w-[460px] text-[17px] leading-relaxed text-[var(--color-ink-muted)] sm:text-[19px] lg:mx-0">
             Upload your listing photos for an instant, honest rating. See
