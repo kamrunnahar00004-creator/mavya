@@ -37,7 +37,16 @@ export function ProductProofSection() {
         </div>
 
         <div
-          className="mx-auto mt-7 grid max-w-[1080px] items-start gap-6 sm:mt-6 sm:gap-8 lg:grid-cols-[0.92fr_1.08fr] lg:gap-14"
+          // Widened from 1080 and rebalanced from 0.92fr/1.08fr, and lg:gap
+          // trimmed from 14 to 10 -- the rail sits INSIDE the left column now
+          // (shares its width with the image via flexbox), so without this
+          // the rail's ~92px ate straight out of the image's own box: about
+          // 19.5% off both width and height (height follows width through
+          // aspect-[3/4]). This recovers the image back to close to its
+          // pre-rail size while still giving the rail room. Only matters on
+          // lg+ -- the rail reflows above the image on mobile instead of
+          // sharing its row, so nothing shrinks there.
+          className="mx-auto mt-7 grid max-w-[1200px] items-start gap-6 sm:mt-6 sm:gap-8 lg:grid-cols-[0.98fr_1.02fr] lg:gap-10"
           aria-live="polite"
         >
           <div>
