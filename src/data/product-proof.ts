@@ -2,7 +2,7 @@ import type { Pillar } from "@/data/demo-states";
 
 export type ProductProofState = {
   /** Tab button text. "Before" stays literal; the "after" side names the
-   *  actual treatment (e.g. "Studio", "Polished") so a visitor sees WHAT
+   *  actual treatment (e.g. "Studio", "Lifestyle") so a visitor sees WHAT
    *  changed, not just that something did -- proven to draw more attention
    *  than a small caption near the score (founder call, 2026-09-06: the tab
    *  is a 44px bold control, the caption spot is a 10px muted label). */
@@ -19,8 +19,8 @@ export type ProductProofState = {
  * One example PRODUCT, shown as its own Before/[Style] pair. The rail
  * (product-proof-section.tsx) lets a visitor switch between examples; each
  * example keeps its own before/after toggle underneath. Rail thumbnail image
- * and caption are derived from `states.after` -- never duplicated as a
- * separate field, so there is one place to update a pair's photo or label.
+ * is derived from `states.after.imageSrc` -- never duplicated as a separate
+ * field, so there is one place to update a pair's photo.
  */
 export type ProductProofExample = {
   id: string;
@@ -72,51 +72,54 @@ export const PRODUCT_PROOF_EXAMPLES: ProductProofExample[] = [
     },
   },
   {
-    id: "polished",
+    // Replaced 2026-09-07: the first attempt at this slot ("polished", a
+    // tighter crop of the same busy garden background) scored 8.0/Strong
+    // while its background pillar stayed unchanged from the before state --
+    // internally inconsistent with how Studio's background jump is scored,
+    // and looked worse than Studio's after side by side. Caught by the
+    // founder before push. Lifestyle actually changes the scene, so the
+    // score jump here is earned the same way Studio's is.
+    id: "lifestyle",
     states: {
       before: {
         tabLabel: "Before",
-        imageSrc: "/assets/bunny-polished-before.webp",
+        imageSrc: "/assets/bunny-lifestyle-before.webp",
         imageAlt:
-          "Original purple crochet bunny toy photographed too small and far away against garden leaves",
-        score: 6.8,
+          "Original purple crochet bunny toy close-up photographed in harsh sunlight against garden leaves",
+        score: 5.9,
         verdict: "This main photo needs work",
         pillars: [
-          { key: "thumbnail", label: "Thumbnail", value: 4 },
-          { key: "lighting", label: "Lighting", value: 7 },
-          { key: "background", label: "Background", value: 7 },
-          { key: "click_appeal", label: "Click Appeal", value: 5 },
+          { key: "thumbnail", label: "Thumbnail", value: 6 },
+          { key: "lighting", label: "Lighting", value: 4 },
+          { key: "background", label: "Background", value: 4 },
+          { key: "click_appeal", label: "Click Appeal", value: 6 },
         ],
         findings: [
-          "The bunny is too small and far away in the frame.",
-          "At thumbnail size it's hard to tell what the toy even is.",
-          "So much empty leaf space pulls focus from the character.",
+          "Harsh direct sunlight creates strong glare and shadow.",
+          "Wild garden leaves read as background clutter, not a styled scene.",
+          "The tight crop leaves little sense of a real setting.",
         ],
       },
       after: {
-        // Real in-app term for this style: generation-style.ts's
-        // generationStyleLabel() returns "Polish this photo" for
-        // matches_original (gen-v7). Landing copy matches real product copy.
-        tabLabel: "Polished",
-        imageSrc: "/assets/bunny-polished-after.webp",
+        tabLabel: "Lifestyle",
+        imageSrc: "/assets/bunny-lifestyle-after.webp",
         imageAlt:
-          "AI-polished purple crochet bunny toy photograph, cropped in closer, same garden scene",
+          "AI-generated Lifestyle scene of the purple crochet bunny toy styled beside a potted plant on a wood table",
         score: 8.0,
         verdict: "Strong main photo",
         pillars: [
-          // Background/Lighting stay close to the before score on purpose:
-          // Polish keeps the seller's real scene and only tidies it, it does
-          // not replace the backdrop the way Studio does. The honest win
-          // here is framing, not a new setting.
-          { key: "thumbnail", label: "Thumbnail", value: 9 },
-          { key: "lighting", label: "Lighting", value: 7 },
-          { key: "background", label: "Background", value: 7 },
+          // Background stays at 8, not 9 like Studio's: a styled scene is a
+          // real improvement but a different kind of win than Studio's
+          // completely isolated plain backdrop, and the score should say so.
+          { key: "thumbnail", label: "Thumbnail", value: 8 },
+          { key: "lighting", label: "Lighting", value: 8 },
+          { key: "background", label: "Background", value: 8 },
           { key: "click_appeal", label: "Click Appeal", value: 8 },
         ],
         findings: [
-          "Cropped in tighter so the character fills the frame.",
-          "Same real photo, just brought closer and cleaned up.",
-          "Now reads clearly even at Etsy thumbnail size.",
+          "Soft indoor light gives the character a warm, true color.",
+          "A simple plant and table suggest a real home, not a backdrop.",
+          "The styled scene feels inviting without hiding the character.",
         ],
       },
     },

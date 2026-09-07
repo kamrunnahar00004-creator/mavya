@@ -66,34 +66,32 @@ export function ProductProofSection() {
                         }}
                         aria-pressed={isActiveExample}
                         aria-label={`View the ${thumb.tabLabel} example`}
-                        className="flex w-16 flex-shrink-0 flex-col items-center gap-1.5 lg:w-full"
+                        className={cn(
+                          "group relative block h-16 w-16 flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)] transition-all lg:h-[76px] lg:w-full",
+                          isActiveExample
+                            ? "border-2 border-[var(--color-primary)] shadow-[var(--shadow-soft)]"
+                            : "border border-[var(--color-border)]"
+                        )}
                       >
-                        <span
-                          className={cn(
-                            "relative block h-16 w-16 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)] transition-all lg:h-[76px] lg:w-[76px]",
-                            isActiveExample
-                              ? "border-2 border-[var(--color-primary)] shadow-[var(--shadow-soft)]"
-                              : "border border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
-                          )}
-                        >
-                          <Image
-                            src={thumb.imageSrc}
-                            alt=""
-                            fill
-                            className="object-cover"
-                            sizes="76px"
+                        <Image
+                          src={thumb.imageSrc}
+                          alt=""
+                          fill
+                          className="object-cover"
+                          sizes="76px"
+                        />
+                        {/* Etsy's own gallery marks the active thumbnail with
+                            just a border and leaves the rest plain -- no
+                            caption row under each tile. With the label gone,
+                            a wash on the INACTIVE tiles does the same job:
+                            the selected one visibly pops without needing
+                            text. Lightens on hover as a press affordance. */}
+                        {!isActiveExample && (
+                          <span
+                            aria-hidden="true"
+                            className="absolute inset-0 bg-white/55 transition-colors group-hover:bg-white/25"
                           />
-                        </span>
-                        <span
-                          className={cn(
-                            "max-w-16 truncate text-[11px] leading-tight lg:max-w-full",
-                            isActiveExample
-                              ? "font-bold text-[var(--color-ink)]"
-                              : "text-[var(--color-ink-muted)]"
-                          )}
-                        >
-                          {thumb.tabLabel}
-                        </span>
+                        )}
                       </button>
                     );
                   })}
