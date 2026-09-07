@@ -478,7 +478,21 @@ function SubscribeInner() {
                       Billed {formatDollars(plan.annualCents)} annually
                     </span>
                   )}
-                  <span className="mt-2 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
+                  {/* Founder call, 2026-09-07: the daily fix cap is real
+                      value, but "25 a day" undersells it next to a $29
+                      price tag. Derived from plan.dailyFixes (itself
+                      generationDailyMax()), never a separate hardcoded
+                      number, so this can't drift from the real cap if it
+                      changes. KNOWN GAP for Power only: the monthly credit
+                      backstop (allowances.ts, CREDITS_PER_PERIOD) currently
+                      caps out at 5,000/month, below the 6,000 shown here --
+                      founder decision to ship the round number now and
+                      raise the backstop once a Power customer exists rather
+                      than block on it today. */}
+                  <span className="mt-2 text-[14px] font-bold text-[var(--color-ink)]">
+                    Up to {(plan.dailyFixes * 30).toLocaleString()} photo fixes a month
+                  </span>
+                  <span className="mt-1.5 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
 
                   <p className="mb-3 mt-7 text-[12.5px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">
                     This includes
