@@ -490,7 +490,7 @@ function SubscribeInner() {
                       raise the backstop once a Power customer exists rather
                       than block on it today. */}
                   <span className="mt-2 text-[14px] font-bold text-[var(--color-ink)]">
-                    Up to {(plan.dailyFixes * 30).toLocaleString()} image generations a month
+                    Generate up to {(plan.dailyFixes * 30).toLocaleString()} images/month
                   </span>
                   <span className="mt-1.5 text-[13.5px] text-[var(--color-ink-muted)]">{plan.tagline}</span>
 
