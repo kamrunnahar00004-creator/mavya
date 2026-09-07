@@ -3,15 +3,21 @@
 import Image from "next/image";
 import { Check, X } from "lucide-react";
 import { useState } from "react";
-import { PRODUCT_PROOF } from "@/data/product-proof";
+import { PRODUCT_PROOF_EXAMPLES } from "@/data/product-proof";
 import { PillarScores } from "@/components/pillar-scores";
 import { bandColors, bandForScore, cn } from "@/lib/utils";
 
-type ProofTab = keyof typeof PRODUCT_PROOF;
+type ProofTab = "before" | "after";
 
 export function ProductProofSection() {
+  const [activeExampleId, setActiveExampleId] = useState(
+    PRODUCT_PROOF_EXAMPLES[0].id
+  );
   const [activeTab, setActiveTab] = useState<ProofTab>("before");
-  const proof = PRODUCT_PROOF[activeTab];
+  const activeExample =
+    PRODUCT_PROOF_EXAMPLES.find((example) => example.id === activeExampleId) ??
+    PRODUCT_PROOF_EXAMPLES[0];
+  const proof = activeExample.states[activeTab];
   const colors = bandColors(bandForScore(proof.score));
   const FindingIcon = activeTab === "before" ? X : Check;
 
@@ -35,41 +41,103 @@ export function ProductProofSection() {
           aria-live="polite"
         >
           <div>
-            <div
-              className="grid grid-cols-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1 shadow-[0_1px_2px_rgba(25,23,20,0.04)]"
-              aria-label="Choose proof photo"
-            >
-              {(["before", "after"] as const).map((tab) => {
-                const active = activeTab === tab;
-                return (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setActiveTab(tab)}
-                    aria-pressed={active}
-                    className={cn(
-                      "min-h-11 rounded-[calc(var(--radius-lg)-4px)] px-4 text-[14px] font-semibold transition-colors",
-                      active
-                        ? "bg-[var(--color-page-deep)] text-[var(--color-ink)] ring-1 ring-inset ring-[var(--color-border)]"
-                        : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
-                    )}
-                  >
-                    {PRODUCT_PROOF[tab].tabLabel}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Rail + (tabs/image) column. Rail sits ABOVE on mobile (a
+                horizontal row, since a vertical rail beside a full-width
+                image would force horizontal scroll or squeeze the image on
+                a phone) and to the LEFT on desktop, matching Etsy's own
+                listing gallery. Only rendered with 2+ examples -- a rail of
+                one thumbnail has nothing to switch between. */}
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:gap-4">
+              {PRODUCT_PROOF_EXAMPLES.length > 1 && (
+                <div
+                  className="flex flex-row gap-2 lg:w-[76px] lg:flex-shrink-0 lg:flex-col lg:gap-3"
+                  aria-label="Choose example photo"
+                >
+                  {PRODUCT_PROOF_EXAMPLES.map((example) => {
+                    const isActiveExample = example.id === activeExampleId;
+                    const thumb = example.states.after;
+                    return (
+                      <button
+                        key={example.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveExampleId(example.id);
+                          setActiveTab("before");
+                        }}
+                        aria-pressed={isActiveExample}
+                        aria-label={`View the ${thumb.tabLabel} example`}
+                        className="flex w-16 flex-shrink-0 flex-col items-center gap-1.5 lg:w-full"
+                      >
+                        <span
+                          className={cn(
+                            "relative block h-16 w-16 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)] transition-all lg:h-[76px] lg:w-[76px]",
+                            isActiveExample
+                              ? "border-2 border-[var(--color-primary)] shadow-[var(--shadow-soft)]"
+                              : "border border-[var(--color-border)] hover:border-[var(--color-border-strong)]"
+                          )}
+                        >
+                          <Image
+                            src={thumb.imageSrc}
+                            alt=""
+                            fill
+                            className="object-cover"
+                            sizes="76px"
+                          />
+                        </span>
+                        <span
+                          className={cn(
+                            "max-w-16 truncate text-[11px] leading-tight lg:max-w-full",
+                            isActiveExample
+                              ? "font-bold text-[var(--color-ink)]"
+                              : "text-[var(--color-ink-muted)]"
+                          )}
+                        >
+                          {thumb.tabLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
-            <div className="relative mt-2.5 aspect-[3/4] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border-soft)] bg-white shadow-[var(--shadow-soft)] sm:mt-3">
-              <Image
-                key={proof.imageSrc}
-                src={proof.imageSrc}
-                alt={proof.imageAlt}
-                fill
-                sizes="(max-width: 1023px) calc(100vw - 48px), 480px"
-                className="object-contain"
-                priority={false}
-              />
+              <div className="min-w-0 flex-1">
+                <div
+                  className="grid grid-cols-2 rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1 shadow-[0_1px_2px_rgba(25,23,20,0.04)]"
+                  aria-label="Choose proof photo"
+                >
+                  {(["before", "after"] as const).map((tab) => {
+                    const active = activeTab === tab;
+                    return (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => setActiveTab(tab)}
+                        aria-pressed={active}
+                        className={cn(
+                          "min-h-11 rounded-[calc(var(--radius-lg)-4px)] px-4 text-[14px] font-semibold transition-colors",
+                          active
+                            ? "bg-[var(--color-page-deep)] text-[var(--color-ink)] ring-1 ring-inset ring-[var(--color-border)]"
+                            : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+                        )}
+                      >
+                        {activeExample.states[tab].tabLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="relative mt-2.5 aspect-[3/4] overflow-hidden rounded-[var(--radius-xl)] border border-[var(--color-border-soft)] bg-white shadow-[var(--shadow-soft)] sm:mt-3">
+                  <Image
+                    key={proof.imageSrc}
+                    src={proof.imageSrc}
+                    alt={proof.imageAlt}
+                    fill
+                    sizes="(max-width: 1023px) calc(100vw - 48px), 480px"
+                    className="object-contain"
+                    priority={false}
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
