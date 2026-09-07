@@ -48,13 +48,13 @@ export function ProductProofSection() {
                     onClick={() => setActiveTab(tab)}
                     aria-pressed={active}
                     className={cn(
-                      "min-h-11 rounded-[calc(var(--radius-lg)-4px)] px-4 text-[14px] font-semibold capitalize transition-colors",
+                      "min-h-11 rounded-[calc(var(--radius-lg)-4px)] px-4 text-[14px] font-semibold transition-colors",
                       active
                         ? "bg-[var(--color-page-deep)] text-[var(--color-ink)] ring-1 ring-inset ring-[var(--color-border)]"
                         : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
                     )}
                   >
-                    {tab}
+                    {PRODUCT_PROOF[tab].tabLabel}
                   </button>
                 );
               })}
