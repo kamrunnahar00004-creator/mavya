@@ -124,4 +124,59 @@ export const PRODUCT_PROOF_EXAMPLES: ProductProofExample[] = [
       },
     },
   },
+  {
+    // Reuses the SAME before photo as "lifestyle" on purpose -- one starting
+    // photo, three different style outcomes is the actual point of showing
+    // three examples side by side, not a copy/paste shortcut.
+    id: "model",
+    states: {
+      before: {
+        tabLabel: "Before",
+        imageSrc: "/assets/bunny-lifestyle-before.webp",
+        imageAlt:
+          "Original purple crochet bunny toy close-up photographed in harsh sunlight against garden leaves",
+        score: 5.9,
+        verdict: "This main photo needs work",
+        pillars: [
+          { key: "thumbnail", label: "Thumbnail", value: 6 },
+          { key: "lighting", label: "Lighting", value: 4 },
+          { key: "background", label: "Background", value: 4 },
+          { key: "click_appeal", label: "Click Appeal", value: 6 },
+        ],
+        findings: [
+          "Harsh direct sunlight creates strong glare and shadow.",
+          "Wild garden leaves read as background clutter, not a styled scene.",
+          "The tight crop leaves little sense of a real setting.",
+        ],
+      },
+      after: {
+        // Real product naming convention (generation-style.ts's
+        // LIFESTYLE_LABEL_BY_CATEGORY): "Model wearing it" for jewelry,
+        // "Model carrying it" for bags. A held plush is "Model holding it" --
+        // shortened to "Model" for the tab, matching Studio/Lifestyle's
+        // single-word length.
+        tabLabel: "Model",
+        imageSrc: "/assets/bunny-model-after.webp",
+        imageAlt:
+          "AI-generated Model photo of the purple crochet bunny toy being held by a smiling child in a styled indoor scene",
+        score: 8.1,
+        verdict: "Strong main photo",
+        pillars: [
+          { key: "thumbnail", label: "Thumbnail", value: 8 },
+          { key: "lighting", label: "Lighting", value: 8 },
+          { key: "background", label: "Background", value: 8 },
+          // Click Appeal earns the standout number here, honestly: a model
+          // photo's whole job is emotional pull, and a real child's smile
+          // holding the toy is a stronger appeal signal than a clean
+          // backdrop or a styled scene alone.
+          { key: "click_appeal", label: "Click Appeal", value: 9 },
+        ],
+        findings: [
+          "A real child holding the bunny shows its true size.",
+          "Warm, soft light gives the character genuine charm.",
+          "Seeing it loved makes buyers want the same feeling.",
+        ],
+      },
+    },
+  },
 ];
