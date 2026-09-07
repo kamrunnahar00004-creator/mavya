@@ -179,4 +179,59 @@ export const PRODUCT_PROOF_EXAMPLES: ProductProofExample[] = [
       },
     },
   },
+  {
+    // Also reuses the (7) before photo -- fourth style outcome from the same
+    // starting point. Findings below are tailored to the founder's two named
+    // deductions (light, incomplete view) rather than reusing the generic
+    // background-clutter framing from the other two examples: same real
+    // photo, same real problems, worded for what THIS pairing demonstrates.
+    id: "original-preserved",
+    states: {
+      before: {
+        tabLabel: "Before",
+        imageSrc: "/assets/bunny-lifestyle-before.webp",
+        imageAlt:
+          "Original purple crochet bunny toy close-up photographed in harsh sunlight against garden leaves",
+        score: 5.9,
+        verdict: "This main photo needs work",
+        pillars: [
+          { key: "thumbnail", label: "Thumbnail", value: 6 },
+          { key: "lighting", label: "Lighting", value: 4 },
+          { key: "background", label: "Background", value: 4 },
+          { key: "click_appeal", label: "Click Appeal", value: 6 },
+        ],
+        findings: [
+          "Harsh direct sunlight blows out the highlights.",
+          "The tight crop only shows the head, not the full toy.",
+          "Buyers can't judge the whole design from this angle.",
+        ],
+      },
+      after: {
+        // Real in-app term: generation-style.ts's generationStyleLabel()
+        // returns "Polish this photo" for matches_original, and this photo
+        // is the clearest match for what that style actually does -- SAME
+        // backdrop kept (still the garden), only framing and light fixed.
+        // Unlike Studio/Lifestyle/Model, this one earns no Background credit
+        // beyond the lighting improvement: the busy leaves are still there
+        // on purpose, because this style does not replace the scene.
+        tabLabel: "Original preserved",
+        imageSrc: "/assets/bunny-original-after.webp",
+        imageAlt:
+          "AI-improved purple crochet bunny toy photograph, full toy in frame, same garden scene with softer light",
+        score: 8.2,
+        verdict: "Strong main photo",
+        pillars: [
+          { key: "thumbnail", label: "Thumbnail", value: 9 },
+          { key: "lighting", label: "Lighting", value: 8 },
+          { key: "background", label: "Background", value: 6 },
+          { key: "click_appeal", label: "Click Appeal", value: 8 },
+        ],
+        findings: [
+          "The full toy is now in frame, head to feet.",
+          "Softer, even light replaces the harsh glare.",
+          "Same real photo and setting, nothing invented.",
+        ],
+      },
+    },
+  },
 ];
