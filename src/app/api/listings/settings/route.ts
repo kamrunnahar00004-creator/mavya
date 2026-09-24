@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
   if (!updated?.length) return apiError("idempotency_conflict", "Monitoring changed in another request. Refresh and try again.");
 
   const enabled = typeof body.enabled === "boolean" ? body.enabled : Boolean(monitor.enabled);
-  if (enabled && (changedKeywords || body.enabled === true) && isEtsyConfigured()) {
+  const check = async () => {
     try {
       const summary = await runListingMonitor(
         admin,
@@ -114,6 +114,14 @@ export async function POST(req: NextRequest) {
       logEvent("listing.settings_snapshot_failed", { userId: user.id });
       await admin.from("listing_monitors").update({ last_error: "check_failed" }).eq("product_id", productId).eq("revision", revision);
     }
+  };
+  if (enabled && isEtsyConfigured()) {
+    // New keywords: the seller clicked "Save and check now" and expects fresh
+    // positions in the response. Resuming monitoring only needs the switch to
+    // flip, so its Etsy check runs after the response instead of blocking the
+    // toggle for several seconds.
+    if (changedKeywords) await check();
+    else if (body.enabled === true) after(check);
   }
 
   return NextResponse.json({ ok: true, enabled, keywords: keywords ?? monitor.keywords });

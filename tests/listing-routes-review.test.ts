@@ -118,6 +118,13 @@ describe("listing write authorization", () => {
     expect(saved.listing_revision).not.toBe(listingRevision);
     expect(m.runner.mock.calls[0][1][0].listing_revision).toBe(saved.listing_revision);
   });
+  it("resuming monitoring responds without waiting for the Etsy check", async () => {
+    m.admin.mockReturnValue(db({ listing_monitors: [{ ...row, enabled: false }] }));
+    m.server.mockResolvedValue(db({ products: { id: productId }, listing_monitors: { ...row, enabled: false } }));
+    expect((await settings(request({ productId, enabled: true }))).status).toBe(200);
+    expect(m.runner).not.toHaveBeenCalled();
+    expect(m.after).toHaveBeenCalledTimes(1);
+  });
   it("reports concurrent configuration changes rather than false success", async () => {
     m.admin.mockReturnValue(db({}, { emptyUpdate: true }));
     expect((await settings(request({ productId, keywords: ["new phrase"] }))).status).toBe(409);

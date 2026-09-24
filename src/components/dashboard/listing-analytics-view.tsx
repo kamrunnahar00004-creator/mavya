@@ -95,6 +95,17 @@ const KIND_LABEL: Record<ChangeKind, string> = {
   description: "Description",
 };
 
+/**
+ * Etsy's CDN serves every listing photo in fixed sizes (il_75x75,
+ * il_170x135, il_340x270, il_570xN). Snapshots store the 570px URL; the small
+ * tiles on this page only need 170-340px, which is 3-8x fewer bytes to fetch
+ * and decode. Falls back to the original URL for any other format.
+ */
+export function etsyThumb(url: string | null, size: "il_170x135" | "il_340x270"): string | null {
+  if (!url) return null;
+  return url.includes("/il_570xN.") ? url.replace("/il_570xN.", `/${size}.`) : url;
+}
+
 async function postJson(url: string, body: unknown): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch(url, {
@@ -267,8 +278,9 @@ function ListingHeader({ vm }: { vm: AnalyticsViewModel }) {
       {vm.listing?.mainImageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={vm.listing.mainImageUrl}
+          src={etsyThumb(vm.listing.mainImageUrl, "il_170x135") ?? undefined}
           alt=""
+          decoding="async"
           className="h-20 w-20 flex-shrink-0 rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] object-cover"
         />
       ) : (
@@ -809,7 +821,7 @@ function WinnerTile(props: {
       <div className="relative aspect-square overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
         {props.imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={props.imageUrl} alt="" loading="lazy" className="h-full w-full object-cover" />
+          <img src={etsyThumb(props.imageUrl, "il_340x270") ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
         )}
         <span
           className={cn(
@@ -893,10 +905,10 @@ function TestsCard({ vm }: { vm: AnalyticsViewModel }) {
                 {t.kinds.includes("main_photo") && t.beforeImage && t.afterImage && (
                   <div className="mt-3 flex items-center gap-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={t.beforeImage} alt="Main photo before" className="h-16 w-16 rounded-[var(--radius-md)] object-cover" />
+                    <img src={etsyThumb(t.beforeImage, "il_170x135") ?? undefined} alt="Main photo before" loading="lazy" decoding="async" className="h-16 w-16 rounded-[var(--radius-md)] object-cover" />
                     <ArrowRight className="h-4 w-4 text-[var(--color-ink-soft)]" aria-hidden="true" />
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={t.afterImage} alt="Main photo after" className="h-16 w-16 rounded-[var(--radius-md)] object-cover" />
+                    <img src={etsyThumb(t.afterImage, "il_170x135") ?? undefined} alt="Main photo after" loading="lazy" decoding="async" className="h-16 w-16 rounded-[var(--radius-md)] object-cover" />
                   </div>
                 )}
                 {t.kinds.includes("title") && t.beforeTitle && t.afterTitle && (
