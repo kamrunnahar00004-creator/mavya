@@ -25,6 +25,7 @@ import {
 } from "@/lib/listing-analytics";
 import { todayUtc } from "@/lib/listing-monitor";
 import { loadKeywordHistory } from "@/lib/listing-history";
+import { timed } from "@/lib/perf";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +44,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
 
   const supabase = await createSupabaseServerClient();
   const today = todayUtc();
-  const [entitlement, productResult, monitorResult] = await Promise.all([
+  const [entitlement, productResult, monitorResult] = await timed("analytics.base", () => Promise.all([
     getEntitlement(user.id),
     supabase.from("products").select("id, name").eq("id", id).maybeSingle(),
     supabase
@@ -51,7 +52,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
       .select("etsy_listing_id, keywords, enabled, revision, listing_revision, last_checked_on, last_error")
       .eq("product_id", id)
       .maybeSingle(),
-  ]);
+  ]));
   if (!entitlement.active && entitlement.reason !== "past_due") redirect("/subscribe");
 
   const product = unwrapOrThrow(productResult, "product_hydration_failed");
@@ -72,13 +73,13 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   // daily history is scoped by linked listing (survives keyword edits);
   // Current search cards use the current configuration; historical tests
   // retain controls from their own configuration within this linked listing.
-  const [snapResult, keywordHistory] = monitor ? await Promise.all([
+  const [snapResult, keywordHistory] = monitor ? await timed("analytics.history", () => Promise.all([
     supabase.from("listing_snapshots")
       .select("listing_revision, control_revision, snapshot_date, etsy_listing_id, state, views, favorites, title, tags, description, main_image_id, main_image_url, image_count")
       .eq("product_id", id).eq("listing_revision", monitor.listing_revision)
       .gte("snapshot_date", addDays(today, -HISTORY_DAYS)).order("snapshot_date", { ascending: true }),
     loadKeywordHistory(supabase, id, monitor.listing_revision, addDays(today, -KEYWORD_HISTORY_DAYS)),
-  ]) : [{ data: [], error: null }, []];
+  ])) : [{ data: [], error: null }, []];
 
   const allSnaps = ((unwrapOrThrow(snapResult, "product_hydration_failed") as (ListingSnapshot & { listing_revision: string })[] | null) ?? []).filter((s) => s.listing_revision === monitor?.listing_revision).map(
     (s) => ({ ...s, etsy_listing_id: Number(s.etsy_listing_id), main_image_id: s.main_image_id === null ? null : Number(s.main_image_id), tags: s.tags ?? [] })
@@ -104,11 +105,11 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   const winnerScores = new Map<number, number>();
   if (latest?.main_image_id) winnerImageIds.push(latest.main_image_id);
   if (winnerImageIds.length) {
-    const { data } = await supabase
+    const { data } = await timed("analytics.scores", async () => await supabase
       .from("etsy_image_scores")
       .select("etsy_image_id, raw_score")
       .eq("rubric_version", RUBRIC_VERSION)
-      .in("etsy_image_id", winnerImageIds);
+      .in("etsy_image_id", winnerImageIds));
     for (const r of (data as { etsy_image_id: number | string; raw_score: number | string }[] | null) ?? []) {
       winnerScores.set(Number(r.etsy_image_id), Number(r.raw_score));
     }
