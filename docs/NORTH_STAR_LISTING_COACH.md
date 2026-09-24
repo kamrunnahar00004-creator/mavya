@@ -130,12 +130,12 @@ watch -> diagnose -> suggest one fix -> seller changes listing on Etsy
 
 | # | Phase | What ships | Status |
 |---|---|---|---|
-| 1 | Watch | DB tables, Etsy client, link listing, monitoring toggle, daily cron, Photo/Analytics switch, analytics page with daily numbers | Built 2026-09-24, awaiting Codex verification |
-| 2 | Compare to winners | Keyword tracking, search position, top-listing benchmark, winner photo scoring | Built 2026-09-24, awaiting Codex verification |
-| 3 | Diagnose | Diagnosis engine, title/tag checks, "Next best fix" card | Built 2026-09-24, awaiting Codex verification |
-| 4 | Test loop | Change detection, before/after tests with market control, results list | Built 2026-09-24, awaiting Codex verification |
-| 5 | Pricing story | Landing and pricing copy: slots = listings Mavya watches and improves every day | After 1-4 verified |
-| 6 | Later (not now) | Etsy login for sales data, one-click "Put on Etsy" with revert, AI-written title suggestions, email digest | Needs founder go-ahead |
+| 1 | Watch | DB tables, Etsy client, link listing, monitoring toggle, daily cron, Photo/Analytics switch, analytics page with daily numbers | LIVE 2026-09-24 |
+| 2 | Compare to winners | Keyword tracking, search position, top-listing benchmark (views, favorites, photo count). Winner photo scoring REMOVED by founder (dormant code) | LIVE 2026-09-24 |
+| 3 | Diagnose | Diagnosis engine, title/tag checks, "Next best fix" card | LIVE 2026-09-24 |
+| 4 | Test loop | Change detection, before/after tests with market control, results list | LIVE 2026-09-24 (last push 6de53c1: simplified single-column UI) |
+| 5 | Pricing story | SUPERSEDED by Phase 2 (section 11): plans by shop size, no listing slots | See section 11 |
+| 6 | Later (not now) | Etsy login for sales data, one-click "Put on Etsy" with revert. (AI title/tags/description writer and email digest moved INTO Phase 2) | Not planned: founder rules out any Etsy login or write (POST) requests |
 
 ## 8. Not doing in this phase
 
@@ -154,5 +154,246 @@ watch -> diagnose -> suggest one fix -> seller changes listing on Etsy
 
 ## 10. Open decisions for the founder
 
-- Pricing page copy for slots (Phase 5).
-- When to apply for Etsy commercial access (needed before Phase 6).
+Superseded 2026-09-24: slot pricing copy is replaced by Phase 2 plans (11.6),
+and Etsy commercial access is not needed (founder: no Etsy login or write
+requests). Current open decisions are in 11.11.
+
+---
+
+## 11. Phase 2: Full Listing Optimizer (direction agreed 2026-09-24, NOT built)
+
+Status: plan only. Founder and Codex review before any code. Each build step
+follows the standing workflow: implement, verify, commit locally, Codex review
+for logic changes, push only on explicit founder go-ahead.
+
+### 11.1 Why
+
+- Still 0 paying customers. Sellers left because a monthly fee needs ongoing,
+  visible value.
+- A real sample of 90 Etsy shops found in search (2026-09-24, see 11.8) has a
+  **median of ~80 active listings**. Starter's 5 listing slots cover ~6% of a
+  typical shop, so tracking feels like a corner of the business.
+- Tracking listings is nearly free (1 Etsy call per 100 listings per day). The
+  real costs are AI (photo scoring, image generation, text writing) and
+  per-keyword search checks.
+- Competitors (eRank, Marmalead, EverBee, Alura) win on research data we do
+  not have (keyword volume, sales estimates, years of history). We do not
+  compete there. We win on the full loop nobody else connects:
+
+```text
+find what is wrong (whole shop) -> fix it (photos + title + tags + description)
+-> prove what happened after (views, favorites, rank) -> next fix
+```
+
+Positioning line: **"Know what to fix in your Etsy shop, fix it in one place,
+and see what happened next."** This is no longer a beginner tool; it is a full
+listing optimizer for serious sellers. The UI must still stay very simple
+(founder rule: short words, one column, one main action per screen).
+
+### 11.2 Hard rules for Phase 2 (in addition to section 2)
+
+1. **Prices stay $29 / $59 / $99** (Starter / Shop / Power). No Stripe changes.
+2. **No Etsy login and no write (POST) requests to Etsy.** Public API key reads
+   only. Therefore no sales/revenue data and no "Put on Etsy" in this phase.
+3. **No AI scoring of other shops' photos** (founder decision 2026-09-24).
+   Other shops are compared only by public views, favorites, photo count, price.
+4. **No invented facts** in anything Mavya writes. Missing facts become
+   visible placeholders like `[add size]` for the seller to fill in.
+5. **No search-volume or competitor-revenue claims.** The API has neither.
+6. **Rank honesty:** rank comes from Etsy API result order, not a verified
+   shopper view. Show it as "About #12" plus one line: "From Mavya's daily
+   search check, not your exact Etsy view." (see 11.5)
+
+### 11.3 App structure after Phase 2
+
+1. **Shop** (new home screen after login)
+   - Seller enters their Etsy shop name once (public `findShops` lookup).
+   - Every active listing is tracked daily (views, net favorites, photos, price,
+     title/tags changes).
+   - "This week in your shop", "Fix these 3 today", links into any listing.
+2. **Listing** (today's product page, opened from the Shop list)
+   - **Photo tab**: score + AI-improved photos (exists).
+   - **Analytics tab**: keywords, rank, top listings, changes (exists, simplified).
+   - **Write tab** (new): title, 13 tags, description generator (11.4 F).
+   - Photos are pulled from Etsy automatically when a listing is opened; upload
+     stays available.
+
+### 11.4 Features
+
+**A. Shop connect + daily shop snapshots**
+- Input: shop name (or any listing link from the shop). Resolve `shop_id` via
+  `findShops` / listing lookup. Public data only.
+- Daily: page through the shop's active listings, 100 per call. One lightweight
+  row per listing per day: listing id, views, favorites, price, image count,
+  main image id, title hash, tag hash, state.
+- Detect changes shop-wide (title, tags, main photo, price) for 11.4 H.
+- Plan limit = listings tracked (11.6). Beyond the limit: track the listings
+  with the most views first and say so plainly.
+
+**B. "This week in your shop" (Shop home)**
+Four groups, each with a count and a list. Draft rules (tune after real data):
+- **Rising**: last-7-day views clearly above the listing's own previous
+  4-week average.
+- **Falling**: last-7-day views clearly below its own previous 4-week average.
+- **Seen, not liked**: 50+ views in 30 days but net favorites per 100 views far
+  below the shop's median.
+- **Dead**: about 0-1 views in 30 days ("renew, fix, or remove"; Etsy charges a
+  renewal fee per listing).
+- Needs ~14 days of history before Rising/Falling show; until then say
+  "Collecting your shop's numbers".
+- Always "after", never "because".
+
+**C. "Fix these 3 today" queue**
+- One ranked list across the shop combining: severity of title/tag/photo gaps,
+  Falling / Seen-not-liked / Dead status, and listing importance (views).
+- Each item has ONE action: copy suggested tags, open Write tab, or open Photo
+  tab with a photo brief.
+
+**D. Open any listing from the Shop list**
+- Creates or opens its listing page; imports its Etsy photos (i.etsystatic.com
+  only, same safety rules as today).
+- AI photo scoring on import counts against the plan's AI allowance; score the
+  main photo first, supporting photos on request.
+
+**E. Keyword finder (auto-picked, seller can edit)**
+Verified 2026-09-24 on a real listing ("Coraline Doll Crochet Pattern"):
+the search endpoint returns a total `count` (competition) and each result's
+`views` (interest proxy) and `tags`.
+1. Candidates: phrases from the listing's title, its own tags, and tags used by
+   3+ of the top ~25 listings for its main phrase. Prefer 2-4 word phrases; drop
+   single generic words ("pattern" = 7.9M results, junk).
+2. One search call per candidate: competition (count), interest (median views of
+   top 10), seller's current position.
+3. Labels:
+   - **Winning**: seller ranks high AND real interest -> keep tracking.
+   - **Opportunity**: modest competition, decent interest, seller not near top
+     -> "Add as tag".
+   - **Too crowded**: hundreds of thousands of listings -> skip.
+   - **Nobody's looking**: top listings get almost no views -> skip.
+4. Relevance guard: only suggest phrases whose words match the product's own
+   words (title, tags, photo check). Seller confirms before copying.
+5. Auto-pick the keywords to track (e.g. 1 winning + best opportunities) up to
+   the plan's keyword limit.
+
+Real example (listing used 5 of 13 tags): recommend adding "coraline doll"
+(1,119 rivals, you #68), "coraline pattern" (451, #59), "coraline amigurumi"
+(367, #66), "coraline crochet" (494, #99); skip "amigurumi pattern" (331K) and
+"digital crochet" (no interest).
+
+**F. Listing writer (title, 13 tags, description)**
+- Inputs (grounded): current title/tags/description, photo check facts
+  (product summary, category, visible details), keyword finder results with
+  their numbers, patterns in top listings' titles, seller-provided facts
+  (size, materials, what is included, file format for digital items).
+- Outputs: 2 title options (main phrase first); 13 tags each with a short reason
+  ("low competition, you're #59"); a sectioned description (what it is, size,
+  materials, what's included, care / file format). Shown side by side with the
+  current version, each with a Copy button.
+- Hard validation in CODE, not trusted to the model: title <= 140 chars and
+  Etsy's title charset (%, :, &, + at most once each); at most 13 tags, each
+  <= 20 chars and Etsy's tag charset; no duplicate tags.
+- No invented facts -> `[add size]` style placeholders. Brand/character names
+  (e.g. "Coraline"): keep only if the seller already uses them; never add new
+  ones (Etsy intellectual-property risk).
+- Never say "publish-ready". Always: "Review before pasting into Etsy."
+- The loop: seller pastes into Etsy -> next day Mavya detects the title/tag
+  change -> before/after result in "Your changes".
+- Cost: text-only call (roughly 3K tokens in, 1K out), well below a photo score
+  and far below an image generation. Measure real cost from the first 20 runs
+  before finalizing caps.
+
+**G. Photo briefs**
+- Replace "top listings show 7 photos, you show 5" with product-specific
+  briefs, e.g. for a PDF pattern: "Add an image showing skill level, finished
+  size, and what files are included." Each brief links to the Photo tab to
+  generate that image (existing generator, existing honesty rules).
+
+**H. "Your changes" upgrade**
+- Old vs new (title/tags/photo) side by side, views and net favorites before vs
+  after, plain verdict. Shop-wide list of recent changes on the Shop home.
+
+**I. Weekly email summary**
+- "3 rising, 2 falling, fix this one first." Needs an email provider (founder
+  decision). Strongest retention lever in this phase.
+
+**J. Competitor watch (optional, last)**
+- Follow up to 3 competitor shops (public): new listings, price changes,
+  fastest-gaining listings. No photo scoring (rule 3).
+
+### 11.5 Small fixes to do first (UI honesty, ~1 hour)
+
+- Rank label "You're #12" -> "About #12" + one-line note (rule 6).
+- Remove "best search rank" from the headline numbers until the founder's
+  1-minute parity check (compare our top results with a private-window
+  etsy.com search) shows they match reasonably.
+- "favorites per 100 views" -> "net favorites per 100 views" (unfavorites
+  subtract).
+
+### 11.6 Plans after Phase 2 (prices unchanged)
+
+| | Starter $29 | Shop $59 | Power $99 |
+|---|---|---|---|
+| Listings tracked daily | up to 100 | up to 300 | up to 1,000 |
+| Keywords tracked (rank) | 10 | 30 | 100 |
+| AI image generations / month | 750 (existing 25/day) | 2,400 (80/day) | 6,000 (200/day) |
+| Listing rewrites / month (draft) | 100 | 300 | 1,000 |
+| Shop dashboard, fix queue, keyword finder | yes | yes | yes |
+
+- **Remove listing slots** (5/15/40): migration 0026 limit enforcement,
+  upload/batch gates, pricing page "X active listings" copy, related tests.
+  With 0 customers there is nobody to grandfather.
+- Basis for listing limits: sample median ~80 (Starter), 75th percentile ~190
+  (Shop), 90th percentile ~470 (Power).
+- Known separate issue: Power credit backstop (5,000) vs advertised 6,000
+  generations; resolve when a Power customer exists.
+
+### 11.7 Etsy quota budget (Personal Access: 5,000 calls/day)
+
+- Per shop per day: ceil(listings / 100) + tracked keywords (+ occasional
+  keyword-finder runs, ~15 calls each).
+- Typical Starter shop: ~1 + 10 = ~11 calls/day, so roughly 400 such customers
+  before the limit. Keyword tracking, not listing tracking, is the driver.
+- When approaching the limit: reduce keyword check frequency, or request a
+  higher quota from Etsy (no Etsy login features needed for that).
+
+### 11.8 Data behind this plan (verified 2026-09-24, live API)
+
+- 90 random shops from 1,120 found via 8 product searches: median 79 active
+  listings, 25th pct 28, 75th pct 190, 90th pct 468, mean 199. Buckets: 1-10:
+  11%, 11-25: 13%, 26-50: 17%, 51-100: 17%, 101-300: 21%, 300+: 21%.
+  Bias: shops visible in search skew established (our likely customers).
+- Keyword signals verified on "coraline doll crochet pattern": count,
+  top-10 views and own position all available from one search call.
+
+### 11.9 Build order (each step: verify, commit, Codex review, founder push)
+
+| # | Step | Depends on |
+|---|---|---|
+| 0 | Honesty fixes (11.5) | none |
+| 1 | Shop connect + daily shop snapshots + Shop home "This week" (A, B) | 0 |
+| 2 | Open any listing from Shop, Etsy photo import (D) | 1 |
+| 3 | Keyword finder + tag recommendations (E) | none |
+| 4 | Listing writer / Write tab (F) | 3 |
+| 5 | Fix-these-3 queue + photo briefs (C, G) | 1, 3, 4 |
+| 6 | Plans switch: remove slots, add limits (11.6) | 1 |
+| 7 | "Your changes" upgrade (H) | 1 |
+| 8 | Weekly email (I) | email provider decision |
+| 9 | Competitor watch (J) | optional |
+
+### 11.10 How we know Phase 2 works
+
+- A new subscriber connects their shop on day 1 and copies at least one
+  suggestion (tags/title) in week 1.
+- At least one before/after result per active customer within 3 weeks.
+- First checkpoint remains the 2026-09-02 rule: **10 paying customers**.
+  Features are not the goal; paying sellers who stay are.
+
+### 11.11 Open decisions for the founder
+
+- Email provider for the weekly summary (step 8).
+- Final listing-rewrite caps after measuring real text-generation cost.
+- Whether AI photo scoring on Etsy import runs automatically for the main photo
+  or only on click.
+- Landing/pricing page repositioning copy ("full listing optimizer").
+- Rank: keep as "About #N" or demote to a small visibility check, after the
+  parity test.
