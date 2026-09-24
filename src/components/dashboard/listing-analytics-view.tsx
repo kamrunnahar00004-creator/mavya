@@ -3,21 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
-import {
-  AlertTriangle,
-  ArrowDownRight,
-  ArrowRight,
-  ArrowUpRight,
-  CheckCircle2,
-  Clock,
-  ExternalLink,
-  Eye,
-  FlaskConical,
-  Heart,
-  Link2,
-  Search,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, Check, Clock, ExternalLink, Info, Link2, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CheckIssue, ChangeKind, Diagnosis, TestVerdict, TopEntry } from "@/lib/listing-analytics";
 
@@ -74,18 +60,24 @@ export type AnalyticsViewModel = {
   canEdit: boolean;
 };
 
-const card =
-  "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border-soft)] bg-white p-5 shadow-[var(--shadow-soft)] sm:p-6";
-const eyebrow = "text-[12px] font-semibold uppercase tracking-[0.12em] text-[var(--color-ink-soft)]";
-const btnPrimary =
-  "inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-default disabled:opacity-60";
-const btnSecondary =
-  "inline-flex items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 py-2 text-[13px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:cursor-default disabled:opacity-60";
-const input =
-  "w-full rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 py-2.5 text-[14px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-soft)] focus:border-[var(--color-neutral-dark)]";
+// ---------------------------------------------------------------------------
+// Design language (ui-ux-pro-max "minimal single column"): one column, one
+// question per section, one primary action, big numbers, short words.
+// Cards are flat (hairline border, no heavy shadow); color is used only for
+// meaning (next step, good/bad results), always paired with text.
+// ---------------------------------------------------------------------------
 
-const fmt = (n: number | null | undefined, digits = 1) =>
-  n === null || n === undefined ? "–" : n >= 10 ? Math.round(n).toLocaleString() : n.toFixed(digits);
+const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
+const sectionTitle = "text-[15px] font-semibold text-[var(--color-ink)]";
+const btnPrimary =
+  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
+const btnGhost =
+  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
+const input =
+  "min-h-[44px] w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 text-[15px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-soft)] focus:border-[var(--color-neutral-dark)] disabled:opacity-60";
+
+const fmt = (n: number | null | undefined) =>
+  n === null || n === undefined ? "–" : n >= 10 ? Math.round(n).toLocaleString() : n.toFixed(1).replace(/\.0$/, "");
 const shortDate = (d: string) =>
   new Date(`${d}T00:00:00Z`).toLocaleDateString(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
 const KIND_LABEL: Record<ChangeKind, string> = {
@@ -122,26 +114,22 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; erro
 
 export function ListingAnalyticsView({ vm }: { vm: AnalyticsViewModel }) {
   return (
-    <main className="mx-auto flex min-w-0 max-w-[1200px] flex-col gap-5 break-words px-4 pb-16 pt-6 sm:px-6">
+    <main className="mx-auto flex w-full min-w-0 max-w-[760px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
+      <h1 className="sr-only">Listing analytics</h1>
       {!vm.monitor ? (
         <LinkListingCard productId={vm.productId} canEdit={vm.canEdit} />
       ) : (
         <>
           <ListingHeader vm={vm} />
-          <NextFixCard vm={vm} />
-          <StatRow vm={vm} />
+          <NextStep vm={vm} />
+          <Numbers vm={vm} />
           <ViewsChart vm={vm} />
-          <div className="grid min-w-0 gap-5 lg:grid-cols-2">
-            <SearchCard vm={vm} />
-            <ChecksCard vm={vm} />
-          </div>
-          <WinnersCard vm={vm} />
-          <TestsCard vm={vm} />
-          <p className="px-1 text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
-            Numbers come from Etsy&apos;s public data, updated once a day. Search position is approximate: Etsy
-            personalizes results and mixes in ads. Etsy does not share how often a listing is shown, so Mavya
-            compares views instead of click rate. Before/after results compare your listing to the top listings over
-            the same days. They are not A/B tests and do not prove a change caused the result.
+          <ThingsToFix vm={vm} />
+          <Search vm={vm} />
+          <Changes vm={vm} />
+          <p className="flex items-start gap-2 px-1 text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
+            <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
+            Etsy updates numbers once a day. Search rank is approximate. Results show what changed, not why.
           </p>
         </>
       )}
@@ -150,18 +138,10 @@ export function ListingAnalyticsView({ vm }: { vm: AnalyticsViewModel }) {
 }
 
 // ---------------------------------------------------------------------------
-// Link listing
+// Link a listing (empty state)
 // ---------------------------------------------------------------------------
 
-function LinkListingCard({
-  productId,
-  canEdit,
-  onCancel,
-}: {
-  productId: string;
-  canEdit: boolean;
-  onCancel?: () => void;
-}) {
+function LinkListingCard({ productId, canEdit, onCancel }: { productId: string; canEdit: boolean; onCancel?: () => void }) {
   const router = useRouter();
   const [url, setUrl] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -184,60 +164,48 @@ function LinkListingCard({
   }
 
   return (
-    <section className={cn(card, "mx-auto w-full max-w-[720px]")}>
-      <div className="flex items-start gap-4">
-        <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
-          <Link2 className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className={eyebrow}>Listing coach</p>
-          <h1 className="mt-1 text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
-            Link this product to your Etsy listing
-          </h1>
-          <p className="mt-2 text-[14.5px] leading-relaxed text-[var(--color-ink-muted)]">
-            Paste the listing link. Mavya checks it once a day, compares it to the top listings for the same search,
-            tells you the next thing to fix, and checks whether your change worked. No Etsy login needed.
-          </p>
-          <form onSubmit={submit} className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <label htmlFor="etsy-link" className="sr-only">
-              Etsy listing link
-            </label>
-            <input
-              id="etsy-link"
-              type="text"
-              inputMode="url"
-              autoComplete="off"
-              placeholder="https://www.etsy.com/listing/123456789/..."
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              disabled={!canEdit || busy}
-              className={input}
-            />
-            <button type="submit" className={cn(btnPrimary, "flex-shrink-0")} disabled={!canEdit || busy || !url.trim()}>
-              {busy ? "Checking Etsy…" : "Start monitoring"}
-            </button>
-          </form>
-          {onCancel && (
-            <button type="button" onClick={onCancel} className="mt-3 text-[13px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:underline">
-              Cancel
-            </button>
-          )}
-          {!canEdit && (
-            <p className="mt-3 text-[13px] text-[var(--color-weak)]">Your subscription is past due. Update billing to link listings.</p>
-          )}
-          {error && (
-            <p role="alert" className="mt-3 text-[13.5px] text-[var(--color-weak)]">
-              {error}
-            </p>
-          )}
-        </div>
-      </div>
+    <section className={cn(card, "p-6 sm:p-8")}>
+      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
+        <Link2 className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <h2 className="mt-4 text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">Track this listing on Etsy</h2>
+      <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">Paste your listing link. Mavya checks it every day and tells you what to fix.</p>
+      <form onSubmit={submit} className="mt-5 flex flex-col gap-3 sm:flex-row">
+        <label htmlFor="etsy-link" className="sr-only">
+          Etsy listing link
+        </label>
+        <input
+          id="etsy-link"
+          type="text"
+          inputMode="url"
+          autoComplete="off"
+          placeholder="etsy.com/listing/…"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          disabled={!canEdit || busy}
+          className={input}
+        />
+        <button type="submit" className={cn(btnPrimary, "flex-shrink-0")} disabled={!canEdit || busy || !url.trim()}>
+          {busy ? "Checking…" : "Start tracking"}
+        </button>
+      </form>
+      {error && (
+        <p role="alert" className="mt-3 text-[14px] text-[var(--color-weak)]">
+          {error}
+        </p>
+      )}
+      {!canEdit && <p className="mt-3 text-[14px] text-[var(--color-weak)]">Update your billing to track listings.</p>}
+      {onCancel && (
+        <button type="button" onClick={onCancel} className={cn(btnGhost, "mt-2 -ml-3")}>
+          Cancel
+        </button>
+      )}
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Header: listing + monitoring switch
+// Header: which listing, and the daily check switch
 // ---------------------------------------------------------------------------
 
 function ListingHeader({ vm }: { vm: AnalyticsViewModel }) {
@@ -263,7 +231,7 @@ function ListingHeader({ vm }: { vm: AnalyticsViewModel }) {
     setBusy(false);
     if (!res.ok) {
       setEnabled(!next);
-      setError(res.error ?? "Could not change monitoring.");
+      setError(res.error ?? "Could not change the daily check.");
       return;
     }
     router.refresh();
@@ -273,171 +241,148 @@ function ListingHeader({ vm }: { vm: AnalyticsViewModel }) {
     return <LinkListingCard productId={vm.productId} canEdit={vm.canEdit} onCancel={() => setRelinking(false)} />;
   }
 
+  const checked = monitor.lastCheckedOn
+    ? monitor.lastCheckedOn === vm.today
+      ? "Checked today"
+      : `Checked ${shortDate(monitor.lastCheckedOn)}`
+    : "First check pending";
+
   return (
-    <section className={cn(card, "flex flex-col gap-4 sm:flex-row sm:items-center")}>
-      {vm.listing?.mainImageUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={etsyThumb(vm.listing.mainImageUrl, "il_170x135") ?? undefined}
-          alt=""
-          decoding="async"
-          className="h-20 w-20 flex-shrink-0 rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] object-cover"
-        />
-      ) : (
-        <div className="h-20 w-20 flex-shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]" />
-      )}
-      <div className="min-w-0 flex-1">
-        <p className={eyebrow}>Monitored Etsy listing</p>
-        <h1 className="mt-1 line-clamp-2 text-[17px] font-bold leading-snug text-[var(--color-ink)]">
-          {vm.listing?.title ?? `Listing ${monitor.listingId}`}
-        </h1>
-        <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-[var(--color-ink-muted)]">
-          {vm.listing?.url && (
-            <a href={vm.listing.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-[var(--color-ink)] hover:underline">
-              View on Etsy <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            </a>
-          )}
-          <span className="inline-flex items-center gap-1">
-            <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-            {monitor.lastCheckedOn ? `Last checked ${shortDate(monitor.lastCheckedOn)}` : "First check pending"}
-          </span>
-          {vm.listing?.state && vm.listing.state !== "active" && (
-            <span className="font-semibold text-[var(--color-weak)]">Listing is {vm.listing.state} on Etsy</span>
-          )}
-          <button type="button" onClick={() => setRelinking(true)} disabled={!vm.canEdit} className="font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:underline disabled:opacity-60">
-            Change listing
-          </button>
+    <header className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        {vm.listing?.mainImageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={etsyThumb(vm.listing.mainImageUrl, "il_170x135") ?? undefined}
+            alt=""
+            decoding="async"
+            className="h-12 w-12 flex-shrink-0 rounded-[var(--radius-lg)] object-cover"
+          />
+        ) : (
+          <div className="h-12 w-12 flex-shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]" />
+        )}
+        <div className="min-w-0 flex-1">
+          <h2 className="line-clamp-1 text-[15px] font-semibold text-[var(--color-ink)]" title={vm.listing?.title ?? undefined}>
+            {vm.listing?.title ?? `Listing ${monitor.listingId}`}
+          </h2>
+          <div className="flex flex-wrap items-center gap-x-3 text-[13px] text-[var(--color-ink-muted)]">
+            <span>{checked}</span>
+            {vm.listing?.url && (
+              <a href={vm.listing.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 hover:text-[var(--color-ink)] hover:underline">
+                Etsy <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              </a>
+            )}
+            <button type="button" onClick={() => setRelinking(true)} disabled={!vm.canEdit} className="hover:text-[var(--color-ink)] hover:underline disabled:opacity-50">
+              Change
+            </button>
+          </div>
         </div>
-        {monitor.lastError === "listing_not_found" && (
-          <p className="mt-2 text-[13px] text-[var(--color-weak)]">Etsy could not find this listing on the last check. It may be deleted or inactive.</p>
-        )}
-        {monitor.lastError && monitor.lastError !== "listing_not_found" && (
-          <p role="status" className="mt-2 text-[13px] text-[var(--color-weak)]">The last Etsy check was incomplete. Mavya will retry; some saved numbers may be out of date.</p>
-        )}
-        {error && (
-          <p role="alert" className="mt-2 text-[13px] text-[var(--color-weak)]">
-            {error}
-          </p>
-        )}
-      </div>
-      <div className="flex items-center gap-3 sm:flex-col sm:items-end">
         <button
           type="button"
           role="switch"
           aria-checked={enabled}
-          aria-label="Daily monitoring"
           onClick={toggle}
           disabled={busy || (!enabled && !vm.canEdit)}
-          className={cn(
-            "relative inline-flex h-7 w-12 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-60",
-            enabled ? "bg-[var(--color-strong)]" : "bg-[var(--color-border-strong)]"
-          )}
+          className="flex min-h-[44px] flex-shrink-0 items-center gap-2 rounded-full pl-2 text-[13px] font-medium text-[var(--color-ink-muted)] disabled:opacity-50"
         >
+          <span className="hidden sm:inline">Daily check</span>
           <span
             className={cn(
-              "inline-block h-5 w-5 rounded-full bg-white shadow transition-transform",
-              enabled ? "translate-x-6" : "translate-x-1"
+              "relative inline-flex h-6 w-11 items-center rounded-full transition-colors duration-200",
+              enabled ? "bg-[var(--color-strong)]" : "bg-[var(--color-border-strong)]"
             )}
-          />
+            aria-hidden="true"
+          >
+            <span className={cn("inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200", enabled ? "translate-x-[22px]" : "translate-x-0.5")} />
+          </span>
+          <span className="sr-only sm:hidden">Daily check</span>
         </button>
-        <span className="text-[13px] font-semibold text-[var(--color-ink)]">
-          {enabled ? "Monitoring daily" : "Monitoring paused"}
-        </span>
       </div>
-    </section>
+      {vm.listing?.state && vm.listing.state !== "active" && (
+        <p className="text-[13px] text-[var(--color-weak)]">This listing is {vm.listing.state} on Etsy.</p>
+      )}
+      {monitor.lastError === "listing_not_found" && <p className="text-[13px] text-[var(--color-weak)]">Etsy could not find this listing on the last check.</p>}
+      {monitor.lastError && monitor.lastError !== "listing_not_found" && (
+        <p role="status" className="text-[13px] text-[var(--color-ink-muted)]">The last check did not finish. Mavya will try again.</p>
+      )}
+      {error && (
+        <p role="alert" className="text-[13px] text-[var(--color-weak)]">
+          {error}
+        </p>
+      )}
+    </header>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Next best fix
+// The one thing to do next
 // ---------------------------------------------------------------------------
 
-function NextFixCard({ vm }: { vm: AnalyticsViewModel }) {
+function NextStep({ vm }: { vm: AnalyticsViewModel }) {
   const d = vm.diagnosis;
-  const tone =
-    d.state === "healthy"
-      ? { bg: "bg-[var(--color-strong-soft)]", fg: "text-[var(--color-strong)]", Icon: CheckCircle2, label: "Healthy" }
-      : d.state === "collecting" || d.state === "testing"
-        ? { bg: "bg-[var(--color-page-deep)]", fg: "text-[var(--color-ink-muted)]", Icon: d.state === "testing" ? FlaskConical : Clock, label: d.state === "testing" ? "Test running" : "Collecting data" }
-        : { bg: "bg-[var(--color-tint)]", fg: "text-[var(--color-primary)]", Icon: Sparkles, label: "Next best fix" };
+  const waiting = d.state === "collecting" || d.state === "testing";
+  const good = d.state === "healthy";
   const photoHref = `/dashboard/product/${vm.productId}`;
   const cta =
     d.fixTarget === "main_photo"
-      ? { href: photoHref, label: "Improve the main photo" }
+      ? { href: photoHref, label: "Improve main photo" }
       : d.fixTarget === "supporting_photos"
-        ? { href: photoHref, label: "Add supporting photos" }
+        ? { href: photoHref, label: "Add photos" }
         : d.fixTarget === "title_tags"
-          ? { href: "#title-tags", label: "See title and tag fixes" }
+          ? { href: "#things-to-fix", label: "See what to fix" }
           : null;
+  const label = good ? "All good" : waiting ? (d.state === "testing" ? "Measuring your change" : "Getting started") : "Your next step";
+  const Icon = good ? Check : waiting ? Clock : Sparkles;
 
   return (
-    <section className={cn("min-w-0 rounded-[var(--radius-xl)] p-5 sm:p-6", tone.bg)}>
-      <div className="flex items-start gap-4">
-        <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-white">
-          <tone.Icon className={cn("h-5 w-5", tone.fg)} aria-hidden="true" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className={cn("text-[12px] font-semibold uppercase tracking-[0.12em]", tone.fg)}>{tone.label}</p>
-          <h2 className="mt-1 text-[19px] font-bold leading-snug text-[var(--color-ink)]">{d.headline}</h2>
-          <p className="mt-1.5 text-[14.5px] leading-relaxed text-[var(--color-ink-muted)]">{d.detail}</p>
-          {d.evidence.length > 0 && (
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {d.evidence.map((e) => (
-                <li key={e} className="rounded-full bg-white/80 px-3 py-1 text-[12.5px] font-medium text-[var(--color-ink)]">
-                  {e}
-                </li>
-              ))}
-            </ul>
-          )}
-          {cta && (
-            <Link href={cta.href} className={cn(btnPrimary, "mt-4")}>
-              {cta.label} <ArrowRight className="h-4 w-4" aria-hidden="true" />
-            </Link>
-          )}
-        </div>
-      </div>
+    <section
+      aria-labelledby="next-step"
+      className={cn(
+        "rounded-[var(--radius-2xl)] p-6 sm:p-7",
+        good ? "bg-[var(--color-strong-soft)]" : waiting ? "bg-white border border-[var(--color-border-soft)]" : "bg-[var(--color-tint)]"
+      )}
+    >
+      <p
+        className={cn(
+          "flex items-center gap-1.5 text-[13px] font-semibold",
+          good ? "text-[var(--color-strong)]" : waiting ? "text-[var(--color-ink-muted)]" : "text-[var(--color-primary)]"
+        )}
+      >
+        <Icon className="h-4 w-4" aria-hidden="true" />
+        {label}
+      </p>
+      <h2 id="next-step" className="mt-2 text-[22px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)] sm:text-[24px]">
+        {d.headline}
+      </h2>
+      <p className="mt-1.5 max-w-[60ch] text-[15px] leading-relaxed text-[var(--color-ink-muted)]">{d.detail}</p>
+      {cta && (
+        <Link href={cta.href} className={cn(btnPrimary, "mt-5")}>
+          {cta.label} <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+      )}
     </section>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Stat row
+// Three numbers
 // ---------------------------------------------------------------------------
 
-function StatRow({ vm }: { vm: AnalyticsViewModel }) {
+function Numbers({ vm }: { vm: AnalyticsViewModel }) {
   const best = vm.keywords
     .filter((k) => k.position !== null)
     .sort((a, b) => (a.position as number) - (b.position as number))[0];
-  const stats = [
-    {
-      Icon: Eye,
-      label: "Views per day",
-      value: fmt(vm.last7.viewsPerDay),
-      note: vm.last7.days ? `Last ${vm.last7.days} day${vm.last7.days > 1 ? "s" : ""}` : "Needs 2 daily checks",
-    },
-    {
-      Icon: Heart,
-      label: "Net favorites per 100 views",
-      value: fmt(vm.last7.favoritesPer100Views),
-      note: vm.last7.favoritesPer100Views === null ? "Needs 30+ views and favorite counts" : "Last 7 days, including unfavorites",
-    },
-    {
-      Icon: Search,
-      label: "Best search position",
-      value: best ? `#${best.position}` : vm.keywords.length ? "Not in top 100" : "–",
-      note: best ? `"${best.keyword}" (approx.)` : vm.keywords.length ? "For tracked keywords" : "Add keywords below",
-    },
+  const items = [
+    { value: fmt(vm.last7.viewsPerDay), label: "views a day" },
+    { value: best ? `#${best.position}` : vm.keywords.length ? "100+" : "–", label: "search rank" },
+    { value: fmt(vm.last7.favoritesPer100Views), label: "favorites per 100 views" },
   ];
   return (
-    <section className="grid min-w-0 gap-4 sm:grid-cols-3">
-      {stats.map((s) => (
-        <div key={s.label} className={card}>
-          <p className={cn(eyebrow, "flex items-center gap-1.5")}>
-            <s.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-            {s.label}
-          </p>
-          <p className="mt-2 text-[30px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)]">{s.value}</p>
-          <p className="mt-2 text-[13px] text-[var(--color-ink-muted)]">{s.note}</p>
+    <section aria-label="Last 7 days" className={cn(card, "grid grid-cols-3 divide-x divide-[var(--color-border-soft)]")}>
+      {items.map((s) => (
+        <div key={s.label} className="px-3 py-5 text-center sm:px-5">
+          <p className="text-[26px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)] tabular-nums sm:text-[30px]">{s.value}</p>
+          <p className="mt-2 text-[12.5px] leading-tight text-[var(--color-ink-muted)]">{s.label}</p>
         </div>
       ))}
     </section>
@@ -445,7 +390,7 @@ function StatRow({ vm }: { vm: AnalyticsViewModel }) {
 }
 
 // ---------------------------------------------------------------------------
-// Views per day chart (single series, change markers, hover, table view)
+// Views a day (single series; a dot marks days the listing changed)
 // ---------------------------------------------------------------------------
 
 function ViewsChart({ vm }: { vm: AnalyticsViewModel }) {
@@ -453,72 +398,64 @@ function ViewsChart({ vm }: { vm: AnalyticsViewModel }) {
   const points = vm.series;
   const known = points.filter((p) => p.viewsPerDay !== null);
   const W = 720;
-  const H = 180;
-  const padL = 36;
-  const padB = 22;
-  const padT = 12;
-  const plotW = W - padL - 8;
+  const H = 140;
+  // Axis text is HTML (below), not SVG: SVG text scales down with the chart
+  // and becomes unreadable on phones.
+  const padL = 0;
+  const padB = 2;
+  const padT = 14;
+  const plotW = W;
   const plotH = H - padB - padT;
   const max = Math.max(1, ...known.map((p) => p.viewsPerDay as number));
   const niceMax = max <= 5 ? 5 : Math.ceil(max / 5) * 5;
   const n = Math.max(points.length, 1);
   const slot = plotW / n;
-  const barW = Math.max(3, Math.min(18, slot - 2));
+  const barW = Math.max(3, Math.min(14, slot - 3));
   const changeByDate = new Map(vm.changeDates.map((c) => [c.date, c.kinds]));
   const hovered = hover !== null ? points[hover] : null;
 
   return (
-    <section className={card}>
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Views per day</h2>
-        <p className="flex items-center gap-2 text-[12.5px] text-[var(--color-ink-muted)]">
-          <span className="inline-block h-3 w-0.5 bg-[var(--color-primary)]" aria-hidden="true" /> Listing changed
-        </p>
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="views-title">
+      <div className="flex items-baseline justify-between gap-2">
+        <h2 id="views-title" className={sectionTitle}>
+          Views a day
+        </h2>
+        {vm.changeDates.length > 0 && (
+          <p className="flex items-center gap-1.5 text-[12.5px] text-[var(--color-ink-muted)]">
+            <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true" /> you changed something
+          </p>
+        )}
       </div>
       {known.length === 0 ? (
-        <p className="mt-4 rounded-[var(--radius-lg)] bg-[var(--color-page)] px-4 py-8 text-center text-[14px] text-[var(--color-ink-muted)]">
-          The chart starts after the second daily check. Etsy updates view counts once a day.
+        <p className="mt-4 rounded-[var(--radius-lg)] bg-[var(--color-page)] px-4 py-10 text-center text-[14px] text-[var(--color-ink-muted)]">
+          Your chart starts tomorrow.
         </p>
       ) : (
-        <div className="relative mt-3 overflow-x-auto">
-          <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full min-w-[480px]" role="img" aria-label="Views per day for the last 30 days">
-            {[0, 0.5, 1].map((f) => {
+        <div className="relative mt-4">
+          <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Views a day, last ${points.length} days`}>
+            {[0, 1].map((f) => {
               const y = padT + plotH * (1 - f);
-              return (
-                <g key={f}>
-                  <line x1={padL} x2={W - 8} y1={y} y2={y} stroke="var(--color-border-soft)" strokeWidth={1} />
-                  <text x={padL - 6} y={y + 4} textAnchor="end" fontSize={11} fill="var(--color-ink-soft)">
-                    {Math.round(niceMax * f)}
-                  </text>
-                </g>
-              );
+              return <line key={f} x1={0} x2={W} y1={y} y2={y} stroke="var(--color-border-soft)" strokeWidth={1} />;
             })}
             {points.map((p, i) => {
               const cx = padL + slot * i + slot / 2;
-              const kinds = changeByDate.get(p.date);
               const v = p.viewsPerDay;
               const h = v === null ? 0 : Math.max(2, (v / niceMax) * plotH);
               return (
                 <g key={p.date}>
-                  {kinds && (
-                    <line x1={cx} x2={cx} y1={padT} y2={padT + plotH} stroke="var(--color-primary)" strokeWidth={2} strokeDasharray="4 3" />
-                  )}
                   {v !== null && (
                     <path
                       d={roundedTopBar(cx - barW / 2, padT + plotH - h, barW, h, Math.min(4, barW / 2))}
                       fill={hover === i ? "var(--color-ink)" : "var(--color-neutral-dark)"}
+                      opacity={hover === null || hover === i ? 1 : 0.55}
                     />
                   )}
-                  {(i === 0 || i === points.length - 1 || i === Math.floor(points.length / 2)) && (
-                    <text x={cx} y={H - 6} textAnchor="middle" fontSize={11} fill="var(--color-ink-soft)">
-                      {shortDate(p.date)}
-                    </text>
-                  )}
+                  {changeByDate.has(p.date) && <circle cx={cx} cy={padT - 6} r={4} fill="var(--color-primary)" />}
                   <rect
                     x={padL + slot * i}
-                    y={padT}
+                    y={0}
                     width={slot}
-                    height={plotH}
+                    height={padT + plotH}
                     fill="transparent"
                     onMouseEnter={() => setHover(i)}
                     onMouseLeave={() => setHover(null)}
@@ -531,50 +468,50 @@ function ViewsChart({ vm }: { vm: AnalyticsViewModel }) {
               );
             })}
           </svg>
+          <span className="pointer-events-none absolute left-0 top-0 -translate-y-1/2 bg-white pr-1.5 text-[11.5px] tabular-nums text-[var(--color-ink-soft)]">
+            {niceMax}
+          </span>
+          <div className="mt-1.5 flex justify-between text-[11.5px] text-[var(--color-ink-soft)]">
+            <span>{points.length ? shortDate(points[0].date) : ""}</span>
+            <span>{points.length ? shortDate(points[points.length - 1].date) : ""}</span>
+          </div>
           {hovered && hover !== null && (
             <div
-              className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-2 text-[12.5px] shadow-[var(--shadow-soft-strong)]"
+              className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[var(--radius-md)] bg-[var(--color-ink)] px-2.5 py-1.5 text-[12px] text-white shadow-[var(--shadow-soft-strong)]"
               style={{ left: `${((padL + slot * hover + slot / 2) / W) * 100}%` }}
             >
-              <p className="font-semibold text-[var(--color-ink)]">{shortDate(hovered.date)}</p>
-              <p className="text-[var(--color-ink-muted)]">
-                {hovered.viewsPerDay === null ? "No Etsy data" : `${fmt(hovered.viewsPerDay)} views, ${fmt(hovered.favoritesPerDay)} favorites`}
-              </p>
-              {changeByDate.get(hovered.date) && (
-                <p className="font-semibold text-[var(--color-primary)]">
-                  Changed: {changeByDate.get(hovered.date)!.map((k) => KIND_LABEL[k]).join(", ")}
-                </p>
-              )}
+              <span className="font-semibold">{shortDate(hovered.date)}</span>
+              {" · "}
+              {hovered.viewsPerDay === null ? "no data" : `${fmt(hovered.viewsPerDay)} views`}
+              {changeByDate.get(hovered.date) ? ` · ${changeByDate.get(hovered.date)!.map((k) => KIND_LABEL[k]).join(", ")} changed` : ""}
             </div>
           )}
-        </div>
-      )}
-      {known.length > 0 && (
-        <details className="mt-3 text-[13px] text-[var(--color-ink-muted)]">
-          <summary className="cursor-pointer font-semibold text-[var(--color-ink)]">Show as table</summary>
-          <div className="mt-2 max-h-64 overflow-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-[var(--color-ink-soft)]">
-                  <th className="py-1 pr-4 font-semibold">Date</th>
-                  <th className="py-1 pr-4 font-semibold">Views</th>
-                  <th className="py-1 pr-4 font-semibold">Favorites</th>
-                  <th className="py-1 font-semibold">Change</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...points].reverse().map((p) => (
-                  <tr key={p.date} className="border-t border-[var(--color-border-soft)]">
-                    <td className="py-1 pr-4">{shortDate(p.date)}</td>
-                    <td className="py-1 pr-4">{fmt(p.viewsPerDay)}</td>
-                    <td className="py-1 pr-4">{fmt(p.favoritesPerDay)}</td>
-                    <td className="py-1">{changeByDate.get(p.date)?.map((k) => KIND_LABEL[k]).join(", ") ?? ""}</td>
+          <details className="mt-2 text-[13px] text-[var(--color-ink-muted)]">
+            <summary className="cursor-pointer select-none hover:text-[var(--color-ink)]">See numbers</summary>
+            <div className="mt-2 max-h-56 overflow-auto">
+              <table className="w-full text-left tabular-nums">
+                <thead>
+                  <tr className="text-[var(--color-ink-soft)]">
+                    <th className="py-1 pr-4 font-medium">Day</th>
+                    <th className="py-1 pr-4 font-medium">Views</th>
+                    <th className="py-1 pr-4 font-medium">Favorites</th>
+                    <th className="py-1 font-medium">Changed</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </details>
+                </thead>
+                <tbody>
+                  {[...points].reverse().map((p) => (
+                    <tr key={p.date} className="border-t border-[var(--color-border-soft)]">
+                      <td className="py-1 pr-4">{shortDate(p.date)}</td>
+                      <td className="py-1 pr-4">{fmt(p.viewsPerDay)}</td>
+                      <td className="py-1 pr-4">{fmt(p.favoritesPerDay)}</td>
+                      <td className="py-1">{changeByDate.get(p.date)?.map((k) => KIND_LABEL[k]).join(", ") ?? ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
       )}
     </section>
   );
@@ -586,16 +523,86 @@ function roundedTopBar(x: number, y: number, w: number, h: number, r: number): s
 }
 
 // ---------------------------------------------------------------------------
-// Search keywords
+// Things to fix (title, tags, photo count)
 // ---------------------------------------------------------------------------
 
-function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
+const SEVERITY_DOT = {
+  high: "bg-[var(--color-weak)]",
+  medium: "bg-[var(--color-mid)]",
+  low: "bg-[var(--color-border-strong)]",
+} as const;
+const SEVERITY_LABEL = { high: "Important", medium: "Worth fixing", low: "Small" } as const;
+const FIX_PREVIEW = 3;
+
+function ThingsToFix({ vm }: { vm: AnalyticsViewModel }) {
+  const [showAll, setShowAll] = useState(false);
+  if (!vm.listing) return null;
+  const shown = showAll ? vm.checks : vm.checks.slice(0, FIX_PREVIEW);
+  return (
+    <section id="things-to-fix" className={cn(card, "scroll-mt-24 p-5 sm:p-6")} aria-labelledby="fix-title">
+      <h2 id="fix-title" className={sectionTitle}>
+        Things to fix{vm.checks.length > 0 && <span className="ml-1.5 font-normal text-[var(--color-ink-soft)]">{vm.checks.length}</span>}
+      </h2>
+      {vm.checks.length === 0 ? (
+        <p className="mt-3 flex items-center gap-2 text-[14px] text-[var(--color-strong)]">
+          <Check className="h-4 w-4" aria-hidden="true" /> Nothing to fix in your title and tags.
+        </p>
+      ) : (
+        <>
+          <ul className="mt-2 divide-y divide-[var(--color-border-soft)]">
+            {shown.map((c) => (
+              <li key={c.id} className="flex gap-3 py-3.5">
+                <span className={cn("mt-[7px] h-2 w-2 flex-shrink-0 rounded-full", SEVERITY_DOT[c.severity])} aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-medium text-[var(--color-ink)]">
+                    <span className="sr-only">{SEVERITY_LABEL[c.severity]}: </span>
+                    {c.title}
+                  </p>
+                  <p className="mt-0.5 text-[13.5px] text-[var(--color-ink-muted)]">{c.detail}</p>
+                  {c.suggestions && c.suggestions.length > 0 && (
+                    <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Suggestions">
+                      {c.suggestions.map((s) => (
+                        <li key={s} className="rounded-full bg-[var(--color-page-deep)] px-2.5 py-1 text-[12.5px] text-[var(--color-ink)]">
+                          {s}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+          {vm.checks.length > FIX_PREVIEW && (
+            <button type="button" onClick={() => setShowAll((v) => !v)} className={cn(btnGhost, "-ml-3 mt-1")} aria-expanded={showAll}>
+              {showAll ? "Show less" : `Show all ${vm.checks.length}`}
+            </button>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Search: your keywords, your rank, and the top listings next to yours
+// ---------------------------------------------------------------------------
+
+function Search({ vm }: { vm: AnalyticsViewModel }) {
   const router = useRouter();
   const current = vm.monitor!.keywords;
+  const [active, setActive] = useState(0);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string[]>([...current, "", "", ""].slice(0, 3));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const idx = Math.min(active, Math.max(0, vm.keywords.length - 1));
+  const k = vm.keywords[idx];
+
+  function startEdit() {
+    setDraft([...current, "", "", ""].slice(0, 3));
+    setError(null);
+    setEditing(true);
+  }
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -603,11 +610,11 @@ function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
     setError(null);
     const res = await postJson("/api/listings/settings", {
       productId: vm.productId,
-      keywords: draft.map((k) => k.trim()).filter(Boolean),
+      keywords: draft.map((x) => x.trim()).filter(Boolean),
     });
     setBusy(false);
     if (!res.ok) {
-      setError(res.error ?? "Could not save keywords.");
+      setError(res.error ?? "Could not save.");
       return;
     }
     setEditing(false);
@@ -615,308 +622,204 @@ function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
   }
 
   return (
-    <section className={card}>
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Search position</h2>
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="search-title">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="search-title" className={sectionTitle}>
+          Search
+        </h2>
         {!editing && (
-          <button type="button" onClick={() => { setDraft([...current, "", "", ""].slice(0, 3)); setError(null); setEditing(true); }} disabled={!vm.canEdit} className={btnSecondary}>
-            Edit keywords
+          <button type="button" onClick={startEdit} disabled={!vm.canEdit} className={cn(btnGhost, "-mr-3")}>
+            <Pencil className="h-3.5 w-3.5" aria-hidden="true" /> Keywords
           </button>
         )}
       </div>
-      <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
-        Where this listing shows up when buyers search these phrases (approx., top 100 checked daily).
-      </p>
+
       {editing ? (
-        <form onSubmit={save} className="mt-4 flex flex-col gap-2.5">
-          {draft.map((k, i) => (
+        <form onSubmit={save} className="mt-3 flex flex-col gap-2.5">
+          <p className="text-[13.5px] text-[var(--color-ink-muted)]">What would a buyer type to find this? Up to 3.</p>
+          {draft.map((x, i) => (
             <div key={i}>
               <label htmlFor={`kw-${i}`} className="sr-only">
                 Keyword {i + 1}
               </label>
               <input
                 id={`kw-${i}`}
-                value={k}
+                value={x}
                 maxLength={80}
                 disabled={busy}
-                placeholder={i === 0 ? "e.g. crochet bunny plush" : "Optional"}
-                onChange={(e) => setDraft((d) => d.map((x, j) => (j === i ? e.target.value : x)))}
+                placeholder={i === 0 ? "crochet bunny plush" : "Optional"}
+                onChange={(e) => setDraft((d) => d.map((y, j) => (j === i ? e.target.value : y)))}
                 className={input}
               />
             </div>
           ))}
-          <p className="text-[12.5px] text-[var(--color-ink-soft)]">New keywords start fresh search comparisons. Views and completed results are kept; unfinished tests using the old keywords stop.</p>
+          <p className="text-[12.5px] text-[var(--color-ink-soft)]">Your views history is kept. Open tests using old keywords stop.</p>
           {error && (
-            <p role="alert" className="text-[13px] text-[var(--color-weak)]">
+            <p role="alert" className="text-[13.5px] text-[var(--color-weak)]">
               {error}
             </p>
           )}
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
             <button type="submit" className={btnPrimary} disabled={busy}>
-              {busy ? "Checking Etsy…" : "Save and check now"}
+              {busy ? "Checking…" : "Save"}
             </button>
-            <button type="button" className={btnSecondary} onClick={() => setEditing(false)} disabled={busy}>
+            <button type="button" className={btnGhost} onClick={() => setEditing(false)} disabled={busy}>
               Cancel
             </button>
           </div>
         </form>
-      ) : vm.keywords.length === 0 ? (
-        <p className="mt-4 text-[14px] text-[var(--color-ink-muted)]">
-          {current.length ? "Checking these keywords on the next daily run." : "No keywords yet. Add up to 3 search phrases."}
+      ) : !k ? (
+        <p className="mt-3 text-[14px] text-[var(--color-ink-muted)]">
+          {current.length ? "Checking your keywords with the next daily check." : "Add a keyword to see your rank and the top listings."}
         </p>
       ) : (
-        <ul className="mt-4 flex flex-col divide-y divide-[var(--color-border-soft)]">
-          {vm.keywords.map((k) => {
-            const onPageOne = k.position !== null && k.position <= 48;
-            return (
-              <li key={k.keyword} className="flex items-center justify-between gap-3 py-3">
-                <span className="min-w-0 truncate text-[14.5px] font-semibold text-[var(--color-ink)]">&ldquo;{k.keyword}&rdquo;</span>
-                <span
-                  className={cn(
-                    "flex-shrink-0 rounded-full px-3 py-1 text-[13px] font-semibold",
-                    onPageOne ? "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" : "bg-[var(--color-weak-soft)] text-[var(--color-weak)]"
-                  )}
-                >
-                  {k.position === null ? `Not in top ${k.depth}` : `#${k.position}${onPageOne ? " · top 48" : ""}`}
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Title / tags / photos checks
-// ---------------------------------------------------------------------------
-
-function ChecksCard({ vm }: { vm: AnalyticsViewModel }) {
-  const sev = {
-    high: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]",
-    medium: "bg-[var(--color-mid-soft)] text-[#8a5a12]",
-    low: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
-  } as const;
-  const sevLabel = { high: "Fix first", medium: "Worth fixing", low: "Small win" } as const;
-  return (
-    <section id="title-tags" className={cn(card, "scroll-mt-24")}>
-      <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Title, tags and photos check</h2>
-      <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">Compared with the top listings for your keywords.</p>
-      {vm.checks.length === 0 ? (
-        <p className="mt-4 flex items-center gap-2 text-[14px] text-[var(--color-strong)]">
-          <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
-          {vm.listing ? "No title or tag problems found." : "Runs after the first check."}
-        </p>
-      ) : (
-        <ul className="mt-4 flex flex-col gap-3">
-          {vm.checks.map((c) => (
-            <li key={c.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] p-3.5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <p className="min-w-0 text-[14.5px] font-semibold text-[var(--color-ink)]">{c.title}</p>
-                <span className={cn("flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold", sev[c.severity])}>
-                  {sevLabel[c.severity]}
-                </span>
-              </div>
-              <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">{c.detail}</p>
-              {c.suggestions && c.suggestions.length > 0 && (
-                <ul className="mt-2 flex flex-wrap gap-1.5">
-                  {c.suggestions.map((s) => (
-                    <li key={s} className="rounded-full bg-[var(--color-page-deep)] px-2.5 py-1 text-[12.5px] font-medium text-[var(--color-ink)]">
-                      {s}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Compared to top listings
-// ---------------------------------------------------------------------------
-
-function WinnersCard({ vm }: { vm: AnalyticsViewModel }) {
-  const [active, setActive] = useState(0);
-  if (vm.keywords.length === 0) return null;
-  const k = vm.keywords[Math.min(active, vm.keywords.length - 1)];
-  return (
-    <section className={card}>
-      <div className="flex flex-wrap items-baseline justify-between gap-3">
-        <div>
-          <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Compared to top listings</h2>
-          <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
-            Up to 5 comparison listings for &ldquo;{k.keyword}&rdquo;, excluding yours. Photo score uses the same Mavya rubric as your photos.
-          </p>
-        </div>
-        {vm.keywords.length > 1 && (
-          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Keyword">
+        <>
+          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Keyword">
             {vm.keywords.map((kw, i) => (
               <button
                 key={kw.keyword}
                 type="button"
-                aria-pressed={i === Math.min(active, vm.keywords.length - 1)}
+                aria-pressed={i === idx}
                 onClick={() => setActive(i)}
                 className={cn(
-                  "rounded-full px-3 py-1 text-[12.5px] font-semibold",
-                  i === Math.min(active, vm.keywords.length - 1) ? "bg-[var(--color-neutral-dark)] text-white" : "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]"
+                  "inline-flex min-h-[36px] items-center gap-2 rounded-full border px-3.5 text-[13.5px] transition-colors",
+                  i === idx
+                    ? "border-[var(--color-neutral-dark)] bg-[var(--color-neutral-dark)] text-white"
+                    : "border-[var(--color-border)] bg-white text-[var(--color-ink)] hover:border-[var(--color-border-strong)]"
                 )}
               >
-                {kw.keyword}
+                <span className="max-w-[16rem] truncate">{kw.keyword}</span>
+                <span className={cn("font-semibold tabular-nums", i === idx ? "text-white/80" : "text-[var(--color-ink-muted)]")}>
+                  {kw.position === null ? "100+" : `#${kw.position}`}
+                </span>
               </button>
             ))}
           </div>
-        )}
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <WinnerTile
-          label="Your listing"
-          highlight
-          imageUrl={vm.listing?.mainImageUrl ?? null}
-          title={vm.listing?.title ?? ""}
-          photoScore={vm.ownPhotoScore}
-          views={vm.listing?.totalViews ?? null}
-          favorites={vm.listing?.totalFavorites ?? null}
-          photos={vm.listing?.imageCount ?? null}
-          href={vm.listing?.url ?? null}
-        />
-        {k.top.map((t, i) => (
-          <WinnerTile
-            key={t.id}
-            label={t.position ? `#${t.position}` : `Comparison ${i + 1}`}
-            imageUrl={t.mainImageUrl}
-            title={t.title}
-            photoScore={t.photoScore}
-            views={t.views}
-            favorites={t.favorites}
-            photos={t.imageCount}
-            href={t.url}
-          />
-        ))}
-      </div>
-      <p className="mt-3 text-[12.5px] text-[var(--color-ink-soft)]">
-        Views and favorites are lifetime totals from Etsy. Photo scores are collected gradually as monitoring runs.
-      </p>
+
+          <p className="mt-5 text-[13px] text-[var(--color-ink-muted)]">Top listings for &ldquo;{k.keyword}&rdquo; · photo score</p>
+          <ul className="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-6">
+            <ListingTile
+              badge="You"
+              highlight
+              imageUrl={vm.listing?.mainImageUrl ?? null}
+              title={vm.listing?.title ?? "Your listing"}
+              score={vm.ownPhotoScore}
+              href={vm.listing?.url ?? null}
+            />
+            {k.top.slice(0, 5).map((t, i) => (
+              <ListingTile
+                key={t.id}
+                badge={`#${t.position ?? i + 1}`}
+                imageUrl={t.mainImageUrl}
+                title={t.title}
+                score={t.photoScore}
+                href={t.url}
+              />
+            ))}
+          </ul>
+        </>
+      )}
     </section>
   );
 }
 
-function WinnerTile(props: {
-  label: string;
+function ListingTile(props: {
+  badge: string;
   highlight?: boolean;
   imageUrl: string | null;
   title: string;
-  photoScore: number | null;
-  views: number | null;
-  favorites: number | null;
-  photos: number | null;
+  score: number | null;
   href: string | null;
 }) {
   const body = (
     <>
-      <div className="relative aspect-square overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
+      <div
+        className={cn(
+          "relative aspect-square overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]",
+          props.highlight && "ring-2 ring-[var(--color-primary)] ring-offset-2"
+        )}
+      >
         {props.imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={etsyThumb(props.imageUrl, "il_340x270") ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          <img src={etsyThumb(props.imageUrl, "il_340x270") ?? undefined} alt={props.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
         )}
         <span
           className={cn(
-            "absolute left-1.5 top-1.5 rounded-full px-2 py-0.5 text-[11px] font-bold",
-            props.highlight ? "bg-[var(--color-primary)] text-white" : "bg-white/90 text-[var(--color-ink)]"
+            "absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none",
+            props.highlight ? "bg-[var(--color-primary)] text-white" : "bg-white/95 text-[var(--color-ink)]"
           )}
         >
-          {props.label}
+          {props.badge}
         </span>
       </div>
-      <p className="mt-2 line-clamp-2 text-[12.5px] font-medium leading-snug text-[var(--color-ink)]">{props.title}</p>
-      <dl className="mt-1.5 grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11.5px] text-[var(--color-ink-muted)]">
-        <dt>Photo score</dt>
-        <dd className="text-right font-semibold text-[var(--color-ink)]">{props.photoScore === null ? "–" : props.photoScore.toFixed(1)}</dd>
-        <dt>Views</dt>
-        <dd className="text-right font-semibold text-[var(--color-ink)]">{fmt(props.views, 0)}</dd>
-        <dt>Favorites</dt>
-        <dd className="text-right font-semibold text-[var(--color-ink)]">{fmt(props.favorites, 0)}</dd>
-        <dt>Photos</dt>
-        <dd className="text-right font-semibold text-[var(--color-ink)]">{props.photos ?? "–"}</dd>
-      </dl>
+      <p className="mt-1.5 text-center text-[14px] font-semibold tabular-nums text-[var(--color-ink)]">
+        {props.score === null ? <span className="font-normal text-[var(--color-ink-soft)]">–</span> : props.score.toFixed(1)}
+      </p>
     </>
   );
-  const cls = cn(
-    "block rounded-[var(--radius-lg)] border p-2",
-    props.highlight ? "border-[var(--color-primary)] bg-[var(--color-tint)]" : "border-[var(--color-border-soft)] bg-white hover:border-[var(--color-border-strong)]"
-  );
-  return props.href ? (
-    <a href={props.href} target="_blank" rel="noopener noreferrer" className={cls}>
-      {body}
-    </a>
-  ) : (
-    <div className={cls}>{body}</div>
+  return (
+    <li>
+      {props.href ? (
+        <a href={props.href} target="_blank" rel="noopener noreferrer" title={props.title} className="block rounded-[var(--radius-lg)] transition-opacity hover:opacity-85">
+          {body}
+        </a>
+      ) : (
+        body
+      )}
+    </li>
   );
 }
 
 // ---------------------------------------------------------------------------
-// Before/after tests
+// Your changes and what happened after
 // ---------------------------------------------------------------------------
 
-const VERDICT: Record<TestVerdict, { label: string; cls: string; Icon: typeof CheckCircle2 }> = {
-  better: { label: "Looks better", cls: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]", Icon: ArrowUpRight },
-  worse: { label: "Looks worse", cls: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]", Icon: ArrowDownRight },
-  no_clear_change: { label: "No clear change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: ArrowRight },
-  running: { label: "Still running", cls: "bg-[var(--color-mid-soft)] text-[#8a5a12]", Icon: Clock },
-  interrupted: { label: "Interrupted", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: AlertTriangle },
-  no_baseline: { label: "No before data", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: AlertTriangle },
-  insufficient_data: { label: "Not enough comparable data", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: AlertTriangle },
+const VERDICT: Record<TestVerdict, { label: string; cls: string }> = {
+  better: { label: "Better", cls: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" },
+  worse: { label: "Worse", cls: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]" },
+  no_clear_change: { label: "No change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
+  running: { label: "Measuring", cls: "bg-[var(--color-mid-soft)] text-[#7a4f0f]" },
+  interrupted: { label: "Stopped", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
+  no_baseline: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
+  insufficient_data: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
 };
 
-function TestsCard({ vm }: { vm: AnalyticsViewModel }) {
+function Changes({ vm }: { vm: AnalyticsViewModel }) {
   return (
-    <section className={card}>
-      <h2 className="flex items-center gap-2 text-[16px] font-bold text-[var(--color-ink)]">
-        <FlaskConical className="h-4 w-4" aria-hidden="true" /> Before/after tests
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="changes-title">
+      <h2 id="changes-title" className={sectionTitle}>
+        Your changes
       </h2>
-      <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
-        When you change the main photo, title, or tags on Etsy, Mavya spots it the next day and compares up to 14 days
-        before with up to 14 days after. Change one thing at a time for a clear answer.
-      </p>
       {vm.tests.length === 0 ? (
-        <p className="mt-4 rounded-[var(--radius-lg)] bg-[var(--color-page)] px-4 py-6 text-center text-[14px] text-[var(--color-ink-muted)]">
-          No changes yet. Make the fix above on Etsy and the test starts on its own.
-        </p>
+        <p className="mt-3 text-[14px] text-[var(--color-ink-muted)]">Change your photo, title, or tags on Etsy. Mavya measures it for you.</p>
       ) : (
-        <ul className="mt-4 flex flex-col gap-3">
+        <ul className="mt-2 divide-y divide-[var(--color-border-soft)]">
           {vm.tests.map((t) => {
             const v = VERDICT[t.verdict];
+            const photo = t.kinds.includes("main_photo") && t.afterImage;
             return (
-              <li key={t.date} className="rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-[14.5px] font-semibold text-[var(--color-ink)]">
-                    {t.kinds.map((k) => KIND_LABEL[k]).join(", ")} changed · {shortDate(t.date)}
-                  </p>
-                  <span className={cn("inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[12.5px] font-semibold", v.cls)}>
-                    <v.Icon className="h-3.5 w-3.5" aria-hidden="true" />
-                    {v.label}
+              <li key={t.date} className="flex items-center gap-3 py-3.5">
+                {photo ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={etsyThumb(t.afterImage, "il_170x135") ?? undefined}
+                    alt="New main photo"
+                    loading="lazy"
+                    decoding="async"
+                    className="h-11 w-11 flex-shrink-0 rounded-[var(--radius-md)] object-cover"
+                  />
+                ) : (
+                  <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]">
+                    <Pencil className="h-4 w-4" aria-hidden="true" />
                   </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-medium text-[var(--color-ink)]">
+                    {t.kinds.map((x) => KIND_LABEL[x]).join(", ")} <span className="font-normal text-[var(--color-ink-soft)]">· {shortDate(t.date)}</span>
+                  </p>
+                  <p className="text-[13.5px] text-[var(--color-ink-muted)]">{changeSentence(t)}</p>
                 </div>
-                <p className="mt-1.5 text-[13.5px] text-[var(--color-ink-muted)]">{testSentence(t)}</p>
-                {t.kinds.includes("main_photo") && t.beforeImage && t.afterImage && (
-                  <div className="mt-3 flex items-center gap-2">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={etsyThumb(t.beforeImage, "il_170x135") ?? undefined} alt="Main photo before" loading="lazy" decoding="async" className="h-16 w-16 rounded-[var(--radius-md)] object-cover" />
-                    <ArrowRight className="h-4 w-4 text-[var(--color-ink-soft)]" aria-hidden="true" />
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={etsyThumb(t.afterImage, "il_170x135") ?? undefined} alt="Main photo after" loading="lazy" decoding="async" className="h-16 w-16 rounded-[var(--radius-md)] object-cover" />
-                  </div>
-                )}
-                {t.kinds.includes("title") && t.beforeTitle && t.afterTitle && (
-                  <div className="mt-3 grid gap-1 text-[12.5px]">
-                    <p className="text-[var(--color-ink-soft)] line-through">{t.beforeTitle}</p>
-                    <p className="text-[var(--color-ink)]">{t.afterTitle}</p>
-                  </div>
-                )}
+                <span className={cn("flex-shrink-0 rounded-full px-2.5 py-1 text-[12.5px] font-semibold", v.cls)}>{v.label}</span>
               </li>
             );
           })}
@@ -926,27 +829,19 @@ function TestsCard({ vm }: { vm: AnalyticsViewModel }) {
   );
 }
 
-function testSentence(t: AnalyticsViewModel["tests"][number]): string {
-  const before = `${fmt(t.beforeViewsPerDay)} views/day before`;
-  const after = `${fmt(t.afterViewsPerDay)} after`;
+function changeSentence(t: AnalyticsViewModel["tests"][number]): string {
+  const views = `${fmt(t.beforeViewsPerDay)} → ${fmt(t.afterViewsPerDay)} views a day`;
   switch (t.verdict) {
     case "running":
-      return `Day ${t.daysAfter} of up to 14. Results appear after 7 days and at least 20 views. So far: ${before}, ${after}.`;
+      return `Day ${t.daysAfter} of 14.`;
     case "interrupted":
-      if (t.interruptionReason === "keywords_changed") return "Tracked keywords changed before this comparison had enough data. Its original history is kept, but the test has stopped.";
-      return "Another change came too soon after this one, so this result cannot be measured on its own.";
+      return t.interruptionReason === "keywords_changed" ? "Stopped because your keywords changed." : "Another change came too soon to measure this one.";
     case "no_baseline":
-      return "There was not enough data from before this change (your views or the top listings for your keywords) to compare, so this change cannot be measured.";
+      return "Not enough data from before the change.";
     case "insufficient_data":
-      return "This window could not support a comparison. It needs daily listing and market observations, enough views, and a nonzero baseline. No improvement or decline is claimed.";
-    default: {
-      const market =
-        t.marketChange === null
-          ? "No top-listing data for the same days."
-          : `Top listings changed ${pct(t.marketChange)} over the same days.`;
-      const lift = t.lift === null || t.marketChange === null ? "" : ` Compared with them, your listing moved ${pct(t.lift)}.`;
-      return `${before}, ${after}. ${market}${lift}`;
-    }
+      return "Not enough data to compare.";
+    default:
+      return t.lift === null ? views : `${views} · ${pct(t.lift)} vs top listings`;
   }
 }
 

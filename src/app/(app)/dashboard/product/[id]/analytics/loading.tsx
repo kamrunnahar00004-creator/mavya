@@ -1,13 +1,14 @@
-import { BarChart3, ImageIcon, Loader2 } from "lucide-react";
+import { BarChart3, ImageIcon } from "lucide-react";
 
 /**
  * Instant skeleton while the Analytics server page renders. Mirrors the real
- * layout (switch, header, next-fix card, stat row, chart) so nothing jumps
- * when the data arrives. The switch here is visual only (loading.tsx has no
- * route params); the real, clickable one replaces it a moment later.
+ * single-column layout (switch, header row, next step, numbers, chart) so
+ * nothing jumps when the data arrives. The switch here is visual only
+ * (loading.tsx has no route params); the real one replaces it a moment later.
  */
 export default function AnalyticsLoading() {
-  const block = "rounded-[var(--radius-xl)] border border-[var(--color-border-soft)] bg-white shadow-[var(--shadow-soft)]";
+  const bar = "rounded bg-[var(--color-page-deep)]";
+  const card = "rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
   return (
     <div aria-busy="true" aria-label="Loading analytics">
       <div className="mx-auto flex max-w-[1200px] justify-center px-6 pt-5">
@@ -22,25 +23,21 @@ export default function AnalyticsLoading() {
           </span>
         </div>
       </div>
-      <main className="mx-auto flex max-w-[1200px] animate-pulse flex-col gap-5 px-4 pb-16 pt-6 sm:px-6">
-        <div className={`${block} flex items-center gap-4 p-5 sm:p-6`}>
-          <div className="h-20 w-20 flex-shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]" />
-          <div className="flex-1 space-y-2.5">
-            <div className="h-3 w-40 rounded bg-[var(--color-page-deep)]" />
-            <div className="h-5 w-3/4 rounded bg-[var(--color-page-deep)]" />
-            <div className="h-3 w-1/2 rounded bg-[var(--color-page-deep)]" />
+      <main className="mx-auto flex w-full max-w-[760px] animate-pulse flex-col gap-6 px-4 pb-20 pt-6 motion-reduce:animate-none sm:px-6">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 flex-shrink-0 rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]" />
+          <div className="flex-1 space-y-2">
+            <div className={`h-4 w-2/3 ${bar}`} />
+            <div className={`h-3 w-1/3 ${bar}`} />
           </div>
         </div>
-        <div className="flex items-center gap-3 rounded-[var(--radius-xl)] bg-[var(--color-page-deep)] p-6 text-[14px] font-medium text-[var(--color-ink-muted)]">
-          <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-          Loading your listing&apos;s numbers…
+        <div className={`${card} space-y-3 p-6`}>
+          <div className={`h-3 w-24 ${bar}`} />
+          <div className={`h-6 w-3/4 ${bar}`} />
+          <div className={`h-4 w-1/2 ${bar}`} />
         </div>
-        <div className="grid gap-4 sm:grid-cols-3">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className={`${block} h-[118px]`} />
-          ))}
-        </div>
-        <div className={`${block} h-[260px]`} />
+        <div className={`${card} h-[92px]`} />
+        <div className={`${card} h-[230px]`} />
       </main>
     </div>
   );

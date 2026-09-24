@@ -517,7 +517,7 @@ export function listingChecks(args: {
       area: "tags",
       severity: empty >= 4 ? "high" : "medium",
       title: `${empty} of ${ETSY_TAG_SLOTS} tag slots are empty`,
-      detail: "Use available slots for additional relevant phrases that describe your product.",
+      detail: "Each tag is one more search you can show up in.",
     });
   }
 
@@ -528,7 +528,7 @@ export function listingChecks(args: {
       area: "tags",
       severity: "low",
       title: `${maybeCut.length} tag${maybeCut.length > 1 ? "s" : ""} at the character limit`,
-      detail: `Tags can use all ${ETSY_TAG_MAX} characters. Only change these if a word is actually incomplete.`,
+      detail: "Check that no word got cut short.",
       suggestions: maybeCut,
     });
   }
@@ -545,7 +545,7 @@ export function listingChecks(args: {
       area: "tags",
       severity: missing.length >= 3 ? "high" : "medium",
       title: "Top listings use tags you do not",
-      detail: "Only add the ones that are true for your product.",
+      detail: "Add only the ones that fit your product.",
       suggestions: missing,
     });
   }
@@ -565,7 +565,7 @@ export function listingChecks(args: {
         area: "title",
         severity: "high",
         title: `Your title does not contain "${kw}"`,
-        detail: "Consider including these product words naturally near the start, if they accurately describe what you sell.",
+        detail: "Put these words near the start of your title, if they fit.",
       });
     } else if (i === 0 && titleLower.indexOf(k) > 40) {
       issues.push({
@@ -573,7 +573,7 @@ export function listingChecks(args: {
         area: "title",
         severity: "low",
         title: `"${kw}" appears late in your title`,
-        detail: "Etsy search shows the start of the title. Lead with what the product is.",
+        detail: "Lead with what the product is.",
       });
     } else if (i > 0 && !words.every((w) => listingWords.has(w))) {
       issues.push({
@@ -581,7 +581,7 @@ export function listingChecks(args: {
         area: "tags",
         severity: "medium",
         title: `"${kw}" is not in your title or tags`,
-        detail: "Some words are missing from the title and tags. Consider relevant phrases using them; each tag can contain up to 20 characters.",
+        detail: "Add it as a tag if it fits your product.",
       });
     }
   });
@@ -592,7 +592,7 @@ export function listingChecks(args: {
       area: "title",
       severity: "medium",
       title: "Your title exceeds 140 characters",
-      detail: "Keep a clear product name and its most useful distinguishing details.",
+      detail: "Keep the product name and key details.",
     });
   }
 
@@ -605,7 +605,7 @@ export function listingChecks(args: {
       area: "photos",
       severity: ownPhotos <= 4 ? "high" : "medium",
       title: `Top listings show ${Math.round(winnerPhotos)} photos, you show ${ownPhotos}`,
-      detail: "Supporting photos answer buyer questions: size, detail, packaging, what is included.",
+      detail: "Show size, details, and what is included.",
     });
   }
 
@@ -616,7 +616,7 @@ export function listingChecks(args: {
       area: "description",
       severity: "low",
       title: "Your description is short",
-      detail: "Cover size, materials, care, and what arrives in the package.",
+      detail: "Add size, materials, care, and what is in the box.",
     });
   }
 
@@ -676,17 +676,17 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       state: "not_linked",
       fixTarget: null,
       headline: "Link your Etsy listing to start",
-      detail: "Paste the listing link. Mavya checks it once a day and tells you what to fix next.",
+      detail: "Mavya checks it daily and tells you what to fix.",
       evidence: [],
     };
   }
 
   const evidence: string[] = [];
   if (input.enabled === false) {
-    return { state: "collecting", fixTarget: null, headline: "Monitoring is paused", detail: "Saved history is shown below. Resume monitoring to collect new daily data.", evidence };
+    return { state: "collecting", fixTarget: null, headline: "Monitoring is paused", detail: "Turn on the daily check to keep tracking.", evidence };
   }
   if (input.lastCheckedOn !== undefined && (!input.lastCheckedOn || input.lastCheckedOn < addDays(today, -1))) {
-    return { state: "collecting", fixTarget: null, headline: "Waiting for a fresh Etsy check", detail: "Recent monitoring data is unavailable. Saved numbers below may be out of date.", evidence };
+    return { state: "collecting", fixTarget: null, headline: "Waiting for today's Etsy check", detail: "Numbers below may be a day old.", evidence };
   }
   const positions = latestKeywords.map((k) => k.position);
   const best = positions.filter((p): p is number => p !== null).sort((a, b) => a - b)[0] ?? null;
@@ -703,8 +703,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     return {
       state: "testing",
       fixTarget: null,
-      headline: "A test is running. Leave the listing as it is for now.",
-      detail: `You changed ${describeKinds(running.event.kinds)} on ${running.event.date}. Changing something else now would mix up the result. A comparison needs ${MIN_AFTER_DAYS} observed after-days, at least ${MIN_AFTER_VIEWS} views, and matching market data within 14 days.`,
+      headline: "Give your change time to work",
+      detail: `You changed ${describeKinds(running.event.kinds)}. Leave the listing as is for about a week so Mavya can measure it.`,
       evidence,
     };
   }
@@ -714,8 +714,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     return {
       state: "findability",
       fixTarget: "title_tags",
-      headline: "Search visibility may be limiting this listing",
-      detail: "It is outside the first 48 API results for your tracked phrases. Review relevant title and tag gaps; buyers may still find it through other searches or traffic sources.",
+      headline: "Buyers may not be finding this listing",
+      detail: "It is not in the top 48 search results for your keywords. Start with the title and tags.",
       evidence,
     };
   }
@@ -735,8 +735,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     return actionableResult() ?? {
       state: "collecting",
       fixTarget: null,
-      headline: "Mavya is watching this listing",
-      detail: `It needs about ${Math.max(1, MIN_SERIES_DAYS - knownDays)} more daily observations to compare recent views.`,
+      headline: "Collecting your first numbers",
+      detail: `About ${Math.max(1, MIN_SERIES_DAYS - knownDays)} more day${Math.max(1, MIN_SERIES_DAYS - knownDays) === 1 ? "" : "s"} until Mavya can compare your views.`,
       evidence,
     };
   }
@@ -763,20 +763,19 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       return {
         state: "improve",
         fixTarget: "title_tags",
-        headline: "Views trail the top listings, but your main photo already scores higher",
-        detail:
-          "The photo is probably not the main gap. Compare your price, reviews, and how your title reads next to the top listings. These numbers cannot show why buyers chose other listings.",
+        headline: "Fewer views, but your photo already scores higher",
+        detail: "Compare your price, reviews, and title with the top listings.",
         evidence,
       };
     }
     return {
       state: "click",
       fixTarget: "main_photo",
-      headline: "Views trail the top listings. Review the main photo.",
+      headline: "Try a stronger main photo",
       detail:
         photoGap !== null && photoGap >= 1
-          ? "Your listing appears in the first 48 API results, with lower views and a lower photo score. The main photo is one candidate to test; exposure and other traffic sources are unknown."
-          : "Your listing appears in the first 48 API results but has fewer views. Review its thumbnail alongside the top listings. These numbers cannot tell us whether buyers saw it and chose not to click.",
+          ? "You show up in search but get far fewer views, and top listings have stronger main photos."
+          : "You show up in search but get far fewer views than the top listings.",
       evidence,
     };
   }
@@ -791,8 +790,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       return {
         state: "trust",
         fixTarget: "supporting_photos",
-        headline: "Recent favorites are lower. Review supporting photos.",
-        detail: "Net favorites per view are lower than the comparison listings over the same dates. Clear size, detail, and included-item photos are one improvement to consider; favorites alone do not measure trust or sales.",
+        headline: "Add photos that answer buyer questions",
+        detail: "Visitors favorite this listing less than the top listings. Show size, details, and what is included.",
         evidence,
       };
     }
@@ -804,8 +803,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     return {
       state: "improve",
       fixTarget: "main_photo",
-      headline: "Next: bring your main photo up to the top listings",
-      detail: "Your views are below the top listings and their main photos score clearly higher than yours.",
+      headline: "Improve your main photo",
+      detail: "Top listings get more views and their main photos score higher.",
       evidence,
     };
   }
@@ -815,20 +814,20 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     return {
       state: "improve",
       fixTarget: "title_tags",
-      headline: "Next: fix the title and tag gaps",
-      detail: "Numbers look steady. The title and tag check found gaps that can cost you search traffic.",
+      headline: "Fix your title and tags",
+      detail: "Your numbers are steady. A few title and tag gaps can still cost searches.",
       evidence,
     };
   }
 
   if (!latestKeywords.length || marketVpd === null) {
-    return { state: "collecting", fixTarget: null, headline: "Waiting for comparison data", detail: "Recent listing data is available, but there is not enough matching search and market history to assess performance.", evidence };
+    return { state: "collecting", fixTarget: null, headline: "Waiting for top-listing data", detail: "Add keywords so Mavya can compare you with the top listings.", evidence };
   }
   return {
     state: "healthy",
     fixTarget: null,
-    headline: "This listing is holding up well",
-    detail: "No clear issue was identified in the available recent data. This does not measure clicks or sales.",
+    headline: "Looking good",
+    detail: "No clear issue right now. Mavya keeps checking daily.",
     evidence,
   };
 }
