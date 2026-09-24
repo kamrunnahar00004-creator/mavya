@@ -24,10 +24,9 @@ const TIME_BUDGET_MS = 240_000;
  * instead of repeating work.
  *
  * Schedule: ONCE a day (vercel.json). The Vercel Hobby plan only allows daily
- * crons. One run has a 240s budget; rows claimed but not reached go first in
- * the next run (ordered by next_check_at). Rough ceiling: ~100-150 monitored
- * listings per day with 3 keywords each. Beyond that, move to Vercel Pro and
- * an hourly schedule; the lease logic below already supports it.
+ * crons. One run has a 240s budget. Claim only the next small batch: untouched
+ * rows keep their earlier next_check_at and precede attempted work next day.
+ * Throughput depends on provider latency and keyword overlap, not a fixed cap.
  */
 async function handle(req: NextRequest) {
   const secret = process.env.CRON_SECRET || process.env.WORKER_SECRET;
@@ -52,47 +51,43 @@ async function handle(req: NextRequest) {
     .lte("next_check_at", now)
     .or(`last_checked_on.is.null,last_checked_on.lt.${today}`)
     .order("next_check_at", { ascending: true })
+    .order("product_id", { ascending: true })
     .limit(200);
   if (error) {
     logEvent("listing_monitor.scan_failed", {});
     return NextResponse.json({ ok: false, reason: "scan_failed" }, { status: 500 });
   }
 
-  // Atomically lease due rows. Concurrent cron calls cannot repeat API/AI
-  // work; failed or unpaid rows rotate behind other work instead of starving it.
-  const { data: claimed, error: claimError } = data?.length ? await admin.from("listing_monitors")
-    .update({ next_check_at: new Date(started + 3_600_000).toISOString() })
-    .in("product_id", data.map((r) => r.product_id)).eq("enabled", true).lte("next_check_at", now)
-    .select("product_id, user_id, etsy_listing_id, keywords, revision, listing_revision, last_checked_on") : { data: [], error: null };
-  if (claimError) return NextResponse.json({ ok: false, reason: "claim_failed" }, { status: 500 });
-  const rows = (claimed as (MonitorRow & { last_checked_on: string | null })[] | null) ?? [];
+  const rows = (data as MonitorRow[] | null) ?? [];
   const activeByUser = new Map<string, boolean>();
-  const due: MonitorRow[] = [];
-  for (const r of rows) {
-    if (Date.now() - started > TIME_BUDGET_MS - 20_000) break;
-    if (!activeByUser.has(r.user_id)) {
-      activeByUser.set(r.user_id, (await getEntitlement(r.user_id)).active);
+  const totals = { due: 0, processed: 0, snapshots: 0, keywordSnapshots: 0, winnerPhotosScored: 0, errors: 0 };
+  for (let i = 0; i < rows.length; i += CHUNK) {
+    if (Date.now() - started >= TIME_BUDGET_MS - 20_000) break;
+    const pending = rows.slice(i, i + CHUNK);
+    // Claim just the batch we can start. A timeout/crash cannot erase the
+    // scheduling priority of every unprocessed row in the 200-row scan.
+    const { data: claimed, error: claimError } = await admin.from("listing_monitors")
+      .update({ next_check_at: new Date(Date.now() + 3_600_000).toISOString() })
+      .in("product_id", pending.map((r) => r.product_id)).eq("enabled", true).lte("next_check_at", now)
+      .or(`last_checked_on.is.null,last_checked_on.lt.${today}`)
+      .select("product_id, user_id, etsy_listing_id, keywords, revision, listing_revision, last_checked_on");
+    if (claimError) return NextResponse.json({ ok: false, reason: "claim_failed" }, { status: 500 });
+    const byId = new Map(((claimed as MonitorRow[] | null) ?? []).map((r) => [r.product_id, r]));
+    const chunk: MonitorRow[] = [];
+    // UPDATE RETURNING has no ordering guarantee. Restore the scan order.
+    for (const p of pending) {
+      const r = byId.get(p.product_id);
+      if (!r) continue;
+      if (!activeByUser.has(r.user_id)) activeByUser.set(r.user_id, (await getEntitlement(r.user_id)).active);
+      if (!activeByUser.get(r.user_id)) {
+        await admin.from("listing_monitors").update({ next_check_at: new Date(started + 86_400_000).toISOString() })
+          .eq("product_id", r.product_id).eq("revision", r.revision);
+      } else {
+        chunk.push({ ...r, etsy_listing_id: Number(r.etsy_listing_id), keywords: r.keywords ?? [] });
+      }
     }
-    if (!activeByUser.get(r.user_id)) {
-      await admin.from("listing_monitors").update({ next_check_at: new Date(started + 86_400_000).toISOString() })
-        .eq("product_id", r.product_id).eq("revision", r.revision);
-    }
-    if (activeByUser.get(r.user_id)) {
-      due.push({
-        product_id: r.product_id,
-        user_id: r.user_id,
-        etsy_listing_id: Number(r.etsy_listing_id),
-        keywords: r.keywords ?? [],
-        revision: r.revision,
-        listing_revision: r.listing_revision,
-      });
-    }
-  }
-
-  const totals = { due: due.length, processed: 0, snapshots: 0, keywordSnapshots: 0, winnerPhotosScored: 0, errors: 0 };
-  for (let i = 0; i < due.length; i += CHUNK) {
-    if (Date.now() - started > TIME_BUDGET_MS) break;
-    const chunk = due.slice(i, i + CHUNK);
+    totals.due += chunk.length;
+    if (!chunk.length) continue;
     try {
       const s = await runListingMonitor(admin, chunk, { today, maxWinnerScores: 0, deadlineAt: started + TIME_BUDGET_MS });
       totals.processed += chunk.length;

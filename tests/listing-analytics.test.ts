@@ -138,7 +138,8 @@ describe("evaluateAllTests", () => {
   const events = detectChanges(snaps);
 
   it("reports running before 7 days of after-data", () => {
-    const [t] = evaluateAllTests(events, series, [], addDays(START, 13));
+    const flatMarket = buildMarketSeries(Array.from({ length: 21 }, (_, d) => kw(d, 5, 1000 + d * 50)));
+    const [t] = evaluateAllTests(events, series, flatMarket, addDays(START, 13));
     expect(t.verdict).toBe("running");
   });
 
@@ -163,7 +164,8 @@ describe("evaluateAllTests", () => {
 
   it("marks a test interrupted when another change lands too soon", () => {
     const s2 = snaps.map((s, i) => (i >= 12 ? { ...s, title: "Changed again" } : s));
-    const tests = evaluateAllTests(detectChanges(s2), buildDailySeries(s2), [], addDays(START, 20));
+    const flatMarket = buildMarketSeries(Array.from({ length: 21 }, (_, d) => kw(d, 5, 1000 + d * 50)));
+    const tests = evaluateAllTests(detectChanges(s2), buildDailySeries(s2), flatMarket, addDays(START, 20));
     expect(tests.find((t) => t.event.date === addDays(START, 10))?.verdict).toBe("interrupted");
   });
 });
@@ -184,6 +186,22 @@ describe("market control keyword coverage", () => {
     }
     const [t] = evaluateAllTests(detectChanges(snaps), buildDailySeries(snaps), [], addDays(START, 24), kws);
     expect(t.verdict).not.toBe("better");
+  });
+});
+
+describe("tests without a market baseline", () => {
+  it("close immediately instead of blocking advice for 14 days", () => {
+    // 10 days of listing history before a day-10 photo change, but keyword
+    // (market) data only starts the day before the change.
+    const snaps: ListingSnapshot[] = [];
+    for (let d = 0; d <= 12; d++) snaps.push(snap(d, 100 + d * 10, d >= 10 ? { main_image_id: 200 } : {}));
+    const kws: KeywordSnapshot[] = [];
+    for (let d = 9; d <= 12; d++) kws.push({ ...kw(d, 5, 0), top: [1, 2, 3].map((i) => top(i, 1000 + d * 50 + i)) });
+    const series = buildDailySeries(snaps);
+    const tests = evaluateAllTests(detectChanges(snaps), series, [], addDays(START, 12), kws);
+    expect(tests[0].verdict).toBe("no_baseline");
+    const d = diagnose({ linked: true, series, market: buildMarketSeries(kws), latestKeywords: [kws[kws.length - 1]], tests, today: addDays(START, 12), ownPhotoScore: null, winnerPhotoScore: null });
+    expect(d.state).not.toBe("testing");
   });
 });
 
@@ -286,7 +304,7 @@ describe("diagnose", () => {
     const running = evaluateAllTests(
       detectChanges([snap(8, 116), snap(9, 118, { main_image_id: 9 })]),
       steady,
-      [],
+      buildMarketSeries(Array.from({ length: 11 }, (_, d) => kw(d, 5, 1000 + d * 50))),
       addDays(START, 10)
     );
     const d = diagnose({ ...base, tests: running, series: steady, market: [], latestKeywords: [kw(10, 80, 10)] });
@@ -343,6 +361,62 @@ describe("keywords", () => {
   });
 });
 
+describe("tests keep their original keyword controls", () => {
+  const snapshots = Array.from({ length: 31 }, (_, d) => snap(d,
+    100 + Math.min(d, 10) * 10 + Math.max(0, d - 10) * 20,
+    { main_image_id: d < 10 ? 100 : 200, control_revision: "original" }));
+  const original = snapshots.map((s, d) => ({ ...kw(d, 5, 1000 + d * 10), revision: "original" }));
+
+  it("keeps a completed verdict and its numbers after a keyword edit", () => {
+    const changed = snapshots.map((s, d) => ({ ...s, control_revision: d >= 26 ? "new" : "original" }));
+    const history = original.filter((_, d) => d < 26).concat(original.filter((_, d) => d >= 26).map((k) => ({ ...k, revision: "new", top: k.top.map((t) => ({ ...t, views: 999999 })) })));
+    const before = evaluateAllTests(detectChanges(snapshots), buildDailySeries(snapshots), [], addDays(START, 30), original, "original")[0];
+    const after = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), history, "new")[0];
+    expect(before.verdict).toBe("better");
+    expect(after.verdict).toBe(before.verdict);
+    expect(after.lift).toBe(before.lift);
+    expect(after.before).toEqual(before.before);
+    expect(after.after).toEqual(before.after);
+  });
+  it("does not substitute a new revision even when its keyword text is identical", () => {
+    const newOnly = original.map((k) => ({ ...k, revision: "new" }));
+    const [result] = evaluateAllTests(detectChanges(snapshots), buildDailySeries(snapshots), [], addDays(START, 30), newOnly, "new");
+    expect(result.lift).toBeNull();
+    expect(result.before.days).toBe(0);
+  });
+  it("explicitly stops an unfinished test immediately after editing keywords", () => {
+    const s = snapshots.slice(0, 15);
+    const [result] = evaluateAllTests(detectChanges(s), buildDailySeries(s), [], addDays(START, 14), original.slice(0, 15), "new");
+    expect(result.verdict).toBe("interrupted");
+    expect(result.interruptionReason).toBe("keywords_changed");
+  });
+  it("keeps that interruption after its 14-day window expires, even with no new keywords", () => {
+    const changed = snapshots.map((s, d) => ({ ...s, control_revision: d >= 14 ? "new" : "original" }));
+    const [result] = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), original.slice(0, 14), "new");
+    expect(result.verdict).toBe("interrupted");
+    expect(result.interruptionReason).toBe("keywords_changed");
+    expect(result.after.days).toBe(3);
+  });
+  it("keeps a usable early result instead of relabeling it interrupted", () => {
+    const changed = snapshots.map((s, d) => ({ ...s, control_revision: d >= 20 ? "new" : "original" }));
+    const [result] = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), original.slice(0, 20), "new");
+    expect(result.verdict).toBe("better");
+    expect(result.interruptionReason).toBeUndefined();
+  });
+  it("keeps the seventh after-day recorded before a same-day keyword edit", () => {
+    const s = snapshots.slice(0, 18);
+    const [result] = evaluateAllTests(detectChanges(s), buildDailySeries(s), [], addDays(START, 17), original.slice(0, 18), "new");
+    expect(result.after.days).toBe(7);
+    expect(result.verdict).toBe("better");
+  });
+  it("does not mistake a listing change for a keyword edit", () => {
+    const changed = snapshots.map((s, d) => ({ ...s, title: d >= 13 ? "new title" : s.title }));
+    const result = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), original, "original").find((t) => t.event.date === addDays(START, 10))!;
+    expect(result.verdict).toBe("interrupted");
+    expect(result.interruptionReason).toBeUndefined();
+  });
+});
+
 describe("coach review regressions", () => {
   const history = Array.from({ length: 31 }, (_, d) => snap(d, 100 + d * 10, d >= 10 ? { main_image_id: 200 } : {}));
   const series = buildDailySeries(history);
@@ -356,8 +430,10 @@ describe("coach review regressions", () => {
     expect(evaluateTest(event, null, low, market, addDays(START, 30)).verdict).toBe("insufficient_data");
   });
   it("does not call an unadjusted rise a market-relative improvement", () => {
+    // No market data at all: the test can never be market-adjusted, so it
+    // closes as no_baseline (never "better") instead of waiting 14 days.
     const t = evaluateTest(event, null, series, [], addDays(START, 30));
-    expect(t.verdict).toBe("insufficient_data");
+    expect(t.verdict).toBe("no_baseline");
     expect(t.lift).toBeNull();
   });
   it("does not divide by a zero market", () => {
@@ -376,7 +452,8 @@ describe("coach review regressions", () => {
   it("does not treat rank-cohort replacement as a market trend", () => {
     const rotated = keywords.map((k, d) => ({ ...k, top: k.top.map((t) => ({ ...t, id: d >= 10 ? t.id + 100 : t.id })) }));
     const [t] = evaluateAllTests([event], series, buildMarketSeries(rotated), addDays(START, 30), rotated);
-    expect(t.verdict).toBe("insufficient_data");
+    // No listing stays in the cohort across the window: nothing comparable.
+    expect(["no_baseline", "insufficient_data"]).toContain(t.verdict);
     expect(t.lift).toBeNull();
   });
   it("retains results for a fixed, observed comparison cohort", () => {

@@ -60,6 +60,7 @@ export type AnalyticsViewModel = {
     date: string;
     kinds: ChangeKind[];
     verdict: TestVerdict;
+    interruptionReason?: "keywords_changed";
     daysAfter: number;
     beforeViewsPerDay: number | null;
     afterViewsPerDay: number | null;
@@ -632,7 +633,7 @@ function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
               />
             </div>
           ))}
-          <p className="text-[12.5px] text-[var(--color-ink-soft)]">Use what a buyer would type. New keywords start a fresh search and top-listing history. Your views history is kept.</p>
+          <p className="text-[12.5px] text-[var(--color-ink-soft)]">New keywords start fresh search comparisons. Views and completed results are kept; unfinished tests using the old keywords stop.</p>
           {error && (
             <p role="alert" className="text-[13px] text-[var(--color-weak)]">
               {error}
@@ -920,9 +921,10 @@ function testSentence(t: AnalyticsViewModel["tests"][number]): string {
     case "running":
       return `Day ${t.daysAfter} of up to 14. Results appear after 7 days and at least 20 views. So far: ${before}, ${after}.`;
     case "interrupted":
+      if (t.interruptionReason === "keywords_changed") return "Tracked keywords changed before this comparison had enough data. Its original history is kept, but the test has stopped.";
       return "Another change came too soon after this one, so this result cannot be measured on its own.";
     case "no_baseline":
-      return "Mavya did not have enough days of data before this change to compare.";
+      return "There was not enough data from before this change (your views or the top listings for your keywords) to compare, so this change cannot be measured.";
     case "insufficient_data":
       return "This window could not support a comparison. It needs daily listing and market observations, enough views, and a nonzero baseline. No improvement or decline is claimed.";
     default: {

@@ -24,6 +24,7 @@ import {
   type ListingSnapshot,
 } from "@/lib/listing-analytics";
 import { todayUtc } from "@/lib/listing-monitor";
+import { loadKeywordHistory } from "@/lib/listing-history";
 
 export const dynamic = "force-dynamic";
 
@@ -69,17 +70,15 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
 
   // Scope history in SQL, before PostgREST's row limit. The listing's own
   // daily history is scoped by linked listing (survives keyword edits);
-  // search/market history by the full configuration revision.
-  const [snapResult, kwResult] = monitor ? await Promise.all([
+  // Current search cards use the current configuration; historical tests
+  // retain controls from their own configuration within this linked listing.
+  const [snapResult, keywordHistory] = monitor ? await Promise.all([
     supabase.from("listing_snapshots")
-      .select("listing_revision, snapshot_date, etsy_listing_id, state, views, favorites, title, tags, description, main_image_id, main_image_url, image_count")
+      .select("listing_revision, control_revision, snapshot_date, etsy_listing_id, state, views, favorites, title, tags, description, main_image_id, main_image_url, image_count")
       .eq("product_id", id).eq("listing_revision", monitor.listing_revision)
       .gte("snapshot_date", addDays(today, -HISTORY_DAYS)).order("snapshot_date", { ascending: true }),
-    supabase.from("listing_keyword_snapshots")
-      .select("revision, snapshot_date, keyword, position, depth, top")
-      .eq("product_id", id).eq("revision", monitor.revision)
-      .gte("snapshot_date", addDays(today, -KEYWORD_HISTORY_DAYS)).order("snapshot_date", { ascending: true }),
-  ]) : [{ data: [], error: null }, { data: [], error: null }];
+    loadKeywordHistory(supabase, id, monitor.listing_revision, addDays(today, -KEYWORD_HISTORY_DAYS)),
+  ]) : [{ data: [], error: null }, []];
 
   const allSnaps = ((unwrapOrThrow(snapResult, "product_hydration_failed") as (ListingSnapshot & { listing_revision: string })[] | null) ?? []).filter((s) => s.listing_revision === monitor?.listing_revision).map(
     (s) => ({ ...s, etsy_listing_id: Number(s.etsy_listing_id), main_image_id: s.main_image_id === null ? null : Number(s.main_image_id), tags: s.tags ?? [] })
@@ -87,7 +86,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   // Only the CURRENTLY linked listing's history (a re-link never mixes listings).
   const snaps = listingId ? allSnaps.filter((s) => s.etsy_listing_id === listingId) : [];
   // Only the CURRENTLY tracked keywords.
-  const kwSnaps = ((unwrapOrThrow(kwResult, "product_hydration_failed") as (KeywordSnapshot & { revision: string })[] | null) ?? []).filter(
+  const kwSnaps = (keywordHistory as KeywordSnapshot[]).filter(
     (k) => k.revision === monitor?.revision && keywords.includes(k.keyword)
   );
 
@@ -95,7 +94,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   const market = buildMarketSeries(kwSnaps);
   const latestKeywords = latestByKeyword(kwSnaps);
   const events = detectChanges(snaps);
-  const tests = evaluateAllTests(events, series, market, today, kwSnaps);
+  const tests = evaluateAllTests(events, series, market, today, keywordHistory, monitor?.revision);
   const latest = snaps.length ? snaps[snaps.length - 1] : null;
 
   // Mavya photo scores: the seller's main photo (raw, honest) and the top listings'.
@@ -188,6 +187,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
       date: t.event.date,
       kinds: t.event.kinds,
       verdict: t.verdict,
+      interruptionReason: t.interruptionReason,
       daysAfter: t.daysAfter,
       beforeViewsPerDay: t.before.viewsPerDay,
       afterViewsPerDay: t.after.viewsPerDay,

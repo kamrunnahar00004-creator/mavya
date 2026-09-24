@@ -1,13 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const m = vi.hoisted(() => ({ user: vi.fn(), entitlement: vi.fn(), server: vi.fn(), admin: vi.fn(), limit: vi.fn(), fetch: vi.fn(), runner: vi.fn(), scores: vi.fn(), after: vi.fn() }));
+const m = vi.hoisted(() => ({ user: vi.fn(), entitlement: vi.fn(), server: vi.fn(), admin: vi.fn(), limit: vi.fn(), fetch: vi.fn(), runner: vi.fn(), scores: vi.fn(), after: vi.fn(), today: vi.fn() }));
 vi.mock("next/server", async (original) => ({ ...await original<typeof import("next/server")>(), after: m.after }));
 vi.mock("@/lib/supabase/server", () => ({ getSessionUser: m.user, createSupabaseServerClient: m.server }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: m.admin }));
 vi.mock("@/lib/entitlements", () => ({ getEntitlement: m.entitlement }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimit: m.limit }));
-vi.mock("@/lib/listing-monitor", () => ({ runListingMonitor: m.runner, scoreWinnerPhotos: m.scores, todayUtc: () => "2026-09-24" }));
+vi.mock("@/lib/listing-monitor", () => ({ runListingMonitor: m.runner, scoreWinnerPhotos: m.scores, todayUtc: m.today }));
 vi.mock("@/lib/etsy", async (original) => ({ ...await original<typeof import("@/lib/etsy")>(), fetchListingsBatch: m.fetch, isEtsyConfigured: () => true }));
 import { POST as link } from "@/app/api/listings/link/route";
 import { POST as settings } from "@/app/api/listings/settings/route";
@@ -39,6 +39,7 @@ function request(body: unknown) {
 }
 beforeEach(() => {
   vi.resetAllMocks();
+  m.today.mockReturnValue("2026-09-24");
   m.user.mockResolvedValue({ id: "user" });
   m.entitlement.mockResolvedValue({ active: true });
   m.limit.mockResolvedValue({ ok: true });
@@ -48,7 +49,7 @@ beforeEach(() => {
   m.runner.mockResolvedValue({ snapshots: 1, keywordSnapshots: 1, winnerPhotosScored: 0, errors: 0 });
   vi.stubEnv("CRON_SECRET", "test-secret");
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.useRealTimers(); });
 
 describe("listing write authorization", () => {
   it.each([link, settings])("rejects anonymous writes before any work %#", async (handler) => {
@@ -125,6 +126,85 @@ describe("listing write authorization", () => {
 });
 
 describe("daily cron boundaries", () => {
+  function scheduledDatabase() {
+    const rows = Array.from({ length: 15 }, (_, i) => ({ ...row, product_id: String(i).padStart(2, "0"), next_check_at: "2026-09-23T09:00:00.000Z", last_checked_on: null as string | null }));
+    type Row = typeof rows[number];
+    const claims: string[][] = [];
+    const admin = {
+      from: () => {
+        const predicates: ((r: Row) => boolean)[] = [];
+        const ordering: (keyof Row)[] = [];
+        let patch: Partial<Row> | null = null;
+        let max = Infinity;
+        const q = {
+          select: () => q,
+          eq: (key: keyof Row, value: unknown) => { predicates.push((r) => r[key] === value); return q; },
+          lte: (key: keyof Row, value: string) => { predicates.push((r) => String(r[key]) <= value); return q; },
+          in: (key: keyof Row, values: unknown[]) => { predicates.push((r) => values.includes(r[key])); return q; },
+          or: (expression: string) => { const day = expression.split(".lt.")[1]; predicates.push((r) => r.last_checked_on === null || r.last_checked_on < day); return q; },
+          order: (key: keyof Row) => { ordering.push(key); return q; },
+          limit: (n: number) => { max = n; return q; },
+          update: (values: Partial<Row>) => { patch = values; return q; },
+          then: (resolve: (result: { data: Row[]; error: null }) => unknown) => {
+            const selected = rows.filter((r) => predicates.every((p) => p(r))).sort((a, b) => {
+              for (const key of ordering) { const result = String(a[key]).localeCompare(String(b[key])); if (result) return result; }
+              return 0;
+            }).slice(0, max);
+            if (patch) {
+              claims.push(selected.map((r) => r.product_id));
+              for (const r of selected) Object.assign(r, patch);
+              selected.reverse(); // UPDATE RETURNING need not preserve scan order.
+            }
+            return Promise.resolve({ data: selected.map((r) => ({ ...r })), error: null as null }).then(resolve);
+          },
+        };
+        return q;
+      },
+    };
+    return { admin, rows, claims };
+  }
+  it("reaches every listing across daily timeouts without claiming or reprioritizing the untouched tail", async () => {
+    vi.useFakeTimers();
+    const state = scheduledDatabase();
+    m.admin.mockReturnValue(state.admin);
+    const processed: string[][] = [];
+    m.runner.mockImplementation(async (_admin, chunk: typeof state.rows) => {
+      const ids = chunk.map((r) => r.product_id);
+      processed.push(ids);
+      for (const r of state.rows) if (ids.includes(r.product_id)) r.last_checked_on = m.today();
+      vi.setSystemTime(Date.now() + 240_001);
+      return { snapshots: chunk.length, keywordSnapshots: 0, winnerPhotosScored: 0, errors: 0 };
+    });
+    for (const day of [24, 25, 26]) {
+      const date = `2026-09-${day}`;
+      m.today.mockReturnValue(date);
+      vi.setSystemTime(new Date(`${date}T09:00:00Z`));
+      expect((await cron(cronRequest("test-secret"))).status).toBe(200);
+      if (day === 24) expect(state.rows.slice(5).every((r) => r.next_check_at === "2026-09-23T09:00:00.000Z")).toBe(true);
+    }
+    expect(processed).toEqual([
+      ["00", "01", "02", "03", "04"], ["05", "06", "07", "08", "09"], ["10", "11", "12", "13", "14"],
+    ]);
+    expect(state.claims.every((ids) => ids.length <= 5)).toBe(true);
+    expect(state.rows.every((r) => r.last_checked_on !== null)).toBe(true);
+  });
+  it("a failing batch also rotates behind untouched listings the next day", async () => {
+    vi.useFakeTimers();
+    const state = scheduledDatabase();
+    m.admin.mockReturnValue(state.admin);
+    const processed: string[][] = [];
+    m.runner.mockImplementation(async (_admin, chunk: typeof state.rows) => {
+      processed.push(chunk.map((r) => r.product_id));
+      vi.setSystemTime(Date.now() + 240_001);
+      throw new Error("provider unavailable");
+    });
+    for (const day of [24, 25]) {
+      m.today.mockReturnValue(`2026-09-${day}`);
+      vi.setSystemTime(new Date(`2026-09-${day}T09:00:00Z`));
+      await cron(cronRequest("test-secret"));
+    }
+    expect(processed).toEqual([["00", "01", "02", "03", "04"], ["05", "06", "07", "08", "09"]]);
+  });
   const cronRequest = (secret?: string) => new NextRequest("http://localhost/api/listings/monitor", { headers: secret ? { authorization: `Bearer ${secret}` } : {} });
   it("denies missing and invalid worker secrets", async () => {
     expect((await cron(cronRequest())).status).toBe(403);

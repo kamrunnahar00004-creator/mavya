@@ -14,6 +14,7 @@
  */
 
 export type ListingSnapshot = {
+  control_revision?: string;
   snapshot_date: string; // YYYY-MM-DD (UTC)
   etsy_listing_id: number;
   state: string | null;
@@ -41,6 +42,7 @@ export type TopEntry = {
 };
 
 export type KeywordSnapshot = {
+  revision?: string;
   snapshot_date: string;
   keyword: string;
   position: number | null;
@@ -284,6 +286,8 @@ export function recentWinnerFavoriteRate(snapshots: KeywordSnapshot[], series: D
 export type ChangeKind = "main_photo" | "title" | "tags" | "description";
 
 export type ChangeEvent = {
+  controlRevision?: string;
+  controlEndDate?: string;
   /** First snapshot date showing the new version (change happened since the previous one). */
   date: string;
   kinds: ChangeKind[];
@@ -318,6 +322,8 @@ export function detectChanges(snapshots: ListingSnapshot[]): ChangeEvent[] {
     }
     if (kinds.length === 0) continue;
     events.push({
+      controlRevision: cur.control_revision,
+      controlEndDate: cur.control_revision ? sorted.slice(i + 1).find((s) => s.control_revision && s.control_revision !== cur.control_revision)?.snapshot_date : undefined,
       date: cur.snapshot_date,
       kinds,
       before: { title: prev.title, tags: prev.tags, mainImageUrl: prev.main_image_url },
@@ -330,6 +336,7 @@ export function detectChanges(snapshots: ListingSnapshot[]): ChangeEvent[] {
 export type TestVerdict = "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline" | "insufficient_data";
 
 export type TestResult = {
+  interruptionReason?: "keywords_changed";
   event: ChangeEvent;
   verdict: TestVerdict;
   daysAfter: number;
@@ -378,7 +385,13 @@ export function evaluateTest(
   if (windowStats(series, beforeFrom, beforeTo).days < 3) {
     return { ...base, verdict: "no_baseline" };
   }
-  if (before.days < 3 || after.days < MIN_AFTER_DAYS || after.views < MIN_AFTER_VIEWS) {
+  // The before window is entirely in the past, so a missing market baseline
+  // can never be filled in later. Close the test now instead of keeping the
+  // seller in "wait, a test is running" for 14 days that cannot produce a result.
+  if (before.days < 3) {
+    return { ...base, verdict: "no_baseline" };
+  }
+  if (after.days < MIN_AFTER_DAYS || after.views < MIN_AFTER_VIEWS) {
     return { ...base, verdict: interrupted ? "interrupted" : ended ? "insufficient_data" : "running" };
   }
 
@@ -403,16 +416,25 @@ export function evaluateAllTests(
   series: DailyPoint[],
   market: MarketPoint[],
   today: string,
-  keywordSnapshots?: KeywordSnapshot[]
+  keywordSnapshots?: KeywordSnapshot[],
+  currentControlRevision?: string
 ): TestResult[] {
   const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
   return sorted
     .map((e, i) => {
+      const controlClosed = Boolean(e.controlRevision && currentControlRevision && e.controlRevision !== currentControlRevision);
+      // A same-day settings edit must retain the old configuration's already
+      // recorded observation, including a result that just reached seven days.
+      const controlEnd = e.controlEndDate ?? (controlClosed ? addDays(today, 1) : null);
+      const nextListingChange = sorted[i + 1]?.date ?? null;
+      const nextChange = [nextListingChange, controlEnd].filter((d): d is string => Boolean(d)).sort()[0] ?? null;
       let control = market;
       if (keywordSnapshots) {
         const from = addDays(e.date, -TEST_WINDOW_DAYS - 1);
-        const to = [today, addDays(e.date, TEST_WINDOW_DAYS), sorted[i + 1]?.date ?? today].sort()[0];
-        const snaps = keywordSnapshots.filter((k) => k.snapshot_date >= from && k.snapshot_date <= to);
+        const to = [today, addDays(e.date, TEST_WINDOW_DAYS), nextChange ? addDays(nextChange, -1) : today].sort()[0];
+        const snaps = keywordSnapshots.filter((k) =>
+          (!e.controlRevision || k.revision === e.controlRevision) &&
+          k.snapshot_date >= from && k.snapshot_date <= to);
         // Keep a fixed comparison cohort through each test, so changes in
         // who ranks in the top ten cannot masquerade as a market trend.
         const idsByKeyword = new Map<string, Set<number>>();
@@ -430,7 +452,16 @@ export function evaluateAllTests(
           usable
         );
       }
-      return evaluateTest(e, sorted[i + 1]?.date ?? null, series, control, today, sorted[i - 1]?.date ?? null);
+      const result = evaluateTest(e, nextChange, series, control, today, sorted[i - 1]?.date ?? null);
+      // A different keyword configuration must never replace an old test's
+      // control or keep it waiting for observations we no longer collect.
+      if (result.verdict === "running" && controlClosed) {
+        return { ...result, verdict: "interrupted" as const, interruptionReason: "keywords_changed" as const };
+      }
+      if (result.verdict === "interrupted" && controlEnd && (!nextListingChange || controlEnd <= nextListingChange)) {
+        return { ...result, interruptionReason: "keywords_changed" as const };
+      }
+      return result;
     })
     .reverse();
 }

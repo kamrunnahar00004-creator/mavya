@@ -104,10 +104,12 @@ ID and rubric version, so each photo is scored once per rubric version. The
 seller's own score comes from their ACTUAL Etsy main photo, never an unrelated
 upload.
 
-Update 2026-09-24 (cross-check): the monitor runs once a day at 09:00 UTC
-(Vercel Hobby allows daily crons only; ~100-150 listings/day ceiling, hourly
-on Pro). Editing keywords keeps the listing's views history; only linking a
-different listing starts a fresh one.
+Update 2026-09-24 (cross-check): the monitor retains its daily 09:00 UTC
+schedule. Runtime capacity has not been load-tested. It claims only the next
+five listings, so untouched work retains priority for the next run. Editing
+keywords keeps views and completed comparison results; only linking a different
+listing starts fresh. An unfinished test whose original keywords are no longer
+tracked stops explicitly. New keywords are never substituted into an old test.
 
 ## 6. The test loop (the "agentic" part)
 

@@ -103,6 +103,7 @@ export async function runListingMonitor(
     snapshotRows.push({
       product_id: m.product_id,
       listing_revision: m.listing_revision,
+      control_revision: m.revision,
       snapshot_date: today,
       etsy_listing_id: l.listingId,
       state: l.state,
@@ -144,10 +145,12 @@ export async function runListingMonitor(
   // Search results carry no images; fetch the top listings once, with images.
   const topIds = [...searchResults.values()].flatMap((r) => r.slice(0, TOP_N).map((l) => l.listingId));
   let topDetails = new Map<number, EtsyListing>();
+  let detailsSucceeded = true;
   if (topIds.length) {
     try {
       topDetails = await fetchListingsBatch(topIds, deadlineAt);
     } catch (err) {
+      detailsSucceeded = false;
       summary.errors += 1;
       logEvent("listing_monitor.top_batch_failed", {
         code: err instanceof EtsyApiError ? err.code : "unknown",
@@ -157,6 +160,7 @@ export async function runListingMonitor(
 
   const topByKeyword = new Map<string, TopEntry[]>();
   for (const [kw, results] of searchResults) {
+    if (!detailsSucceeded) continue;
     // A listing can disappear between the search and the detail fetch. Allow
     // up to MAX_MISSING_TOP gaps (dropped, never guessed); more than that is an
     // incomplete comparison and the day is retried. Ranks keep search order.
@@ -181,6 +185,7 @@ export async function runListingMonitor(
       kwRows.push({
         product_id: m.product_id,
         revision: m.revision,
+        listing_revision: m.listing_revision,
         snapshot_date: today,
         keyword: kw,
         position: idx >= 0 ? idx + 1 : null,

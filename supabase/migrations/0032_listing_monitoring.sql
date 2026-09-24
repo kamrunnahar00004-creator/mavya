@@ -24,7 +24,8 @@ create table if not exists public.listing_monitors (
   -- revision: changes whenever the configuration (listing OR keywords) changes;
   -- scopes keyword/search history. listing_revision: changes only when a
   -- different Etsy listing is linked; scopes the listing's own daily history,
-  -- so editing keywords never erases views history or running tests.
+  -- so editing keywords never erases views history. Tests retain their original
+  -- control revision; unfinished comparisons stop when those keywords change.
   revision         uuid not null default gen_random_uuid(),
   listing_revision uuid not null default gen_random_uuid(),
   keywords         text[] not null default '{}'
@@ -50,6 +51,7 @@ create index if not exists listing_monitors_user_idx
 create table if not exists public.listing_snapshots (
   product_id       uuid not null references public.products(id) on delete cascade,
   listing_revision uuid not null,
+  control_revision uuid not null,
   snapshot_date    date not null,
   etsy_listing_id  bigint not null,
   state            text,
@@ -75,6 +77,7 @@ create table if not exists public.listing_snapshots (
 create table if not exists public.listing_keyword_snapshots (
   product_id     uuid not null references public.products(id) on delete cascade,
   revision       uuid not null,
+  listing_revision uuid not null,
   snapshot_date  date not null,
   keyword        text not null check (char_length(keyword) between 1 and 80),
   position       integer check (position is null or position >= 1),
@@ -83,6 +86,8 @@ create table if not exists public.listing_keyword_snapshots (
   created_at     timestamptz not null default now(),
   primary key (product_id, revision, snapshot_date, keyword)
 );
+create index if not exists listing_keyword_history_idx
+  on public.listing_keyword_snapshots(product_id, listing_revision, snapshot_date);
 
 -- ---------------------------------------------------------------------------
 -- etsy_image_scores: global cache of Mavya rubric scores for PUBLIC top-

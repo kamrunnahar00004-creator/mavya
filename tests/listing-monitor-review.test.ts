@@ -71,11 +71,11 @@ describe("monitor persistence and retries", () => {
     const snapshot = db.writes.find((w) => w.table === "listing_snapshots")!;
     // The listing's own history is scoped by LINKED LISTING, so a keyword edit
     // (new config revision, same listing_revision) keeps the views history.
-    expect(snapshot.values).toEqual([expect.objectContaining({ listing_revision: "lrev", snapshot_date: today })]);
+    expect(snapshot.values).toEqual([expect.objectContaining({ listing_revision: "lrev", control_revision: "rev", snapshot_date: today })]);
     expect(snapshot.values).toEqual([expect.not.objectContaining({ revision: expect.anything() })]);
     expect(snapshot.options).toEqual({ onConflict: "product_id,listing_revision,snapshot_date", ignoreDuplicates: true });
     const keyword = db.writes.find((w) => w.table === "listing_keyword_snapshots")!;
-    expect(keyword.values).toEqual([expect.objectContaining({ revision: "rev", position: 1, top: [2, 3, 4].map((id) => expect.objectContaining({ id, position: id })) })]);
+    expect(keyword.values).toEqual([expect.objectContaining({ revision: "rev", listing_revision: "lrev", position: 1, top: [2, 3, 4].map((id) => expect.objectContaining({ id, position: id })) })]);
     expect(db.filters).toContainEqual(["listing_monitors", "revision", "rev"]);
     expect(mocks.score).not.toHaveBeenCalled();
   });
@@ -97,6 +97,31 @@ describe("monitor persistence and retries", () => {
     // 3 and 4 missing: dropped, never guessed; surviving ranks keep search order.
     expect(keyword.values).toEqual([expect.objectContaining({ position: 1, top: [expect.objectContaining({ id: 2, position: 2 })] })]);
     expect(db.writes.find((w) => w.table === "listing_monitors")?.values).toEqual(expect.objectContaining({ last_checked_on: today, last_error: null }));
+  });
+  it.each([1, 2])("does not turn a detail outage into success for %i search hits", async (count) => {
+    mocks.search.mockResolvedValue(Array.from({ length: count }, (_, i) => listing(i + 2)));
+    mocks.fetch.mockResolvedValueOnce(new Map([[1, listing(1)]])).mockRejectedValueOnce(new Error("timeout"));
+    const db = database();
+    await runListingMonitor(db.admin, [monitor], { today });
+    expect(db.writes.some((w) => w.table === "listing_keyword_snapshots")).toBe(false);
+    const status = db.writes.find((w) => w.table === "listing_monitors")?.values;
+    expect(status).toEqual(expect.objectContaining({ last_error: "comparison_incomplete" }));
+    expect(status).not.toHaveProperty("last_checked_on");
+  });
+  it("accepts a successful detail response with genuinely missing listings", async () => {
+    mocks.search.mockResolvedValue([listing(2), listing(3)]);
+    mocks.fetch.mockResolvedValueOnce(new Map([[1, listing(1)]])).mockResolvedValueOnce(new Map());
+    const db = database();
+    await runListingMonitor(db.admin, [monitor], { today });
+    expect(db.writes.find((w) => w.table === "listing_keyword_snapshots")?.values).toEqual([expect.objectContaining({ top: [] })]);
+    expect(db.writes.find((w) => w.table === "listing_monitors")?.values).toEqual(expect.objectContaining({ last_checked_on: today, last_error: null }));
+  });
+  it("does not fetch details for a legitimately empty search", async () => {
+    mocks.search.mockResolvedValue([]);
+    const db = database();
+    await runListingMonitor(db.admin, [monitor], { today });
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
+    expect(db.writes.find((w) => w.table === "listing_monitors")?.values).toEqual(expect.objectContaining({ last_checked_on: today }));
   });
   it("scores the linked Etsy photo as a candidate even without keywords", async () => {
     const summary = await runListingMonitor(database().admin, [{ ...monitor, keywords: [] }], { today });
