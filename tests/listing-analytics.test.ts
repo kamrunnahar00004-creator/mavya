@@ -6,10 +6,12 @@ import {
   detectChanges,
   diagnose,
   evaluateAllTests,
+  evaluateTest,
   listingChecks,
   normalizeKeywords,
   suggestKeywords,
   windowStats,
+  recentWinnerFavoriteRate,
   type KeywordSnapshot,
   type ListingSnapshot,
   type TopEntry,
@@ -96,14 +98,14 @@ describe("normalizeListing", () => {
 });
 
 describe("buildDailySeries", () => {
-  it("diffs lifetime counters and averages across gaps", () => {
+  it("diffs consecutive lifetime counters and preserves gaps as unknown", () => {
     const s = buildDailySeries([snap(0, 100), snap(1, 110), snap(3, 130)]);
-    expect(s.map((p) => p.viewsPerDay)).toEqual([null, 10, 10]);
+    expect(s.map((p) => p.viewsPerDay)).toEqual([null, 10, null, null]);
   });
   it("treats 0 views (not tabulated) as missing, never as zero", () => {
     const s = buildDailySeries([snap(0, 100), snap(1, 0), snap(2, 120)]);
     expect(s[1].viewsPerDay).toBeNull();
-    expect(s[2].viewsPerDay).toBe(10);
+    expect(s[2].viewsPerDay).toBeNull();
   });
   it("never mixes two different linked listings", () => {
     const s = buildDailySeries([snap(0, 100), snap(1, 500, { etsy_listing_id: 2 })]);
@@ -166,6 +168,25 @@ describe("evaluateAllTests", () => {
   });
 });
 
+describe("market control keyword coverage", () => {
+  it("a keyword missing on some days cannot fake a market drop", () => {
+    // Listing: flat 10 views/day; photo changes on day 10.
+    const snaps: ListingSnapshot[] = [];
+    for (let d = 0; d <= 24; d++) snaps.push(snap(d, 100 + d * 10, d >= 10 ? { main_image_id: 200 } : {}));
+    // Keyword A winners: +50/day. Keyword B winners: +500/day, but B has NO
+    // data after the change. Without full-coverage matching, the "market"
+    // would look like it fell from 275 to 50/day and the flat listing would
+    // be reported as a big relative improvement.
+    const kws: KeywordSnapshot[] = [];
+    for (let d = 0; d <= 24; d++) {
+      kws.push({ ...kw(d, 5, 0, "alpha"), top: [1, 2, 3].map((i) => top(i, 1000 + d * 50 + i)) });
+      if (d < 10) kws.push({ ...kw(d, 5, 0, "beta"), top: [4, 5, 6].map((i) => top(i, 1000 + d * 500 + i)) });
+    }
+    const [t] = evaluateAllTests(detectChanges(snaps), buildDailySeries(snaps), [], addDays(START, 24), kws);
+    expect(t.verdict).not.toBe("better");
+  });
+});
+
 describe("windowStats", () => {
   it("computes favorites per 100 views", () => {
     const s = buildDailySeries([snap(0, 100), snap(1, 300)]);
@@ -205,6 +226,40 @@ describe("diagnose", () => {
     const d = diagnose({ ...base, series: steady, market, latestKeywords: [kw(10, 5, 2000)] });
     expect(d.state).toBe("click");
     expect(d.fixTarget).toBe("main_photo");
+  });
+
+  it("does not send the seller back to the photo when their photo already out-scores the top listings", () => {
+    const market = buildMarketSeries(Array.from({ length: 11 }, (_, d) => kw(d, 5, 1000 + d * 100)));
+    const d = diagnose({ ...base, series: steady, market, latestKeywords: [kw(10, 5, 2000)], ownPhotoScore: 8.4, winnerPhotoScore: 7.1 });
+    expect(d.state).toBe("improve");
+    expect(d.fixTarget).toBe("title_tags");
+    expect(d.headline).toMatch(/already scores higher/);
+  });
+
+  it("still points at the photo when scores are within the margin", () => {
+    const market = buildMarketSeries(Array.from({ length: 11 }, (_, d) => kw(d, 5, 1000 + d * 100)));
+    const d = diagnose({ ...base, series: steady, market, latestKeywords: [kw(10, 5, 2000)], ownPhotoScore: 7.3, winnerPhotoScore: 7.1 });
+    expect(d.state).toBe("click");
+  });
+
+  it("a medium tag gap does not hide a large view gap once data exists", () => {
+    const market = buildMarketSeries(Array.from({ length: 11 }, (_, d) => kw(d, 5, 1000 + d * 100)));
+    const checks = [{ id: "empty_tag_slots", area: "tags" as const, severity: "medium" as const, title: "2 of 13 tag slots are empty", detail: "" }];
+    const d = diagnose({ ...base, series: steady, market, latestKeywords: [kw(10, 5, 2000)], checks });
+    expect(d.state).toBe("click");
+  });
+
+  it("title/tag checks lead while view history is still too short", () => {
+    const checks = [{ id: "empty_tag_slots", area: "tags" as const, severity: "medium" as const, title: "2 of 13 tag slots are empty", detail: "" }];
+    const d = diagnose({ ...base, series: steady.slice(0, 3), market: [], latestKeywords: [kw(0, 3, 100)], checks });
+    expect(d.state).toBe("improve");
+    expect(d.headline).toBe("2 of 13 tag slots are empty");
+  });
+
+  it("a checks gap still outranks healthy when numbers are steady", () => {
+    const market = buildMarketSeries(Array.from({ length: 11 }, (_, d) => kw(d, 5, 1000 + d * 2)));
+    const checks = [{ id: "empty_tag_slots", area: "tags" as const, severity: "medium" as const, title: "2 of 13 tag slots are empty", detail: "" }];
+    expect(diagnose({ ...base, series: steady, market, latestKeywords: [kw(10, 5, 1020)], checks }).state).toBe("improve");
   });
 
   it("never says healthy while a high-severity title/tag gap exists", () => {
@@ -285,5 +340,101 @@ describe("keywords", () => {
     expect(normalizeKeywords([" Crochet  Bunny ", "crochet bunny", ""])).toEqual(["crochet bunny"]);
     expect(normalizeKeywords(["a", "b", "c", "d"])).toBeNull();
     expect(normalizeKeywords("x")).toBeNull();
+  });
+});
+
+describe("coach review regressions", () => {
+  const history = Array.from({ length: 31 }, (_, d) => snap(d, 100 + d * 10, d >= 10 ? { main_image_id: 200 } : {}));
+  const series = buildDailySeries(history);
+  const event = detectChanges(history)[0];
+  const keywords = Array.from({ length: 31 }, (_, d) => kw(d, 5, 1000 + d * 10));
+  const market = buildMarketSeries(keywords);
+  const base = { linked: true, series, market, latestKeywords: [kw(30, 5, 1300)], tests: [], today: addDays(START, 30), ownPhotoScore: null, winnerPhotoScore: null };
+
+  it("ends a low-volume test instead of blocking advice forever", () => {
+    const low = series.map((p) => ({ ...p, viewsPerDay: p.viewsPerDay === null ? null : 1 }));
+    expect(evaluateTest(event, null, low, market, addDays(START, 30)).verdict).toBe("insufficient_data");
+  });
+  it("does not call an unadjusted rise a market-relative improvement", () => {
+    const t = evaluateTest(event, null, series, [], addDays(START, 30));
+    expect(t.verdict).toBe("insufficient_data");
+    expect(t.lift).toBeNull();
+  });
+  it("does not divide by a zero market", () => {
+    const flat = market.map((p) => ({ ...p, winnerViewsPerDay: 0 }));
+    expect(evaluateTest(event, null, series, flat, addDays(START, 30)).lift).toBeNull();
+  });
+  it("uses identical observed dates for seller and comparison", () => {
+    const sparse = market.filter((p) => p.date !== addDays(START, 12));
+    const t = evaluateTest(event, null, series, sparse, addDays(START, 20));
+    expect(t.after.days).toBe(9);
+    expect(t.after.views).toBe(90);
+  });
+  it("does not mix earlier versions into a later test baseline", () => {
+    expect(evaluateTest(event, null, series, market, addDays(START, 20), addDays(START, 8)).verdict).toBe("no_baseline");
+  });
+  it("does not treat rank-cohort replacement as a market trend", () => {
+    const rotated = keywords.map((k, d) => ({ ...k, top: k.top.map((t) => ({ ...t, id: d >= 10 ? t.id + 100 : t.id })) }));
+    const [t] = evaluateAllTests([event], series, buildMarketSeries(rotated), addDays(START, 30), rotated);
+    expect(t.verdict).toBe("insufficient_data");
+    expect(t.lift).toBeNull();
+  });
+  it("retains results for a fixed, observed comparison cohort", () => {
+    expect(evaluateAllTests([event], series, market, addDays(START, 30), keywords)[0].verdict).toBe("no_clear_change");
+  });
+  it("does not average the market over missing days", () => {
+    expect(buildMarketSeries([kw(0, 1, 100), kw(3, 1, 400)])).toEqual([]);
+  });
+  it("requires at least three matched competitor listings", () => {
+    expect(buildMarketSeries(keywords.map((k) => ({ ...k, top: k.top.slice(0, 2) })))).toEqual([]);
+  });
+  it("keeps unknown favorites unknown", () => {
+    const s = buildDailySeries([snap(0, 100, { favorites: null }), snap(1, 200)]);
+    expect(windowStats(s, START, addDays(START, 1)).favoritesPer100Views).toBeNull();
+  });
+  it("represents removed favorites as a net negative instead of zero", () => {
+    const s = buildDailySeries([snap(0, 100, { favorites: 10 }), snap(1, 200, { favorites: 8 })]);
+    expect(windowStats(s, START, addDays(START, 1)).favoritesPer100Views).toBe(-2);
+  });
+  it("compares recent favorite deltas rather than lifetime ratios", () => {
+    const ks = keywords.map((k) => ({ ...k, top: k.top.map((t) => ({ ...t, favorites: 500 })) }));
+    expect(recentWinnerFavoriteRate(ks, series, addDays(START, 24), addDays(START, 30))).toBe(0);
+  });
+  it("requires enough recent favorites observations", () => {
+    expect(recentWinnerFavoriteRate(keywords.slice(-2), series, addDays(START, 24), addDays(START, 30))).toBeNull();
+  });
+  it("does not call a listing healthy without keyword comparisons", () => {
+    expect(diagnose({ ...base, latestKeywords: [], market: [] }).state).toBe("collecting");
+  });
+  it("does not make performance recommendations using stale checks", () => {
+    expect(diagnose({ ...base, lastCheckedOn: START }).state).toBe("collecting");
+    expect(diagnose({ ...base, enabled: false }).headline).toBe("Monitoring is paused");
+  });
+  it("does not let old observations count toward recent readiness", () => {
+    expect(diagnose({ ...base, series: series.slice(0, 15) }).state).toBe("collecting");
+  });
+  it("routes a photo-count finding to supporting photos", () => {
+    const checks = listingChecks({ latest: snap(30, 400, { tags: ["crochet bunny", "easter gift", "amigurumi", ...Array.from({ length: 10 }, (_, i) => `tag ${i}`)], image_count: 2 }), keywords: [], latestKeywords: [kw(30, 5, 1300)] });
+    expect(diagnose({ ...base, checks }).fixTarget).toBe("supporting_photos");
+  });
+  it("does not invent missing photos when the count is unknown", () => {
+    expect(listingChecks({ latest: snap(0, 100, { image_count: null }), keywords: [], latestKeywords: [kw(0, 1, 100)] }).map((i) => i.id)).not.toContain("fewer_photos");
+  });
+  it("accepts keyword words distributed across relevant title and tags", () => {
+    const issues = listingChecks({ latest: snap(0, 100, { title: "Bunny crochet plush", tags: ["baby shower", "soft toy"] }), keywords: ["crochet bunny", "baby shower toy"], latestKeywords: [] });
+    expect(issues.some((i) => i.id.startsWith("title_missing") || i.id.startsWith("keyword_uncovered"))).toBe(false);
+  });
+  it("does not confuse substrings with complete keyword words", () => {
+    const issues = listingChecks({ latest: snap(0, 100, { title: "Carpet" }), keywords: ["car"], latestKeywords: [] });
+    expect(issues.map((i) => i.id)).toContain("title_missing_car");
+  });
+  it("does not demand padding an already clear short title", () => {
+    expect(listingChecks({ latest: snap(0, 100, { title: "Crochet bunny" }), keywords: [], latestKeywords: [] }).map((i) => i.id)).not.toContain("title_short");
+  });
+  it("does not claim a full-length tag was truncated", () => {
+    const issues = listingChecks({ latest: snap(0, 100, { tags: ["12345678901234567890"] }), keywords: [], latestKeywords: [] });
+    const issue = issues.find((i) => i.id === "tags_may_be_cut");
+    expect(issue?.severity).toBe("low");
+    expect(issue?.detail).not.toMatch(/cut off|truncat/i);
   });
 });

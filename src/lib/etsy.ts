@@ -10,6 +10,8 @@
  * server instance; the daily cron is the only bulk caller.
  */
 
+import { weightedRateLimit } from "@/lib/rate-limit";
+
 const ETSY_BASE = "https://openapi.etsy.com/v3/application";
 const MIN_INTERVAL_MS = 250;
 const MAX_BATCH = 100;
@@ -65,21 +67,44 @@ export function isEtsyConfigured(): boolean {
 
 let lastCallAt = 0;
 async function throttle() {
-  const wait = lastCallAt + MIN_INTERVAL_MS - Date.now();
+  const reserved = Math.max(lastCallAt + MIN_INTERVAL_MS, Date.now());
+  lastCallAt = reserved;
+  const wait = reserved - Date.now();
   if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-  lastCallAt = Date.now();
 }
 
-async function etsyGet(path: string, params: Record<string, string | number> = {}): Promise<unknown> {
+/**
+ * The per-second budget is shared across instances (cron + manual checks).
+ * A busy second is normal contention, not an outage: wait for the next
+ * second instead of failing the keyword. Checked BEFORE the daily budget so
+ * a waited-out attempt never consumes daily quota.
+ */
+async function acquireSecondSlot(deadlineAt: number): Promise<void> {
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if ((await weightedRateLimit("etsy:requests:second", 1, 4, 1000)).ok) return;
+    if (Date.now() + 300 >= deadlineAt) break;
+    await new Promise((r) => setTimeout(r, 300));
+  }
+  throw new EtsyApiError("Etsy request budget reached", 429, "rate_limited");
+}
+
+async function etsyGet(path: string, params: Record<string, string | number> = {}, deadlineAt = Date.now() + 30_000): Promise<unknown> {
   const url = new URL(`${ETSY_BASE}${path}`);
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, String(v));
   const header = apiKeyHeader();
 
   for (let attempt = 0; attempt < 2; attempt++) {
     await throttle();
+    if (Date.now() >= deadlineAt) throw new EtsyApiError("Etsy check timed out", 504, "upstream");
+    await acquireSecondSlot(deadlineAt);
+    if (!(await weightedRateLimit("etsy:requests:day", 1, 4500, 86_400_000)).ok) {
+      throw new EtsyApiError("Etsy request budget reached", 429, "rate_limited");
+    }
     const res = await fetch(url, {
       headers: { "x-api-key": header, accept: "application/json" },
       cache: "no-store",
+      signal: AbortSignal.timeout(Math.max(1, Math.min(15_000, deadlineAt - Date.now()))),
+      redirect: "error",
     });
     if (res.status === 429 && attempt === 0) {
       await new Promise((r) => setTimeout(r, 1500));
@@ -111,7 +136,8 @@ export function normalizeListing(raw: unknown): EtsyListing | null {
   const amount = num(price?.amount);
   const divisor = num(price?.divisor);
   const images = Array.isArray(r.images)
-    ? (r.images as Record<string, unknown>[])
+    ? (r.images as unknown[])
+        .filter((i): i is Record<string, unknown> => Boolean(i) && typeof i === "object")
         .map((i) => ({
           id: num(i.listing_image_id) ?? 0,
           rank: num(i.rank) ?? 99,
@@ -140,7 +166,7 @@ export function normalizeListing(raw: unknown): EtsyListing | null {
 }
 
 /** Fetch up to any number of listings (chunked by 100) with images. */
-export async function fetchListingsBatch(ids: number[]): Promise<Map<number, EtsyListing>> {
+export async function fetchListingsBatch(ids: number[], deadlineAt = Date.now() + 60_000): Promise<Map<number, EtsyListing>> {
   const unique = [...new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0))];
   const out = new Map<number, EtsyListing>();
   for (let i = 0; i < unique.length; i += MAX_BATCH) {
@@ -150,14 +176,14 @@ export async function fetchListingsBatch(ids: number[]): Promise<Map<number, Ets
       body = await etsyGet("/listings/batch", {
         listing_ids: chunk.join(","),
         includes: "Images",
-      });
+      }, deadlineAt);
     } catch (err) {
       // One unknown id 404s the whole chunk. Fall back to one-by-one so a
       // single deleted listing never blinds the rest of the batch.
       if (err instanceof EtsyApiError && err.code === "not_found" && chunk.length > 1) {
         for (const id of chunk) {
           try {
-            const single = await etsyGet("/listings/batch", { listing_ids: String(id), includes: "Images" });
+            const single = await etsyGet("/listings/batch", { listing_ids: String(id), includes: "Images" }, deadlineAt);
             for (const l of resultsOf(single)) out.set(l.listingId, l);
           } catch (inner) {
             if (!(inner instanceof EtsyApiError && inner.code === "not_found")) throw inner;
@@ -165,6 +191,7 @@ export async function fetchListingsBatch(ids: number[]): Promise<Map<number, Ets
         }
         continue;
       }
+      if (err instanceof EtsyApiError && err.code === "not_found" && chunk.length === 1) continue;
       throw err;
     }
     for (const l of resultsOf(body)) out.set(l.listingId, l);
@@ -183,28 +210,45 @@ function resultsOf(body: unknown): EtsyListing[] {
  * not identical to, what a buyer sees on etsy.com (personalization and ads).
  * Returns listings in rank order without images.
  */
-export async function searchActiveListings(keyword: string, limit = 100): Promise<EtsyListing[]> {
+export async function searchActiveListings(keyword: string, limit = 100, deadlineAt = Date.now() + 30_000): Promise<EtsyListing[]> {
   const body = await etsyGet("/listings/active", {
     keywords: keyword,
     sort_on: "score",
     limit: Math.min(Math.max(limit, 1), 100),
-  });
+  }, deadlineAt);
   return resultsOf(body);
 }
 
 /** Download an Etsy CDN image (winner photo scoring). Only i.etsystatic.com is allowed. */
 export async function fetchEtsyImage(url: string): Promise<{ buffer: Buffer; mime: string }> {
   const parsed = new URL(url);
-  if (parsed.protocol !== "https:" || parsed.hostname !== "i.etsystatic.com") {
+  if (parsed.protocol !== "https:" || parsed.hostname !== "i.etsystatic.com" || parsed.port || parsed.username || parsed.password) {
     throw new EtsyApiError("Refusing non-Etsy image host", 400, "bad_response");
   }
   // No redirects: the host allowlist above must hold for the final URL too.
-  const res = await fetch(parsed, { cache: "no-store", redirect: "error" });
+  const res = await fetch(parsed, { cache: "no-store", redirect: "error", signal: AbortSignal.timeout(15_000) });
   if (!res.ok) throw new EtsyApiError(`Etsy image fetch ${res.status}`, res.status, "upstream");
   const mime = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
   if (!mime.startsWith("image/")) throw new EtsyApiError("Not an image", 400, "bad_response");
-  const buffer = Buffer.from(await res.arrayBuffer());
-  if (buffer.length > 8 * 1024 * 1024) throw new EtsyApiError("Image too large", 400, "bad_response");
+  const reader = res.body?.getReader();
+  if (!reader) throw new EtsyApiError("Empty image", 400, "bad_response");
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      if (bytes > 8 * 1024 * 1024) {
+        await reader.cancel();
+        throw new EtsyApiError("Image too large", 400, "bad_response");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  const buffer = Buffer.concat(chunks);
   return { buffer, mime };
 }
 

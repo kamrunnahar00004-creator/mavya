@@ -11,6 +11,8 @@ import { scorePhoto } from "@/lib/score-photo";
 import { rawOverall } from "@/lib/calibration";
 import { RUBRIC_VERSION } from "@/lib/versions";
 import { logEvent } from "@/lib/errors";
+import { aiDisabled, withinGlobalBudget } from "@/lib/usage";
+import { weightedRateLimit } from "@/lib/rate-limit";
 
 /**
  * Daily Listing Coach snapshot runner (docs/NORTH_STAR_LISTING_COACH.md).
@@ -19,7 +21,7 @@ import { logEvent } from "@/lib/errors";
  *
  * Etsy call budget per run: one batch call per 100 monitored listings, one
  * search per UNIQUE keyword (shared across products), and one batch call per
- * 100 unique top listings. Idempotent per day: re-running upserts today's rows.
+ * 100 unique top listings. Retries preserve the first complete daily observation.
  */
 
 export type MonitorRow = {
@@ -27,6 +29,10 @@ export type MonitorRow = {
   user_id: string;
   etsy_listing_id: number;
   keywords: string[];
+  /** Configuration version (listing + keywords): scopes keyword history. */
+  revision: string;
+  /** Linked-listing version: scopes the listing's own daily history. */
+  listing_revision: string;
 };
 
 export type MonitorRunSummary = {
@@ -41,6 +47,7 @@ export type MonitorRunSummary = {
 
 const TOP_N = 10;
 const WINNER_PHOTOS_PER_KEYWORD = 3;
+const MAX_MISSING_TOP = 2;
 
 export function todayUtc(now = new Date()): string {
   return now.toISOString().slice(0, 10);
@@ -64,9 +71,10 @@ function toTopEntry(l: EtsyListing): TopEntry {
 export async function runListingMonitor(
   admin: SupabaseClient,
   monitors: MonitorRow[],
-  opts: { today?: string; maxWinnerScores?: number } = {}
+  opts: { today?: string; maxWinnerScores?: number; deadlineAt?: number } = {}
 ): Promise<MonitorRunSummary> {
   const today = opts.today ?? todayUtc();
+  const deadlineAt = opts.deadlineAt ?? Date.now() + 90_000;
   const summary: MonitorRunSummary = {
     monitors: monitors.length,
     snapshots: 0,
@@ -75,10 +83,15 @@ export async function runListingMonitor(
     errors: 0,
   };
   if (monitors.length === 0) return summary;
+  const { data: current, error: currentError } = await admin.from("listing_monitors")
+    .select("product_id, revision, listing_revision, enabled, last_checked_on").in("product_id", monitors.map((m) => m.product_id));
+  if (currentError) throw new Error("Could not revalidate monitors");
+  monitors = monitors.filter((m) => current?.some((row) => row.product_id === m.product_id && row.revision === m.revision && row.listing_revision === m.listing_revision && row.enabled && row.last_checked_on !== today));
+  if (!monitors.length) return summary;
   const errorsByProduct = new Map<string, string>();
 
   // 1. The sellers' own listings.
-  const own = await fetchListingsBatch(monitors.map((m) => m.etsy_listing_id));
+  const own = await fetchListingsBatch(monitors.map((m) => m.etsy_listing_id), deadlineAt);
   const snapshotRows = [];
   for (const m of monitors) {
     const l = own.get(m.etsy_listing_id);
@@ -89,6 +102,7 @@ export async function runListingMonitor(
     const main = l.images[0] ?? null;
     snapshotRows.push({
       product_id: m.product_id,
+      listing_revision: m.listing_revision,
       snapshot_date: today,
       etsy_listing_id: l.listingId,
       state: l.state,
@@ -107,7 +121,7 @@ export async function runListingMonitor(
   if (snapshotRows.length) {
     const { error } = await admin
       .from("listing_snapshots")
-      .upsert(snapshotRows, { onConflict: "product_id,snapshot_date" });
+      .upsert(snapshotRows, { onConflict: "product_id,listing_revision,snapshot_date", ignoreDuplicates: true });
     if (error) throw new Error(`listing_snapshots upsert failed: ${error.message}`);
     summary.snapshots = snapshotRows.length;
   }
@@ -117,7 +131,7 @@ export async function runListingMonitor(
   const searchResults = new Map<string, EtsyListing[]>();
   for (const kw of keywords) {
     try {
-      searchResults.set(kw, await searchActiveListings(kw, 100));
+      searchResults.set(kw, await searchActiveListings(kw, 100, deadlineAt));
     } catch (err) {
       summary.errors += 1;
       logEvent("listing_monitor.search_failed", {
@@ -132,7 +146,7 @@ export async function runListingMonitor(
   let topDetails = new Map<number, EtsyListing>();
   if (topIds.length) {
     try {
-      topDetails = await fetchListingsBatch(topIds);
+      topDetails = await fetchListingsBatch(topIds, deadlineAt);
     } catch (err) {
       summary.errors += 1;
       logEvent("listing_monitor.top_batch_failed", {
@@ -143,9 +157,18 @@ export async function runListingMonitor(
 
   const topByKeyword = new Map<string, TopEntry[]>();
   for (const [kw, results] of searchResults) {
+    // A listing can disappear between the search and the detail fetch. Allow
+    // up to MAX_MISSING_TOP gaps (dropped, never guessed); more than that is an
+    // incomplete comparison and the day is retried. Ranks keep search order.
+    const top = results.slice(0, TOP_N);
+    const present = top.filter((l) => topDetails.has(l.listingId));
+    if (top.length - present.length > MAX_MISSING_TOP) continue;
     topByKeyword.set(
       kw,
-      results.slice(0, TOP_N).map((l) => toTopEntry(topDetails.get(l.listingId) ?? l))
+      top.flatMap((l, index) => {
+        const d = topDetails.get(l.listingId);
+        return d ? [{ ...toTopEntry(d), position: index + 1 }] : [];
+      })
     );
   }
 
@@ -153,43 +176,51 @@ export async function runListingMonitor(
   for (const m of monitors) {
     for (const kw of m.keywords) {
       const results = searchResults.get(kw);
-      if (!results) continue;
+      if (!results || !topByKeyword.has(kw) || !own.has(m.etsy_listing_id)) continue;
       const idx = results.findIndex((l) => l.listingId === m.etsy_listing_id);
       kwRows.push({
         product_id: m.product_id,
+        revision: m.revision,
         snapshot_date: today,
         keyword: kw,
         position: idx >= 0 ? idx + 1 : null,
         depth: results.length,
-        top: topByKeyword.get(kw) ?? [],
+        top: (topByKeyword.get(kw) ?? []).filter((t) => t.id !== m.etsy_listing_id),
       });
     }
   }
   if (kwRows.length) {
     const { error } = await admin
       .from("listing_keyword_snapshots")
-      .upsert(kwRows, { onConflict: "product_id,snapshot_date,keyword" });
+      .upsert(kwRows, { onConflict: "product_id,revision,snapshot_date,keyword", ignoreDuplicates: true });
     if (error) throw new Error(`listing_keyword_snapshots upsert failed: ${error.message}`);
     summary.keywordSnapshots = kwRows.length;
   }
 
-  // 3. Score top listings' main photos with the same rubric (cached forever by image id).
-  const maxScores = opts.maxWinnerScores ?? 12;
+  // 3. Score main photos once per image and rubric version.
+  // Also score the actual linked Etsy photo. An uploaded Mavya photo may be
+  // unrelated or out of date, and must never label a different Etsy image.
+  const ownLists = [...own.values()].map((l) => [toTopEntry(l)]);
+  const scoreLists = [...ownLists, ...topByKeyword.values()];
+  const maxScores = opts.maxWinnerScores ?? 0;
   if (maxScores > 0) {
-    const scored = await scoreWinnerPhotos(admin, [...topByKeyword.values()], maxScores);
+    const scored = await scoreWinnerPhotos(admin, scoreLists, maxScores, deadlineAt);
     summary.winnerPhotosScored = scored.scored;
     summary.errors += scored.errors;
   }
-  summary.topByKeyword = topByKeyword;
+  summary.topByKeyword = new Map([...own.values()].map((l) => [`own:${l.listingId}`, [toTopEntry(l)]]));
+  for (const [keyword, entries] of topByKeyword) summary.topByKeyword.set(keyword, entries);
 
   // 4. Record run status per monitor.
   for (const m of monitors) {
-    const err = errorsByProduct.get(m.product_id) ?? null;
+    const err = errorsByProduct.get(m.product_id) ?? (m.keywords.some((kw) => !searchResults.has(kw)) ? "search_failed" : m.keywords.some((kw) => !topByKeyword.has(kw)) ? "comparison_incomplete" : null);
     if (err) summary.errors += 1;
-    await admin
+    const { error } = await admin
       .from("listing_monitors")
-      .update({ last_checked_on: today, last_error: err, updated_at: new Date().toISOString() })
-      .eq("product_id", m.product_id);
+      .update({ ...(!err ? { last_checked_on: today } : {}), last_error: err, updated_at: new Date().toISOString() })
+      .eq("product_id", m.product_id)
+      .eq("revision", m.revision);
+    if (error) throw new Error("Could not persist monitor status");
   }
 
   return summary;
@@ -197,17 +228,17 @@ export async function runListingMonitor(
 
 /**
  * Score the main photos of the top WINNER_PHOTOS_PER_KEYWORD listings per
- * keyword with Mavya's main rubric. Cached forever by Etsy image id (an id
- * always names the same image), so each winner photo costs one AI call ever.
+ * keyword with Mavya's main rubric. Cached by Etsy image id and rubric version.
  * Stores the honest RAW score; comparisons never use the calibrated one.
  */
 export async function scoreWinnerPhotos(
   admin: SupabaseClient,
   lists: TopEntry[][],
-  max: number
+  max: number,
+  deadlineAt = Date.now() + 110_000
 ): Promise<{ scored: number; errors: number }> {
   const result = { scored: 0, errors: 0 };
-  if (max <= 0 || !process.env.OPENAI_API_KEY) return result;
+  if (max <= 0 || !process.env.OPENAI_API_KEY || aiDisabled()) return result;
   const candidates = new Map<number, TopEntry>();
   for (const entries of lists) {
     for (const t of entries.slice(0, WINNER_PHOTOS_PER_KEYWORD)) {
@@ -218,6 +249,7 @@ export async function scoreWinnerPhotos(
   const { data: existing, error } = await admin
     .from("etsy_image_scores")
     .select("etsy_image_id")
+    .eq("rubric_version", RUBRIC_VERSION)
     .in("etsy_image_id", [...candidates.keys()]);
   if (error) {
     result.errors += 1;
@@ -227,6 +259,10 @@ export async function scoreWinnerPhotos(
     candidates.delete(Number(row.etsy_image_id));
   }
   for (const t of [...candidates.values()].slice(0, max)) {
+    // A score may require two 45s provider calls plus a 15s image fetch.
+    if (Date.now() + 105_000 > deadlineAt || aiDisabled()) break;
+    if (!(await weightedRateLimit(`etsy:image:${RUBRIC_VERSION}:${t.mainImageId}`, 1, 1, 300_000)).ok) continue;
+    if (!(await withinGlobalBudget("score"))) break;
     try {
       const { buffer, mime } = await fetchEtsyImage(t.mainImageUrl!);
       const rubric = await scorePhoto({

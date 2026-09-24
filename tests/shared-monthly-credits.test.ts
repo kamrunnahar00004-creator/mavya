@@ -114,7 +114,8 @@ describe("shared monthly credit policy", () => {
     // ("1,000 AI credits every month"). That copy is deliberately removed
     // now that pricing is framed around active-listing slots -- credits
     // stay a backend concept only, not customer-facing anywhere here.
-    expect(subscribePage).not.toMatch(/\bcredits?\b/i);
+    // Internal JSX comments describe the ledger; they are not rendered copy.
+    expect(subscribePage.replace(/\{\/\*[\s\S]*?\*\/\}/g, "")).not.toMatch(/\bcredits?\b/i);
     expect(subscribePage).not.toMatch(/rating.{0,30}10 credits/i);
     expect(subscribePage).not.toMatch(/improv.{0,30}20 credits/i);
     expect(subscribePage).not.toMatch(/50 ratings|25 improvements/i);

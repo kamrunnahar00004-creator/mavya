@@ -29,6 +29,7 @@ export type ListingSnapshot = {
 
 export type TopEntry = {
   id: number;
+  position?: number;
   title: string;
   tags: string[];
   views: number | null;
@@ -56,6 +57,8 @@ export const BETTER_LIFT = 1.15;
 export const WORSE_LIFT = 0.87;
 export const ETSY_TAG_MAX = 20;
 export const ETSY_TAG_SLOTS = 13;
+/** Seller photo must out-score the top listings' median by this much before Mavya stops pointing at the photo. */
+export const PHOTO_BETTER_MARGIN = 0.5;
 
 // ---------------------------------------------------------------------------
 // Dates (UTC day strings)
@@ -69,7 +72,7 @@ export function addDays(date: string, days: number): string {
   return new Date((dayNumber(date) + days) * 86_400_000).toISOString().slice(0, 10);
 }
 
-function median(values: number[]): number | null {
+export function median(values: number[]): number | null {
   const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
   if (v.length === 0) return null;
   const mid = Math.floor(v.length / 2);
@@ -84,7 +87,7 @@ export type DailyPoint = {
   date: string;
   views: number | null;
   favorites: number | null;
-  /** Average new views per day since the previous valid snapshot. Null = unknown. */
+  /** New views between consecutive daily snapshots. Null = unknown. */
   viewsPerDay: number | null;
   favoritesPerDay: number | null;
 };
@@ -92,22 +95,29 @@ export type DailyPoint = {
 /**
  * Etsy's `views` is a lifetime counter tabulated once a day, and `0` can mean
  * "not tabulated yet", so a 0 (or a counter that went backwards) is treated as
- * missing, never as zero views. Gaps between snapshots are averaged.
+ * missing, never as zero views. Gaps stay unknown, never interpolated.
  */
 export function buildDailySeries(snapshots: ListingSnapshot[]): DailyPoint[] {
   const sorted = [...snapshots].sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
   const points: DailyPoint[] = [];
   let prev: ListingSnapshot | null = null;
   for (const s of sorted) {
+    if (prev && prev.etsy_listing_id !== s.etsy_listing_id) prev = null;
+    const lastDate = points.at(-1)?.date;
+    if (lastDate) {
+      for (let date = addDays(lastDate, 1); date < s.snapshot_date; date = addDays(date, 1)) {
+        points.push({ date, views: null, favorites: null, viewsPerDay: null, favoritesPerDay: null });
+      }
+    }
     const validViews = typeof s.views === "number" && s.views > 0 ? s.views : null;
     let viewsPerDay: number | null = null;
     let favoritesPerDay: number | null = null;
     if (prev && validViews !== null && prev.etsy_listing_id === s.etsy_listing_id) {
       const days = dayNumber(s.snapshot_date) - dayNumber(prev.snapshot_date);
-      if (days > 0 && typeof prev.views === "number" && validViews >= prev.views) {
-        viewsPerDay = (validViews - prev.views) / days;
+      if (days === 1 && typeof prev.views === "number" && validViews >= prev.views) {
+        viewsPerDay = validViews - prev.views;
         if (typeof s.favorites === "number" && typeof prev.favorites === "number") {
-          favoritesPerDay = Math.max(0, s.favorites - prev.favorites) / days;
+          favoritesPerDay = s.favorites - prev.favorites;
         }
       }
     }
@@ -118,7 +128,7 @@ export function buildDailySeries(snapshots: ListingSnapshot[]): DailyPoint[] {
       viewsPerDay,
       favoritesPerDay,
     });
-    if (validViews !== null) prev = s;
+    prev = validViews !== null ? s : null;
   }
   return points;
 }
@@ -136,18 +146,22 @@ export function windowStats(series: DailyPoint[], from: string, to: string): Win
   let days = 0;
   let views = 0;
   let favorites = 0;
+  let favoriteDays = 0;
   for (const p of series) {
     if (p.date < from || p.date > to || p.viewsPerDay === null) continue;
     days += 1;
     views += p.viewsPerDay;
-    favorites += p.favoritesPerDay ?? 0;
+    if (p.favoritesPerDay !== null) {
+      favorites += p.favoritesPerDay;
+      favoriteDays += 1;
+    }
   }
   return {
     days,
     views,
     favorites,
     viewsPerDay: days > 0 ? views / days : null,
-    favoritesPer100Views: views >= 1 ? (favorites / views) * 100 : null,
+    favoritesPer100Views: views >= 1 && favoriteDays === days ? (favorites / views) * 100 : null,
   };
 }
 
@@ -162,7 +176,13 @@ export type MarketPoint = { date: string; winnerViewsPerDay: number | null };
  * way as the seller's own listing (difference between our daily snapshots).
  * Averaged across tracked keywords.
  */
-export function buildMarketSeries(kwSnaps: KeywordSnapshot[], topN = 10): MarketPoint[] {
+export function buildMarketSeries(
+  kwSnaps: KeywordSnapshot[],
+  topN = 10,
+  /** When set, a date counts only if EVERY listed keyword has a value that
+   *  day, so a missing keyword can never silently change the market mix. */
+  requireKeywords?: string[]
+): MarketPoint[] {
   const byKeyword = new Map<string, KeywordSnapshot[]>();
   for (const k of kwSnaps) {
     const list = byKeyword.get(k.keyword) ?? [];
@@ -170,13 +190,14 @@ export function buildMarketSeries(kwSnaps: KeywordSnapshot[], topN = 10): Market
     byKeyword.set(k.keyword, list);
   }
   const perDate = new Map<string, number[]>();
-  for (const list of byKeyword.values()) {
+  const keywordsByDate = new Map<string, Set<string>>();
+  for (const [keyword, list] of byKeyword) {
     list.sort((a, b) => a.snapshot_date.localeCompare(b.snapshot_date));
     for (let i = 1; i < list.length; i++) {
       const prev = list[i - 1];
       const cur = list[i];
       const days = dayNumber(cur.snapshot_date) - dayNumber(prev.snapshot_date);
-      if (days <= 0) continue;
+      if (days !== 1) continue;
       const prevViews = new Map(prev.top.map((t) => [t.id, t.views]));
       const deltas: number[] = [];
       for (const t of cur.top.slice(0, topN)) {
@@ -185,14 +206,18 @@ export function buildMarketSeries(kwSnaps: KeywordSnapshot[], topN = 10): Market
           deltas.push((t.views - before) / days);
         }
       }
-      const m = median(deltas);
+      const m = deltas.length >= 3 ? median(deltas) : null;
       if (m === null) continue;
       const arr = perDate.get(cur.snapshot_date) ?? [];
       arr.push(m);
       perDate.set(cur.snapshot_date, arr);
+      const seen = keywordsByDate.get(cur.snapshot_date) ?? new Set<string>();
+      seen.add(keyword);
+      keywordsByDate.set(cur.snapshot_date, seen);
     }
   }
   return [...perDate.entries()]
+    .filter(([date]) => !requireKeywords || requireKeywords.every((k) => keywordsByDate.get(date)?.has(k)))
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, vals]) => ({ date, winnerViewsPerDay: vals.reduce((s, v) => s + v, 0) / vals.length }));
 }
@@ -228,6 +253,28 @@ export function winnerFavoriteRate(latest: KeywordSnapshot[], topN = 10): number
     }
   }
   return median(rates);
+}
+
+/** Recent NET favorites per view, on the same observed dates as the seller. */
+export function recentWinnerFavoriteRate(snapshots: KeywordSnapshot[], series: DailyPoint[], from: string, to: string): number | null {
+  const observations = new Map<string, TopEntry>();
+  for (const k of snapshots) for (const t of k.top) observations.set(`${k.snapshot_date}:${t.id}`, t);
+  const totals = new Map<number, { views: number; favorites: number; days: number }>();
+  for (const p of series) {
+    if (p.date < from || p.date > to || p.viewsPerDay === null || p.favoritesPerDay === null) continue;
+    const entries = new Map(snapshots.filter((k) => k.snapshot_date === p.date).flatMap((k) => k.top.map((t) => [t.id, t] as const)));
+    for (const t of entries.values()) {
+      const prev = observations.get(`${addDays(p.date, -1)}:${t.id}`);
+      if (!prev || prev.views === null || prev.views <= 0 || t.views === null || t.views < prev.views || prev.favorites === null || t.favorites === null) continue;
+      const total = totals.get(t.id) ?? { views: 0, favorites: 0, days: 0 };
+      total.views += t.views - prev.views;
+      total.favorites += t.favorites - prev.favorites;
+      total.days += 1;
+      totals.set(t.id, total);
+    }
+  }
+  const rates = [...totals.values()].filter((t) => t.days >= MIN_SERIES_DAYS && t.views >= 30).map((t) => 100 * t.favorites / t.views);
+  return rates.length >= 3 ? median(rates) : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -280,7 +327,7 @@ export function detectChanges(snapshots: ListingSnapshot[]): ChangeEvent[] {
   return events;
 }
 
-export type TestVerdict = "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline";
+export type TestVerdict = "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline" | "insufficient_data";
 
 export type TestResult = {
   event: ChangeEvent;
@@ -292,7 +339,7 @@ export type TestResult = {
   listingChange: number | null;
   /** Top listings views/day after ÷ before over the same dates. Null = no control data. */
   marketChange: number | null;
-  /** listingChange ÷ marketChange (or listingChange when no control). */
+  /** listingChange divided by marketChange; null without a usable control. */
   lift: number | null;
 };
 
@@ -306,38 +353,45 @@ export function evaluateTest(
   nextEventDate: string | null,
   series: DailyPoint[],
   market: MarketPoint[],
-  today: string
+  today: string,
+  previousEventDate: string | null = null
 ): TestResult {
-  const beforeFrom = addDays(event.date, -TEST_WINDOW_DAYS);
+  const beforeFrom = previousEventDate && addDays(previousEventDate, 1) > addDays(event.date, -TEST_WINDOW_DAYS)
+    ? addDays(previousEventDate, 1) : addDays(event.date, -TEST_WINDOW_DAYS);
   const beforeTo = addDays(event.date, -1);
   const afterFrom = addDays(event.date, 1);
   let afterTo = addDays(event.date, TEST_WINDOW_DAYS);
   if (nextEventDate && addDays(nextEventDate, -1) < afterTo) afterTo = addDays(nextEventDate, -1);
   if (today < afterTo) afterTo = today;
 
-  const before = windowStats(series, beforeFrom, beforeTo);
-  const after = windowStats(series, afterFrom, afterTo);
+  // Compare the listing and market on the SAME observed days. A missing
+  // control is not evidence of a flat market.
+  const matched = series.filter((p) => market.some((m) => m.date === p.date && m.winnerViewsPerDay !== null));
+  const before = windowStats(matched, beforeFrom, beforeTo);
+  const after = windowStats(matched, afterFrom, afterTo);
   const daysAfter = Math.max(0, dayNumber(afterTo) - dayNumber(event.date));
 
   const base = { event, daysAfter, before, after, listingChange: null, marketChange: null, lift: null };
 
-  const interrupted = nextEventDate !== null && addDays(nextEventDate, -1) < addDays(event.date, MIN_AFTER_DAYS);
-  if (before.days < 3 || before.viewsPerDay === null) {
-    return { ...base, verdict: interrupted ? "interrupted" : "no_baseline" };
+  const interrupted = nextEventDate !== null && nextEventDate <= today && nextEventDate <= addDays(event.date, TEST_WINDOW_DAYS);
+  const ended = today >= addDays(event.date, TEST_WINDOW_DAYS);
+  if (windowStats(series, beforeFrom, beforeTo).days < 3) {
+    return { ...base, verdict: "no_baseline" };
   }
-  if (after.days < MIN_AFTER_DAYS || after.views < MIN_AFTER_VIEWS) {
-    return { ...base, verdict: interrupted ? "interrupted" : "running" };
+  if (before.days < 3 || after.days < MIN_AFTER_DAYS || after.views < MIN_AFTER_VIEWS) {
+    return { ...base, verdict: interrupted ? "interrupted" : ended ? "insufficient_data" : "running" };
   }
 
   const listingChange =
-    before.viewsPerDay > 0 ? (after.viewsPerDay ?? 0) / before.viewsPerDay : null;
-  const mBefore = marketWindowAvg(market, beforeFrom, beforeTo);
-  const mAfter = marketWindowAvg(market, afterFrom, afterTo);
-  const marketChange = mBefore && mAfter && mBefore > 0 ? mAfter / mBefore : null;
-  const lift = listingChange === null ? null : marketChange ? listingChange / marketChange : listingChange;
+    before.viewsPerDay !== null && before.viewsPerDay > 0 ? (after.viewsPerDay ?? 0) / before.viewsPerDay : null;
+  const matchedMarket = market.filter((m) => matched.some((p) => p.date === m.date && p.viewsPerDay !== null));
+  const mBefore = marketWindowAvg(matchedMarket, beforeFrom, beforeTo);
+  const mAfter = marketWindowAvg(matchedMarket, afterFrom, afterTo);
+  const marketChange = mBefore !== null && mAfter !== null && mBefore > 0 ? mAfter / mBefore : null;
+  const lift = listingChange !== null && marketChange !== null && marketChange > 0 ? listingChange / marketChange : null;
 
   let verdict: TestVerdict = "no_clear_change";
-  if (lift === null) verdict = (after.viewsPerDay ?? 0) > 0 ? "better" : "no_clear_change";
+  if (lift === null) verdict = "insufficient_data";
   else if (lift >= BETTER_LIFT) verdict = "better";
   else if (lift <= WORSE_LIFT) verdict = "worse";
 
@@ -348,11 +402,36 @@ export function evaluateAllTests(
   events: ChangeEvent[],
   series: DailyPoint[],
   market: MarketPoint[],
-  today: string
+  today: string,
+  keywordSnapshots?: KeywordSnapshot[]
 ): TestResult[] {
   const sorted = [...events].sort((a, b) => a.date.localeCompare(b.date));
   return sorted
-    .map((e, i) => evaluateTest(e, sorted[i + 1]?.date ?? null, series, market, today))
+    .map((e, i) => {
+      let control = market;
+      if (keywordSnapshots) {
+        const from = addDays(e.date, -TEST_WINDOW_DAYS - 1);
+        const to = [today, addDays(e.date, TEST_WINDOW_DAYS), sorted[i + 1]?.date ?? today].sort()[0];
+        const snaps = keywordSnapshots.filter((k) => k.snapshot_date >= from && k.snapshot_date <= to);
+        // Keep a fixed comparison cohort through each test, so changes in
+        // who ranks in the top ten cannot masquerade as a market trend.
+        const idsByKeyword = new Map<string, Set<number>>();
+        for (const k of snaps) {
+          const ids = new Set(k.top.map((t) => t.id));
+          const prior = idsByKeyword.get(k.keyword);
+          idsByKeyword.set(k.keyword, prior ? new Set([...prior].filter((id) => ids.has(id))) : ids);
+        }
+        // Only keywords whose fixed cohort can yield a median (>= 3 listings)
+        // take part, and every one of them must be present on a counted day.
+        const usable = [...idsByKeyword].filter(([, ids]) => ids.size >= 3).map(([k]) => k);
+        control = buildMarketSeries(
+          snaps.filter((k) => usable.includes(k.keyword)).map((k) => ({ ...k, top: k.top.filter((t) => idsByKeyword.get(k.keyword)?.has(t.id)) })),
+          10,
+          usable
+        );
+      }
+      return evaluateTest(e, sorted[i + 1]?.date ?? null, series, control, today, sorted[i - 1]?.date ?? null);
+    })
     .reverse();
 }
 
@@ -407,7 +486,7 @@ export function listingChecks(args: {
       area: "tags",
       severity: empty >= 4 ? "high" : "medium",
       title: `${empty} of ${ETSY_TAG_SLOTS} tag slots are empty`,
-      detail: "Every empty tag slot is a search phrase your listing cannot be found for.",
+      detail: "Use available slots for additional relevant phrases that describe your product.",
     });
   }
 
@@ -417,8 +496,8 @@ export function listingChecks(args: {
       id: "tags_may_be_cut",
       area: "tags",
       severity: "low",
-      title: `${maybeCut.length} tag${maybeCut.length > 1 ? "s" : ""} may be cut off`,
-      detail: `Etsy tags stop at ${ETSY_TAG_MAX} characters. Check these read as real search phrases.`,
+      title: `${maybeCut.length} tag${maybeCut.length > 1 ? "s" : ""} at the character limit`,
+      detail: `Tags can use all ${ETSY_TAG_MAX} characters. Only change these if a word is actually incomplete.`,
       suggestions: maybeCut,
     });
   }
@@ -445,14 +524,17 @@ export function listingChecks(args: {
   // covered by the title or an exact tag.
   keywords.forEach((kw, i) => {
     const k = kw.toLowerCase();
-    const inTitle = titleLower.includes(k);
+    const words = k.match(/[\p{L}\p{N}]+/gu) ?? [];
+    const titleWords = new Set(titleLower.match(/[\p{L}\p{N}]+/gu) ?? []);
+    const listingWords = new Set([titleLower, ...own].join(" ").match(/[\p{L}\p{N}]+/gu) ?? []);
+    const inTitle = words.length > 0 && words.every((w) => titleWords.has(w));
     if (i === 0 && !inTitle) {
       issues.push({
         id: `title_missing_${kw}`,
         area: "title",
         severity: "high",
         title: `Your title does not contain "${kw}"`,
-        detail: "This is your main search phrase. Put it near the start of the title, in the words buyers type.",
+        detail: "Consider including these product words naturally near the start, if they accurately describe what you sell.",
       });
     } else if (i === 0 && titleLower.indexOf(k) > 40) {
       issues.push({
@@ -462,31 +544,31 @@ export function listingChecks(args: {
         title: `"${kw}" appears late in your title`,
         detail: "Etsy search shows the start of the title. Lead with what the product is.",
       });
-    } else if (i > 0 && !inTitle && !own.has(k)) {
+    } else if (i > 0 && !words.every((w) => listingWords.has(w))) {
       issues.push({
         id: `keyword_uncovered_${kw}`,
         area: "tags",
         severity: "medium",
         title: `"${kw}" is not in your title or tags`,
-        detail: "You track this phrase, but nothing in the listing matches it. Add it as a tag if it is true for the product.",
+        detail: "Some words are missing from the title and tags. Consider relevant phrases using them; each tag can contain up to 20 characters.",
       });
     }
   });
 
-  if (title.length > 0 && title.length < 40) {
+  if (title.length > 140) {
     issues.push({
-      id: "title_short",
+      id: "title_long",
       area: "title",
       severity: "medium",
-      title: "Your title is short",
-      detail: `It has ${title.length} characters. Etsy allows 140. Add what it is, material, and who it is for.`,
+      title: "Your title exceeds 140 characters",
+      detail: "Keep a clear product name and its most useful distinguishing details.",
     });
   }
 
   const winnerPhotoCounts = latestKeywords.flatMap((k) => k.top.slice(0, 10).map((t) => t.imageCount)).filter((n) => n > 0);
   const winnerPhotos = median(winnerPhotoCounts);
-  const ownPhotos = latest.image_count ?? 0;
-  if (winnerPhotos !== null && ownPhotos < winnerPhotos - 1) {
+  const ownPhotos = latest.image_count;
+  if (winnerPhotos !== null && ownPhotos !== null && ownPhotos < winnerPhotos - 1) {
     issues.push({
       id: "fewer_photos",
       area: "photos",
@@ -548,6 +630,10 @@ export type DiagnosisInput = {
   winnerPhotoScore: number | null;
   /** High-severity title/tag/photo-count issues from listingChecks(). */
   highSeverityChecks?: number;
+  checks?: CheckIssue[];
+  enabled?: boolean;
+  lastCheckedOn?: string | null;
+  winnerRecentFavoriteRate?: number | null;
 };
 
 const fmt = (n: number) => (n >= 10 ? Math.round(n).toString() : n.toFixed(1));
@@ -565,6 +651,12 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
   }
 
   const evidence: string[] = [];
+  if (input.enabled === false) {
+    return { state: "collecting", fixTarget: null, headline: "Monitoring is paused", detail: "Saved history is shown below. Resume monitoring to collect new daily data.", evidence };
+  }
+  if (input.lastCheckedOn !== undefined && (!input.lastCheckedOn || input.lastCheckedOn < addDays(today, -1))) {
+    return { state: "collecting", fixTarget: null, headline: "Waiting for a fresh Etsy check", detail: "Recent monitoring data is unavailable. Saved numbers below may be out of date.", evidence };
+  }
   const positions = latestKeywords.map((k) => k.position);
   const best = positions.filter((p): p is number => p !== null).sort((a, b) => a - b)[0] ?? null;
   for (const k of latestKeywords) {
@@ -581,7 +673,7 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       state: "testing",
       fixTarget: null,
       headline: "A test is running. Leave the listing as it is for now.",
-      detail: `You changed ${describeKinds(running.event.kinds)} on ${running.event.date}. Changing something else now would mix up the result. Mavya needs about ${Math.max(0, MIN_AFTER_DAYS - running.daysAfter)} more day(s) and at least ${MIN_AFTER_VIEWS} views.`,
+      detail: `You changed ${describeKinds(running.event.kinds)} on ${running.event.date}. Changing something else now would mix up the result. A comparison needs ${MIN_AFTER_DAYS} observed after-days, at least ${MIN_AFTER_VIEWS} views, and matching market data within 14 days.`,
       evidence,
     };
   }
@@ -591,26 +683,36 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     return {
       state: "findability",
       fixTarget: "title_tags",
-      headline: "Buyers cannot find this listing. Fix the title and tags first.",
-      detail: `It is not on page 1 of Etsy search for any tracked keyword. A better photo cannot help if buyers never see it.`,
+      headline: "Search visibility may be limiting this listing",
+      detail: "It is outside the first 48 API results for your tracked phrases. Review relevant title and tag gaps; buyers may still find it through other searches or traffic sources.",
       evidence,
     };
   }
 
-  const last7From = addDays(today, -7);
+  const last7From = addDays(today, -6);
   const own = windowStats(series, last7From, today);
-  const knownDays = series.filter((p) => p.viewsPerDay !== null).length;
+  const knownDays = own.days;
+  // Metric-based diagnoses (views/favorites vs the top listings) outrank the
+  // static title/tag checks when enough data exists: a minor tag gap must not
+  // hide a large view or favorite gap. Checks still lead while data is thin.
+  const actionable = input.checks?.find((c) => c.severity !== "low");
+  const actionableResult = (): Diagnosis | null =>
+    actionable
+      ? { state: "improve", fixTarget: actionable.area === "photos" ? "supporting_photos" : "title_tags", headline: actionable.title, detail: actionable.detail, evidence }
+      : null;
   if (knownDays < MIN_SERIES_DAYS || own.viewsPerDay === null) {
-    return {
+    return actionableResult() ?? {
       state: "collecting",
       fixTarget: null,
       headline: "Mavya is watching this listing",
-      detail: `It needs about ${Math.max(1, MIN_SERIES_DAYS - knownDays)} more day(s) of Etsy data before it can judge clicks and trust.`,
+      detail: `It needs about ${Math.max(1, MIN_SERIES_DAYS - knownDays)} more daily observations to compare recent views.`,
       evidence,
     };
   }
 
-  const marketVpd = marketWindowAvg(market, last7From, today);
+  const comparableMarket = market.filter((m) => series.some((p) => p.date === m.date && p.viewsPerDay !== null));
+  const marketVpd = comparableMarket.filter((m) => m.date >= last7From && m.date <= today && m.winnerViewsPerDay !== null).length >= MIN_SERIES_DAYS
+    ? marketWindowAvg(comparableMarket, last7From, today) : null;
   evidence.push(`${fmt(own.viewsPerDay)} views/day over the last ${own.days} days`);
   if (marketVpd !== null) evidence.push(`Top listings: ${fmt(marketVpd)} views/day`);
   const photoGap =
@@ -623,29 +725,43 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     );
   }
 
-  if (marketVpd !== null && own.viewsPerDay < marketVpd * 0.25) {
+  if (best !== null && best <= PAGE_ONE_SIZE && marketVpd !== null && own.viewsPerDay < marketVpd * 0.25) {
+    // The seller's photo already out-scores the top listings' photos: the
+    // photo is not the likely gap, so do not send them back to it.
+    if (photoGap !== null && photoGap <= -PHOTO_BETTER_MARGIN) {
+      return {
+        state: "improve",
+        fixTarget: "title_tags",
+        headline: "Views trail the top listings, but your main photo already scores higher",
+        detail:
+          "The photo is probably not the main gap. Compare your price, reviews, and how your title reads next to the top listings. These numbers cannot show why buyers chose other listings.",
+        evidence,
+      };
+    }
     return {
       state: "click",
       fixTarget: "main_photo",
-      headline: "Buyers see this listing but do not click. Fix the main photo.",
+      headline: "Views trail the top listings. Review the main photo.",
       detail:
         photoGap !== null && photoGap >= 1
-          ? "You rank on page 1, but get far fewer views than the top listings, and their main photos score higher than yours."
-          : "You rank on page 1, but get far fewer views than the top listings. The thumbnail is the first thing buyers judge.",
+          ? "Your listing appears in the first 48 API results, with lower views and a lower photo score. The main photo is one candidate to test; exposure and other traffic sources are unknown."
+          : "Your listing appears in the first 48 API results but has fewer views. Review its thumbnail alongside the top listings. These numbers cannot tell us whether buyers saw it and chose not to click.",
       evidence,
     };
   }
 
-  const winnerFav = winnerFavoriteRate(latestKeywords);
+  // Lifetime competitor favorites are not comparable to this week's net
+  // favorites. Do not diagnose trust from that mismatched denominator.
+  const winnerFav = input.winnerRecentFavoriteRate ?? null;
   if (own.views >= 30 && own.favoritesPer100Views !== null) {
-    evidence.push(`${own.favoritesPer100Views.toFixed(1)} favorites per 100 views`);
-    if (winnerFav !== null) evidence.push(`Top listings: ${winnerFav.toFixed(1)} favorites per 100 views`);
+    evidence.push(`${own.favoritesPer100Views.toFixed(1)} net favorites per 100 views`);
+    if (winnerFav !== null) evidence.push(`Top listings: ${winnerFav.toFixed(1)} net favorites per 100 views`);
     if (winnerFav !== null && own.favoritesPer100Views < winnerFav * 0.5) {
       return {
         state: "trust",
         fixTarget: "supporting_photos",
-        headline: "Buyers click but are not convinced. Add supporting photos.",
-        detail: "Far fewer visitors favorite this listing than the top listings. Show size, detail, and what is included.",
+        headline: "Recent favorites are lower. Review supporting photos.",
+        detail: "Net favorites per view are lower than the comparison listings over the same dates. Clear size, detail, and included-item photos are one improvement to consider; favorites alone do not measure trust or sales.",
         evidence,
       };
     }
@@ -662,6 +778,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       evidence,
     };
   }
+  const fromChecks = actionableResult();
+  if (fromChecks) return fromChecks;
   if ((input.highSeverityChecks ?? 0) > 0) {
     return {
       state: "improve",
@@ -672,11 +790,14 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
     };
   }
 
+  if (!latestKeywords.length || marketVpd === null) {
+    return { state: "collecting", fixTarget: null, headline: "Waiting for comparison data", detail: "Recent listing data is available, but there is not enough matching search and market history to assess performance.", evidence };
+  }
   return {
     state: "healthy",
     fixTarget: null,
     headline: "This listing is holding up well",
-    detail: "Views and favorites are in line with the top listings. Mavya keeps watching and will flag any drop.",
+    detail: "No clear issue was identified in the available recent data. This does not measure clicks or sales.",
     evidence,
   };
 }

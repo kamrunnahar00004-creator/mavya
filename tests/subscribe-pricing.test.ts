@@ -49,7 +49,8 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).not.toContain('"Everything in Starter"');
     expect(subscribePage).not.toContain('"Everything in Shop"');
     expect(subscribePage).toContain("`${plan.activeListingLimit} active listings`");
-    expect(subscribePage).toContain("`${plan.dailyFixes} photo fixes a day`");
+    // Founder moved this out of the repeated features into the price block.
+    expect(subscribePage).toContain("Generate up to {(plan.dailyFixes * 30).toLocaleString()} images/month");
   });
 
   it("cards are deliberately spacious -- a tall min-height plus a flexible spacer pushes the button down, leaving real empty room, not cramming content tight", () => {

@@ -21,27 +21,35 @@ create table if not exists public.listing_monitors (
   user_id          uuid not null references auth.users(id) on delete cascade,
   etsy_listing_id  bigint not null check (etsy_listing_id > 0),
   etsy_shop_id     bigint,
+  -- revision: changes whenever the configuration (listing OR keywords) changes;
+  -- scopes keyword/search history. listing_revision: changes only when a
+  -- different Etsy listing is linked; scopes the listing's own daily history,
+  -- so editing keywords never erases views history or running tests.
+  revision         uuid not null default gen_random_uuid(),
+  listing_revision uuid not null default gen_random_uuid(),
   keywords         text[] not null default '{}'
                      check (cardinality(keywords) <= 3),
   enabled          boolean not null default true,
   last_checked_on  date,
+  next_check_at    timestamptz not null default now(),
   last_error       text,
   created_at       timestamptz not null default now(),
   updated_at       timestamptz not null default now()
 );
 create index if not exists listing_monitors_enabled_idx
-  on public.listing_monitors(enabled) where enabled;
+  on public.listing_monitors(next_check_at) where enabled;
 create index if not exists listing_monitors_user_idx
   on public.listing_monitors(user_id);
 
 -- ---------------------------------------------------------------------------
--- listing_snapshots: one row per product per day. Views/favorites are Etsy's
+-- listing_snapshots: one row per product/linked listing per day. Views/favorites are Etsy's
 -- lifetime counters; daily numbers are differences between rows. The
 -- etsy_listing_id is stored per row so re-linking a product to a different
 -- listing never mixes two listings' histories.
 -- ---------------------------------------------------------------------------
 create table if not exists public.listing_snapshots (
   product_id       uuid not null references public.products(id) on delete cascade,
+  listing_revision uuid not null,
   snapshot_date    date not null,
   etsy_listing_id  bigint not null,
   state            text,
@@ -56,7 +64,7 @@ create table if not exists public.listing_snapshots (
   main_image_url   text,
   image_count      integer,
   created_at       timestamptz not null default now(),
-  primary key (product_id, snapshot_date)
+  primary key (product_id, listing_revision, snapshot_date)
 );
 
 -- ---------------------------------------------------------------------------
@@ -66,19 +74,21 @@ create table if not exists public.listing_snapshots (
 -- ---------------------------------------------------------------------------
 create table if not exists public.listing_keyword_snapshots (
   product_id     uuid not null references public.products(id) on delete cascade,
+  revision       uuid not null,
   snapshot_date  date not null,
   keyword        text not null check (char_length(keyword) between 1 and 80),
   position       integer check (position is null or position >= 1),
   depth          integer not null default 100,
   top            jsonb not null default '[]'::jsonb,
   created_at     timestamptz not null default now(),
-  primary key (product_id, snapshot_date, keyword)
+  primary key (product_id, revision, snapshot_date, keyword)
 );
 
 -- ---------------------------------------------------------------------------
 -- etsy_image_scores: global cache of Mavya rubric scores for PUBLIC top-
 -- listing main photos, keyed by Etsy's immutable image id. Each winner photo
--- is scored once, ever. Public data, so any signed-in user may read it.
+-- is reused while the rubric version matches. Public data, so any signed-in
+-- user may read it. This cache is not private seller history.
 -- ---------------------------------------------------------------------------
 create table if not exists public.etsy_image_scores (
   etsy_image_id    bigint primary key,

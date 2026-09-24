@@ -100,7 +100,14 @@ photo score below top-listing photo scores.
 
 Winner photos: Mavya scores the main photos of the top 3 listings per keyword
 with the same photo rubric it uses for the seller. Scores are cached by Etsy image
-ID, so each winner photo is scored once, ever.
+ID and rubric version, so each photo is scored once per rubric version. The
+seller's own score comes from their ACTUAL Etsy main photo, never an unrelated
+upload.
+
+Update 2026-09-24 (cross-check): the monitor runs once a day at 09:00 UTC
+(Vercel Hobby allows daily crons only; ~100-150 listings/day ceiling, hourly
+on Pro). Editing keywords keeps the listing's views history; only linking a
+different listing starts a fresh one.
 
 ## 6. The test loop (the "agentic" part)
 

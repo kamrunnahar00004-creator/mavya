@@ -110,7 +110,7 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; erro
 
 export function ListingAnalyticsView({ vm }: { vm: AnalyticsViewModel }) {
   return (
-    <main className="mx-auto flex min-w-0 max-w-[1200px] flex-col gap-5 px-4 pb-16 pt-6 sm:px-6">
+    <main className="mx-auto flex min-w-0 max-w-[1200px] flex-col gap-5 break-words px-4 pb-16 pt-6 sm:px-6">
       {!vm.monitor ? (
         <LinkListingCard productId={vm.productId} canEdit={vm.canEdit} />
       ) : (
@@ -232,6 +232,11 @@ function ListingHeader({ vm }: { vm: AnalyticsViewModel }) {
   const router = useRouter();
   const monitor = vm.monitor!;
   const [enabled, setEnabled] = useState(monitor.enabled);
+  const [previousEnabled, setPreviousEnabled] = useState(monitor.enabled);
+  if (previousEnabled !== monitor.enabled) {
+    setPreviousEnabled(monitor.enabled);
+    setEnabled(monitor.enabled);
+  }
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [relinking, setRelinking] = useState(false);
@@ -292,6 +297,9 @@ function ListingHeader({ vm }: { vm: AnalyticsViewModel }) {
         </div>
         {monitor.lastError === "listing_not_found" && (
           <p className="mt-2 text-[13px] text-[var(--color-weak)]">Etsy could not find this listing on the last check. It may be deleted or inactive.</p>
+        )}
+        {monitor.lastError && monitor.lastError !== "listing_not_found" && (
+          <p role="status" className="mt-2 text-[13px] text-[var(--color-weak)]">The last Etsy check was incomplete. Mavya will retry; some saved numbers may be out of date.</p>
         )}
         {error && (
           <p role="alert" className="mt-2 text-[13px] text-[var(--color-weak)]">
@@ -396,9 +404,9 @@ function StatRow({ vm }: { vm: AnalyticsViewModel }) {
     },
     {
       Icon: Heart,
-      label: "Favorites per 100 views",
+      label: "Net favorites per 100 views",
       value: fmt(vm.last7.favoritesPer100Views),
-      note: vm.last7.favoritesPer100Views === null ? "Needs 30+ views" : "Last 7 days",
+      note: vm.last7.favoritesPer100Views === null ? "Needs 30+ views and favorite counts" : "Last 7 days, including unfavorites",
     },
     {
       Icon: Search,
@@ -598,7 +606,7 @@ function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
       <div className="flex items-baseline justify-between gap-2">
         <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Search position</h2>
         {!editing && (
-          <button type="button" onClick={() => setEditing(true)} disabled={!vm.canEdit} className={btnSecondary}>
+          <button type="button" onClick={() => { setDraft([...current, "", "", ""].slice(0, 3)); setError(null); setEditing(true); }} disabled={!vm.canEdit} className={btnSecondary}>
             Edit keywords
           </button>
         )}
@@ -617,13 +625,14 @@ function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
                 id={`kw-${i}`}
                 value={k}
                 maxLength={80}
+                disabled={busy}
                 placeholder={i === 0 ? "e.g. crochet bunny plush" : "Optional"}
                 onChange={(e) => setDraft((d) => d.map((x, j) => (j === i ? e.target.value : x)))}
                 className={input}
               />
             </div>
           ))}
-          <p className="text-[12.5px] text-[var(--color-ink-soft)]">Use what a buyer would type. Changing keywords starts a fresh history for them.</p>
+          <p className="text-[12.5px] text-[var(--color-ink-soft)]">Use what a buyer would type. New keywords start a fresh search and top-listing history. Your views history is kept.</p>
           {error && (
             <p role="alert" className="text-[13px] text-[var(--color-weak)]">
               {error}
@@ -655,7 +664,7 @@ function SearchCard({ vm }: { vm: AnalyticsViewModel }) {
                     onPageOne ? "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" : "bg-[var(--color-weak-soft)] text-[var(--color-weak)]"
                   )}
                 >
-                  {k.position === null ? `Not in top ${k.depth}` : `#${k.position}${onPageOne ? " · page 1" : ""}`}
+                  {k.position === null ? `Not in top ${k.depth}` : `#${k.position}${onPageOne ? " · top 48" : ""}`}
                 </span>
               </li>
             );
@@ -690,8 +699,8 @@ function ChecksCard({ vm }: { vm: AnalyticsViewModel }) {
         <ul className="mt-4 flex flex-col gap-3">
           {vm.checks.map((c) => (
             <li key={c.id} className="rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] p-3.5">
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-[14.5px] font-semibold text-[var(--color-ink)]">{c.title}</p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <p className="min-w-0 text-[14.5px] font-semibold text-[var(--color-ink)]">{c.title}</p>
                 <span className={cn("flex-shrink-0 rounded-full px-2.5 py-0.5 text-[11.5px] font-semibold", sev[c.severity])}>
                   {sevLabel[c.severity]}
                 </span>
@@ -728,21 +737,20 @@ function WinnersCard({ vm }: { vm: AnalyticsViewModel }) {
         <div>
           <h2 className="text-[16px] font-bold text-[var(--color-ink)]">Compared to top listings</h2>
           <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">
-            The top 5 for &ldquo;{k.keyword}&rdquo;. Photo score uses the same Mavya rubric as your photos.
+            Up to 5 comparison listings for &ldquo;{k.keyword}&rdquo;, excluding yours. Photo score uses the same Mavya rubric as your photos.
           </p>
         </div>
         {vm.keywords.length > 1 && (
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Keyword">
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Keyword">
             {vm.keywords.map((kw, i) => (
               <button
                 key={kw.keyword}
                 type="button"
-                role="tab"
-                aria-selected={i === active}
+                aria-pressed={i === Math.min(active, vm.keywords.length - 1)}
                 onClick={() => setActive(i)}
                 className={cn(
                   "rounded-full px-3 py-1 text-[12.5px] font-semibold",
-                  i === active ? "bg-[var(--color-neutral-dark)] text-white" : "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]"
+                  i === Math.min(active, vm.keywords.length - 1) ? "bg-[var(--color-neutral-dark)] text-white" : "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]"
                 )}
               >
                 {kw.keyword}
@@ -766,7 +774,7 @@ function WinnersCard({ vm }: { vm: AnalyticsViewModel }) {
         {k.top.map((t, i) => (
           <WinnerTile
             key={t.id}
-            label={`#${i + 1}`}
+            label={t.position ? `#${t.position}` : `Comparison ${i + 1}`}
             imageUrl={t.mainImageUrl}
             title={t.title}
             photoScore={t.photoScore}
@@ -778,7 +786,7 @@ function WinnersCard({ vm }: { vm: AnalyticsViewModel }) {
         ))}
       </div>
       <p className="mt-3 text-[12.5px] text-[var(--color-ink-soft)]">
-        Views and favorites are lifetime totals from Etsy. Photo scores for top listings appear within a day.
+        Views and favorites are lifetime totals from Etsy. Photo scores are collected gradually as monitoring runs.
       </p>
     </section>
   );
@@ -848,6 +856,7 @@ const VERDICT: Record<TestVerdict, { label: string; cls: string; Icon: typeof Ch
   running: { label: "Still running", cls: "bg-[var(--color-mid-soft)] text-[#8a5a12]", Icon: Clock },
   interrupted: { label: "Interrupted", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: AlertTriangle },
   no_baseline: { label: "No before data", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: AlertTriangle },
+  insufficient_data: { label: "Not enough comparable data", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]", Icon: AlertTriangle },
 };
 
 function TestsCard({ vm }: { vm: AnalyticsViewModel }) {
@@ -914,12 +923,14 @@ function testSentence(t: AnalyticsViewModel["tests"][number]): string {
       return "Another change came too soon after this one, so this result cannot be measured on its own.";
     case "no_baseline":
       return "Mavya did not have enough days of data before this change to compare.";
+    case "insufficient_data":
+      return "This window could not support a comparison. It needs daily listing and market observations, enough views, and a nonzero baseline. No improvement or decline is claimed.";
     default: {
       const market =
         t.marketChange === null
           ? "No top-listing data for the same days."
           : `Top listings changed ${pct(t.marketChange)} over the same days.`;
-      const lift = t.lift === null ? "" : ` Compared with them, your listing moved ${pct(t.lift)}.`;
+      const lift = t.lift === null || t.marketChange === null ? "" : ` Compared with them, your listing moved ${pct(t.lift)}.`;
       return `${before}, ${after}. ${market}${lift}`;
     }
   }

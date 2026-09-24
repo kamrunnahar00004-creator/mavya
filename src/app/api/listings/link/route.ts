@@ -1,4 +1,5 @@
 import { after, NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { getEntitlement } from "@/lib/entitlements";
@@ -10,7 +11,7 @@ import { runListingMonitor, scoreWinnerPhotos } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -25,6 +26,7 @@ const UUID_RE =
  * to Etsy.
  */
 export async function POST(req: NextRequest) {
+  const deadlineAt = Date.now() + 160_000;
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in first.");
 
@@ -47,6 +49,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return apiError("bad_request", "Invalid request body.");
   }
+  if (!body || typeof body !== "object" || Array.isArray(body)) return apiError("bad_request", "Invalid request body.");
   const productId = typeof body.productId === "string" ? body.productId : "";
   if (!UUID_RE.test(productId)) return apiError("bad_request", "Invalid product id.");
   const listingId =
@@ -60,10 +63,11 @@ export async function POST(req: NextRequest) {
   const supabase = await createSupabaseServerClient();
   const { data: owned } = await supabase.from("products").select("id").eq("id", productId).maybeSingle();
   if (!owned) return apiError("forbidden", "You cannot change this product.");
+  if (!(await rateLimit(`listing-check:u:${user.id}`, 30, 86_400_000)).ok) return apiError("rate_limited", "Daily manual check limit reached. Automatic monitoring will continue.");
 
   let listing;
   try {
-    listing = (await fetchListingsBatch([listingId])).get(listingId);
+    listing = (await fetchListingsBatch([listingId], Math.min(deadlineAt, Date.now() + 20_000))).get(listingId);
   } catch (err) {
     logEvent("listing.link_etsy_failed", {
       userId: user.id,
@@ -79,14 +83,27 @@ export async function POST(req: NextRequest) {
       : suggestKeywords(listing.title, listing.tags);
 
   const admin = createSupabaseAdminClient();
+  const { data: previous, error: previousError } = await supabase.from("listing_monitors")
+    .select("etsy_listing_id, keywords, revision, listing_revision").eq("product_id", productId).maybeSingle();
+  if (previousError) return apiError("persistence_failed", "Could not read monitoring settings.");
+  const sameConfiguration = previous && Number(previous.etsy_listing_id) === listingId && JSON.stringify(previous.keywords) === JSON.stringify(keywords);
+  const revision = sameConfiguration ? previous.revision as string : randomUUID();
+  // The listing's own history survives a keyword change; only linking a
+  // DIFFERENT listing starts a fresh daily history.
+  const sameListing = previous && Number(previous.etsy_listing_id) === listingId;
+  const listingRevision = sameListing ? previous.listing_revision as string : randomUUID();
   const monitor = {
     product_id: productId,
     user_id: user.id,
     etsy_listing_id: listingId,
     etsy_shop_id: listing.shopId,
+    revision,
+    listing_revision: listingRevision,
     keywords,
     enabled: true,
+    next_check_at: new Date().toISOString(),
     last_error: null,
+    ...(!sameConfiguration ? { last_checked_on: null } : {}),
     updated_at: new Date().toISOString(),
   };
   const { error } = await admin.from("listing_monitors").upsert(monitor, { onConflict: "product_id" });
@@ -101,15 +118,16 @@ export async function POST(req: NextRequest) {
   try {
     const summary = await runListingMonitor(
       admin,
-      [{ product_id: productId, user_id: user.id, etsy_listing_id: listingId, keywords }],
-      { maxWinnerScores: 0 }
+      [{ product_id: productId, user_id: user.id, etsy_listing_id: listingId, keywords, revision, listing_revision: listingRevision }],
+      { maxWinnerScores: 0, deadlineAt: Date.now() + 30_000 }
     );
     topLists = summary.topByKeyword ? [...summary.topByKeyword.values()] : [];
   } catch {
     logEvent("listing.first_snapshot_failed", { userId: user.id });
+    await admin.from("listing_monitors").update({ last_error: "check_failed" }).eq("product_id", productId).eq("revision", revision);
   }
   if (topLists.length) {
-    after(() => scoreWinnerPhotos(admin, topLists, 6));
+    after(() => scoreWinnerPhotos(admin, topLists, 1, deadlineAt));
   }
 
   return NextResponse.json({ ok: true, listingId, keywords, title: listing.title });
