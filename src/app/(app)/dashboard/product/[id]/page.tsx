@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ProductViewSwitch } from "@/components/dashboard/product-view-switch";
 import {
   ProductWorkspace,
   type InitialJob,
@@ -516,17 +517,20 @@ export default async function ProductPage({
       ) {
         const pendingSigned = await batchSignUrls(supabase, [mainRow.storage_path]);
         return (
-          <ProductWorkspace
-            productId={product.id}
-            productName={product.name}
-            initialPhotos={[]}
-            pendingMain={{
-              photoId: mainRow.id,
-              jobId: pendingJob.id,
-              imageSrc: pendingSigned.get(mainRow.storage_path) ?? null,
-            }}
-            coverageState={{ status: "unavailable", reason: "no_main_audit" }}
-          />
+          <>
+            <ProductViewSwitch productId={product.id} active="photo" />
+            <ProductWorkspace
+              productId={product.id}
+              productName={product.name}
+              initialPhotos={[]}
+              pendingMain={{
+                photoId: mainRow.id,
+                jobId: pendingJob.id,
+                imageSrc: pendingSigned.get(mainRow.storage_path) ?? null,
+              }}
+              coverageState={{ status: "unavailable", reason: "no_main_audit" }}
+            />
+          </>
         );
       }
     }
@@ -534,11 +538,14 @@ export default async function ProductPage({
   }
 
   return (
-    <ProductWorkspace
-      productId={product.id}
-      productName={product.name}
-      initialPhotos={initialPhotos}
-      coverageState={coverageState}
-    />
+    <>
+      <ProductViewSwitch productId={product.id} active="photo" />
+      <ProductWorkspace
+        productId={product.id}
+        productName={product.name}
+        initialPhotos={initialPhotos}
+        coverageState={coverageState}
+      />
+    </>
   );
 }

@@ -39,6 +39,8 @@ export type ApiErrorCode =
   | "signing_failed"
   | "idempotency_conflict"
   | "bad_request"
+  | "etsy_unavailable"
+  | "listing_not_found"
   | "internal_error";
 
 const STATUS: Partial<Record<ApiErrorCode, number>> = {
@@ -65,6 +67,8 @@ const STATUS: Partial<Record<ApiErrorCode, number>> = {
   source_unavailable: 404,
   idempotency_conflict: 409,
   bad_request: 400,
+  etsy_unavailable: 503,
+  listing_not_found: 404,
   no_publishable_candidate: 422,
   unsafe_candidate: 422,
   incomplete_source: 422,

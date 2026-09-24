@@ -5,6 +5,10 @@
     {
       "path": "/api/generate/worker",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/listings/monitor",
+      "schedule": "0 9 * * *"
     }
   ]
 }

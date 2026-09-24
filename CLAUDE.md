@@ -6,6 +6,7 @@ Claude is the fast builder for Mavya.
 
 Read these first:
 
+0. `docs/NORTH_STAR_LISTING_COACH.md` (ACTIVE NORTH STAR, 2026-09-24; wins over older direction docs)
 1. `docs/PROJECT_OUTLINE_DRAFT.md`
 2. `docs/DAILY_WORK_PLAN.md`
 3. `docs/AGENT_RESPONSIBILITIES.md`
