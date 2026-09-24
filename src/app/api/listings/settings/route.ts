@@ -7,7 +7,7 @@ import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { isEtsyConfigured } from "@/lib/etsy";
 import { normalizeKeywords } from "@/lib/listing-analytics";
-import { runListingMonitor, scoreWinnerPhotos } from "@/lib/listing-monitor";
+import { runListingMonitor } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,7 +23,6 @@ const UUID_RE =
  * checked right away so the seller sees positions without waiting a day.
  */
 export async function POST(req: NextRequest) {
-  const deadlineAt = Date.now() + 160_000;
   const user = await getSessionUser();
   if (!user) return apiError("unauthenticated", "Log in first.");
 
@@ -94,7 +93,7 @@ export async function POST(req: NextRequest) {
   const enabled = typeof body.enabled === "boolean" ? body.enabled : Boolean(monitor.enabled);
   const check = async () => {
     try {
-      const summary = await runListingMonitor(
+      await runListingMonitor(
         admin,
         [
           {
@@ -108,8 +107,6 @@ export async function POST(req: NextRequest) {
         ],
         { maxWinnerScores: 0, deadlineAt: Date.now() + 30_000 }
       );
-      const lists = summary.topByKeyword ? [...summary.topByKeyword.values()] : [];
-      if (lists.length) after(() => scoreWinnerPhotos(admin, lists, 1, deadlineAt));
     } catch {
       logEvent("listing.settings_snapshot_failed", { userId: user.id });
       await admin.from("listing_monitors").update({ last_error: "check_failed" }).eq("product_id", productId).eq("revision", revision);

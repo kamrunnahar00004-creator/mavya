@@ -98,11 +98,9 @@ Plus always-on checks (no waiting needed): empty tag slots, possible cut-off tag
 winner keywords missing from title/tags, fewer photos than top listings, main
 photo score below top-listing photo scores.
 
-Winner photos: Mavya scores the main photos of the top 3 listings per keyword
-with the same photo rubric it uses for the seller. Scores are cached by Etsy image
-ID and rubric version, so each photo is scored once per rubric version. The
-seller's own score comes from their ACTUAL Etsy main photo, never an unrelated
-upload.
+Winner photos: NOT AI-scored (founder decision 2026-09-24). The page compares
+other shops by their public views, favorites, and photo count instead. The
+scoring code is kept dormant (`scoreWinnerPhotos`), with no caller.
 
 Update 2026-09-24 (cross-check): the monitor retains its daily 09:00 UTC
 schedule. Runtime capacity has not been load-tested. It claims only the next

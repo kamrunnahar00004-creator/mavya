@@ -232,6 +232,10 @@ export async function runListingMonitor(
 }
 
 /**
+ * DORMANT (founder decision 2026-09-24): no route calls this. Mavya does not
+ * AI-score other shops' photos; the Analytics page compares views, favorites
+ * and photo counts instead. Kept, with its tests, in case that changes.
+ *
  * Score the main photos of the top WINNER_PHOTOS_PER_KEYWORD listings per
  * keyword with Mavya's main rubric. Cached by Etsy image id and rubric version.
  * Stores the honest RAW score; comparisons never use the calibrated one.

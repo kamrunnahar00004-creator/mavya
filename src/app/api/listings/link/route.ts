@@ -1,4 +1,4 @@
-import { after, NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
@@ -6,8 +6,8 @@ import { getEntitlement } from "@/lib/entitlements";
 import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { EtsyApiError, fetchListingsBatch, isEtsyConfigured, parseEtsyListingInput } from "@/lib/etsy";
-import { normalizeKeywords, suggestKeywords, type TopEntry } from "@/lib/listing-analytics";
-import { runListingMonitor, scoreWinnerPhotos } from "@/lib/listing-monitor";
+import { normalizeKeywords, suggestKeywords } from "@/lib/listing-analytics";
+import { runListingMonitor } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -112,22 +112,17 @@ export async function POST(req: NextRequest) {
     return apiError("persistence_failed", "Could not save. Try again.");
   }
 
-  // First snapshot now (without AI scoring, to keep the request fast); winner
-  // photos are scored after the response.
-  let topLists: TopEntry[][] = [];
+  // First snapshot now, so the Analytics page has numbers on day 1. Other
+  // shops' photos are never AI-scored (founder decision 2026-09-24).
   try {
-    const summary = await runListingMonitor(
+    await runListingMonitor(
       admin,
       [{ product_id: productId, user_id: user.id, etsy_listing_id: listingId, keywords, revision, listing_revision: listingRevision }],
       { maxWinnerScores: 0, deadlineAt: Date.now() + 30_000 }
     );
-    topLists = summary.topByKeyword ? [...summary.topByKeyword.values()] : [];
   } catch {
     logEvent("listing.first_snapshot_failed", { userId: user.id });
     await admin.from("listing_monitors").update({ last_error: "check_failed" }).eq("product_id", productId).eq("revision", revision);
-  }
-  if (topLists.length) {
-    after(() => scoreWinnerPhotos(admin, topLists, 1, deadlineAt));
   }
 
   return NextResponse.json({ ok: true, listingId, keywords, title: listing.title });

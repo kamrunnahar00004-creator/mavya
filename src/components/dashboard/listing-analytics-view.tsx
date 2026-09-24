@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
-import { ArrowRight, Check, Clock, ExternalLink, Info, Link2, Pencil, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Clock, ExternalLink, Eye, Heart, ImageIcon, Info, Link2, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CheckIssue, ChangeKind, Diagnosis, TestVerdict, TopEntry } from "@/lib/listing-analytics";
 
@@ -36,10 +36,8 @@ export type AnalyticsViewModel = {
     position: number | null;
     depth: number;
     date: string;
-    top: (TopEntry & { photoScore: number | null })[];
+    top: TopEntry[];
   }[];
-  ownPhotoScore: number | null;
-  winnerPhotoScore: number | null;
   diagnosis: Diagnosis;
   checks: CheckIssue[];
   tests: {
@@ -374,7 +372,7 @@ function Numbers({ vm }: { vm: AnalyticsViewModel }) {
     .sort((a, b) => (a.position as number) - (b.position as number))[0];
   const items = [
     { value: fmt(vm.last7.viewsPerDay), label: "views a day" },
-    { value: best ? `#${best.position}` : vm.keywords.length ? "100+" : "–", label: "search rank" },
+    { value: best ? `#${best.position}` : vm.keywords.length ? "100+" : "–", label: "best search rank" },
     { value: fmt(vm.last7.favoritesPer100Views), label: "favorites per 100 views" },
   ];
   return (
@@ -625,7 +623,7 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
     <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="search-title">
       <div className="flex items-center justify-between gap-2">
         <h2 id="search-title" className={sectionTitle}>
-          Search
+          Etsy search
         </h2>
         {!editing && (
           <button type="button" onClick={startEdit} disabled={!vm.canEdit} className={cn(btnGhost, "-mr-3")}>
@@ -674,36 +672,51 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
         </p>
       ) : (
         <>
-          <div className="mt-3 flex flex-wrap gap-2" role="group" aria-label="Keyword">
-            {vm.keywords.map((kw, i) => (
-              <button
-                key={kw.keyword}
-                type="button"
-                aria-pressed={i === idx}
-                onClick={() => setActive(i)}
-                className={cn(
-                  "inline-flex min-h-[36px] items-center gap-2 rounded-full border px-3.5 text-[13.5px] transition-colors",
-                  i === idx
-                    ? "border-[var(--color-neutral-dark)] bg-[var(--color-neutral-dark)] text-white"
-                    : "border-[var(--color-border)] bg-white text-[var(--color-ink)] hover:border-[var(--color-border-strong)]"
-                )}
-              >
-                <span className="max-w-[16rem] truncate">{kw.keyword}</span>
-                <span className={cn("font-semibold tabular-nums", i === idx ? "text-white/80" : "text-[var(--color-ink-muted)]")}>
-                  {kw.position === null ? "100+" : `#${kw.position}`}
-                </span>
-              </button>
-            ))}
-          </div>
+          <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">Where you show up when buyers search these words.</p>
+          <ul className="mt-3 flex flex-col gap-1.5" role="group" aria-label="Your keywords">
+            {vm.keywords.map((kw, i) => {
+              const selected = i === idx;
+              const found = kw.position !== null;
+              return (
+                <li key={kw.keyword}>
+                  <button
+                    type="button"
+                    aria-pressed={selected}
+                    onClick={() => setActive(i)}
+                    className={cn(
+                      "flex min-h-[48px] w-full items-center justify-between gap-3 rounded-[var(--radius-lg)] border px-4 text-left transition-colors",
+                      selected
+                        ? "border-[var(--color-neutral-dark)] bg-[var(--color-page)]"
+                        : "border-[var(--color-border-soft)] hover:border-[var(--color-border-strong)]"
+                    )}
+                  >
+                    <span className="min-w-0 truncate text-[15px] text-[var(--color-ink)]">&ldquo;{kw.keyword}&rdquo;</span>
+                    <span
+                      className={cn(
+                        "flex-shrink-0 text-[14px] font-semibold tabular-nums",
+                        found ? "text-[var(--color-ink)]" : "text-[var(--color-weak)]"
+                      )}
+                    >
+                      {found ? `You're #${kw.position}` : `Not in top ${kw.depth}`}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
 
-          <p className="mt-5 text-[13px] text-[var(--color-ink-muted)]">Top listings for &ldquo;{k.keyword}&rdquo; · photo score</p>
-          <ul className="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-6">
+          <p className="mt-6 text-[13px] font-medium text-[var(--color-ink)]">
+            Top 5 in Etsy search for &ldquo;{k.keyword}&rdquo;
+          </p>
+          <ul className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
             <ListingTile
-              badge="You"
+              badge={k.position !== null ? `You · #${k.position}` : "You"}
               highlight
               imageUrl={vm.listing?.mainImageUrl ?? null}
               title={vm.listing?.title ?? "Your listing"}
-              score={vm.ownPhotoScore}
+              views={vm.listing?.totalViews ?? null}
+              favorites={vm.listing?.totalFavorites ?? null}
+              photos={vm.listing?.imageCount ?? null}
               href={vm.listing?.url ?? null}
             />
             {k.top.slice(0, 5).map((t, i) => (
@@ -712,11 +725,14 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
                 badge={`#${t.position ?? i + 1}`}
                 imageUrl={t.mainImageUrl}
                 title={t.title}
-                score={t.photoScore}
+                views={t.views}
+                favorites={t.favorites}
+                photos={t.imageCount}
                 href={t.url}
               />
             ))}
           </ul>
+          <p className="mt-3 text-[12px] text-[var(--color-ink-soft)]">All-time numbers from Etsy.</p>
         </>
       )}
     </section>
@@ -728,9 +744,16 @@ function ListingTile(props: {
   highlight?: boolean;
   imageUrl: string | null;
   title: string;
-  score: number | null;
+  views: number | null;
+  favorites: number | null;
+  photos: number | null;
   href: string | null;
 }) {
+  const stats = [
+    { Icon: Eye, value: props.views, label: "views" },
+    { Icon: Heart, value: props.favorites, label: "favorites" },
+    { Icon: ImageIcon, value: props.photos, label: "photos" },
+  ];
   const body = (
     <>
       <div
@@ -741,24 +764,35 @@ function ListingTile(props: {
       >
         {props.imageUrl && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={etsyThumb(props.imageUrl, "il_340x270") ?? undefined} alt={props.title} loading="lazy" decoding="async" className="h-full w-full object-cover" />
+          <img src={etsyThumb(props.imageUrl, "il_340x270") ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
         )}
         <span
           className={cn(
-            "absolute left-1.5 top-1.5 rounded-full px-1.5 py-0.5 text-[11px] font-bold leading-none",
+            "absolute left-1.5 top-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-bold leading-tight",
             props.highlight ? "bg-[var(--color-primary)] text-white" : "bg-white/95 text-[var(--color-ink)]"
           )}
         >
           {props.badge}
         </span>
       </div>
-      <p className="mt-1.5 text-center text-[14px] font-semibold tabular-nums text-[var(--color-ink)]">
-        {props.score === null ? <span className="font-normal text-[var(--color-ink-soft)]">–</span> : props.score.toFixed(1)}
-      </p>
+      <p className="mt-2 line-clamp-1 text-[13px] font-medium text-[var(--color-ink)]">{props.title}</p>
+      <dl className="mt-1 space-y-0.5 text-[12.5px] text-[var(--color-ink-muted)]">
+        {stats.map(({ Icon, value, label }) => (
+          <div key={label} className="flex items-center gap-1.5">
+            <dt className="flex items-center">
+              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+              <span className="sr-only">{label}</span>
+            </dt>
+            <dd className="tabular-nums">
+              <span className="font-semibold text-[var(--color-ink)]">{value === null ? "–" : value.toLocaleString()}</span> {label}
+            </dd>
+          </div>
+        ))}
+      </dl>
     </>
   );
   return (
-    <li>
+    <li className="min-w-0">
       {props.href ? (
         <a href={props.href} target="_blank" rel="noopener noreferrer" title={props.title} className="block rounded-[var(--radius-lg)] transition-opacity hover:opacity-85">
           {body}

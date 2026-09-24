@@ -4,7 +4,7 @@ import { getEntitlement } from "@/lib/entitlements";
 import { logEvent } from "@/lib/errors";
 import { timingSafeEqualString } from "@/lib/secret-compare";
 import { isEtsyConfigured } from "@/lib/etsy";
-import { runListingMonitor, scoreWinnerPhotos, todayUtc, type MonitorRow } from "@/lib/listing-monitor";
+import { runListingMonitor, todayUtc, type MonitorRow } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,13 +95,6 @@ async function handle(req: NextRequest) {
       totals.keywordSnapshots += s.keywordSnapshots;
       totals.winnerPhotosScored += s.winnerPhotosScored;
       totals.errors += s.errors;
-      // Snapshot progress is persisted before optional AI work. At most one
-      // new score per chunk, and only while its full worst-case time fits.
-      if (s.topByKeyword && totals.winnerPhotosScored < 6) {
-        const scored = await scoreWinnerPhotos(admin, [...s.topByKeyword.values()], 1, started + TIME_BUDGET_MS);
-        totals.winnerPhotosScored += scored.scored;
-        totals.errors += scored.errors;
-      }
     } catch (err) {
       totals.errors += 1;
       logEvent("listing_monitor.chunk_failed", {

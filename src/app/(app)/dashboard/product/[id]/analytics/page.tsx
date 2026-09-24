@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 import { createSupabaseServerClient, getProtectedPageIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { unwrapOrThrow } from "@/lib/unwrap";
-import { RUBRIC_VERSION } from "@/lib/versions";
 import { ProductViewSwitch } from "@/components/dashboard/product-view-switch";
 import {
   ListingAnalyticsView,
@@ -16,7 +15,6 @@ import {
   diagnose,
   evaluateAllTests,
   latestByKeyword,
-  median,
   listingChecks,
   windowStats,
   recentWinnerFavoriteRate,
@@ -98,27 +96,10 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   const tests = evaluateAllTests(events, series, market, today, keywordHistory, monitor?.revision);
   const latest = snaps.length ? snaps[snaps.length - 1] : null;
 
-  // Mavya photo scores: the seller's main photo (raw, honest) and the top listings'.
-  const winnerImageIds = [
-    ...new Set(latestKeywords.flatMap((k) => k.top.slice(0, 10).map((t) => t.mainImageId).filter((x): x is number => Boolean(x)))),
-  ];
-  const winnerScores = new Map<number, number>();
-  if (latest?.main_image_id) winnerImageIds.push(latest.main_image_id);
-  if (winnerImageIds.length) {
-    const { data } = await timed("analytics.scores", async () => await supabase
-      .from("etsy_image_scores")
-      .select("etsy_image_id, raw_score")
-      .eq("rubric_version", RUBRIC_VERSION)
-      .in("etsy_image_id", winnerImageIds));
-    for (const r of (data as { etsy_image_id: number | string; raw_score: number | string }[] | null) ?? []) {
-      winnerScores.set(Number(r.etsy_image_id), Number(r.raw_score));
-    }
-  }
-  const ownPhotoScore = latest?.main_image_id ? winnerScores.get(latest.main_image_id) ?? null : null;
-  const topThreeIds = new Set(latestKeywords.flatMap((k) => k.top.slice(0, 3).map((t) => t.mainImageId)));
-  const topThreeScores = [...topThreeIds].map((id) => id ? winnerScores.get(id) : undefined)
-    .filter((v): v is number => typeof v === "number");
-  const winnerPhotoScore = median(topThreeScores);
+  // Other shops' photos are not AI-scored (founder decision 2026-09-24), so
+  // the photo-score comparison in diagnose() stays off.
+  const ownPhotoScore = null;
+  const winnerPhotoScore = null;
 
   const checks = listingChecks({ latest, keywords, latestKeywords });
   const diagnosis = diagnose({
@@ -170,18 +151,14 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
     },
     series: series.slice(-30).map((p) => ({ date: p.date, viewsPerDay: p.viewsPerDay, favoritesPerDay: p.favoritesPerDay })),
     changeDates: events.map((e) => ({ date: e.date, kinds: e.kinds })),
-    keywords: latestKeywords.map((k) => ({
+    // The seller's own order: their main keyword first, not alphabetical.
+    keywords: [...latestKeywords].sort((x, y) => keywords.indexOf(x.keyword) - keywords.indexOf(y.keyword)).map((k) => ({
       keyword: k.keyword,
       position: k.position,
       depth: k.depth,
       date: k.snapshot_date,
-      top: k.top.slice(0, 5).map((t) => ({
-        ...t,
-        photoScore: t.mainImageId ? winnerScores.get(t.mainImageId) ?? null : null,
-      })),
+      top: k.top.slice(0, 5),
     })),
-    ownPhotoScore,
-    winnerPhotoScore,
     diagnosis,
     checks,
     tests: tests.map((t) => ({
