@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
-import { ArrowRight, Check, Clock, ExternalLink, Eye, Heart, ImageIcon, Info, Link2, Pencil, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Clock, ExternalLink, Info, Link2, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CheckIssue, ChangeKind, Diagnosis, TestVerdict, TopEntry } from "@/lib/listing-analytics";
 
@@ -705,102 +705,93 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
             })}
           </ul>
 
-          <p className="mt-6 text-[13px] font-medium text-[var(--color-ink)]">
-            Top 5 in Etsy search for &ldquo;{k.keyword}&rdquo;
-          </p>
-          <ul className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-4 sm:grid-cols-3 lg:grid-cols-6">
-            <ListingTile
-              badge={k.position !== null ? `You · #${k.position}` : "You"}
-              highlight
-              imageUrl={vm.listing?.mainImageUrl ?? null}
-              title={vm.listing?.title ?? "Your listing"}
-              views={vm.listing?.totalViews ?? null}
-              favorites={vm.listing?.totalFavorites ?? null}
-              photos={vm.listing?.imageCount ?? null}
-              href={vm.listing?.url ?? null}
-            />
-            {k.top.slice(0, 5).map((t, i) => (
-              <ListingTile
-                key={t.id}
-                badge={`#${t.position ?? i + 1}`}
-                imageUrl={t.mainImageUrl}
-                title={t.title}
-                views={t.views}
-                favorites={t.favorites}
-                photos={t.imageCount}
-                href={t.url}
-              />
-            ))}
-          </ul>
-          <p className="mt-3 text-[12px] text-[var(--color-ink-soft)]">All-time numbers from Etsy.</p>
+          <RankingTable
+            keyword={k.keyword}
+            you={{
+              id: -1,
+              position: k.position ?? undefined,
+              title: vm.listing?.title ?? "Your listing",
+              tags: [],
+              views: vm.listing?.totalViews ?? null,
+              favorites: vm.listing?.totalFavorites ?? null,
+              imageCount: vm.listing?.imageCount ?? 0,
+              mainImageId: null,
+              mainImageUrl: vm.listing?.mainImageUrl ?? null,
+              url: vm.listing?.url ?? null,
+            }}
+            depth={k.depth}
+            top={k.top.slice(0, 5)}
+          />
         </>
       )}
     </section>
   );
 }
 
-function ListingTile(props: {
-  badge: string;
-  highlight?: boolean;
-  imageUrl: string | null;
-  title: string;
-  views: number | null;
-  favorites: number | null;
-  photos: number | null;
-  href: string | null;
-}) {
-  const stats = [
-    { Icon: Eye, value: props.views, label: "views" },
-    { Icon: Heart, value: props.favorites, label: "favorites" },
-    { Icon: ImageIcon, value: props.photos, label: "photos" },
-  ];
-  const body = (
-    <>
-      <div
-        className={cn(
-          "relative aspect-square overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]",
-          props.highlight && "ring-2 ring-[var(--color-primary)] ring-offset-2"
-        )}
-      >
-        {props.imageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={etsyThumb(props.imageUrl, "il_340x270") ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-        )}
-        <span
-          className={cn(
-            "absolute left-1.5 top-1.5 rounded-full px-2 py-0.5 text-[11.5px] font-bold leading-tight",
-            props.highlight ? "bg-[var(--color-primary)] text-white" : "bg-white/95 text-[var(--color-ink)]"
-          )}
-        >
-          {props.badge}
-        </span>
-      </div>
-      <p className="mt-2 line-clamp-1 text-[13px] font-medium text-[var(--color-ink)]">{props.title}</p>
-      <dl className="mt-1 space-y-0.5 text-[12.5px] text-[var(--color-ink-muted)]">
-        {stats.map(({ Icon, value, label }) => (
-          <div key={label} className="flex items-center gap-1.5">
-            <dt className="flex items-center">
-              <Icon className="h-3.5 w-3.5" aria-hidden="true" />
-              <span className="sr-only">{label}</span>
-            </dt>
-            <dd className="tabular-nums">
-              <span className="font-semibold text-[var(--color-ink)]">{value === null ? "–" : value.toLocaleString()}</span> {label}
-            </dd>
-          </div>
-        ))}
-      </dl>
-    </>
-  );
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+const num = (n: number | null) => (n === null ? "–" : n >= 10_000 ? compact.format(n) : n.toLocaleString("en-US"));
+
+/**
+ * The top listings for one keyword as a ranked list, with the seller's own
+ * row placed at its real rank (or after the list when outside the top 100).
+ * Numbers sit in aligned columns so they can be compared at a glance.
+ */
+function RankingTable({ keyword, you, depth, top }: { keyword: string; you: TopEntry; depth: number; top: TopEntry[] }) {
+  const rows = [...top.map((t, i) => ({ ...t, position: t.position ?? i + 1, mine: false })), { ...you, mine: true }];
+  const ranked = rows
+    .filter((r) => r.position !== undefined)
+    .sort((a, b) => (a.position as number) - (b.position as number));
+  const unranked = rows.filter((r) => r.position === undefined);
+  const col = "w-16 flex-shrink-0 text-right tabular-nums sm:w-20";
   return (
-    <li className="min-w-0">
-      {props.href ? (
-        <a href={props.href} target="_blank" rel="noopener noreferrer" title={props.title} className="block rounded-[var(--radius-lg)] transition-opacity hover:opacity-85">
-          {body}
-        </a>
-      ) : (
-        body
-      )}
-    </li>
+    <div className="mt-6">
+      <p className="text-[13px] font-medium text-[var(--color-ink)]">Top listings for &ldquo;{keyword}&rdquo;</p>
+      <div className="mt-2 flex items-center gap-3 border-b border-[var(--color-border-soft)] pb-2 text-[12px] text-[var(--color-ink-soft)]">
+        <span className="w-8 flex-shrink-0">Rank</span>
+        <span className="min-w-0 flex-1">Listing</span>
+        <span className={col}>Views</span>
+        <span className={col}>Favorites</span>
+        <span className={cn(col, "hidden sm:block")}>Photos</span>
+      </div>
+      <ol className="divide-y divide-[var(--color-border-soft)]">
+        {[...ranked, ...unranked].map((r) => (
+          <li
+            key={r.mine ? "you" : r.id}
+            className={cn("flex items-center gap-3 py-2.5", r.mine && "-mx-3 rounded-[var(--radius-lg)] bg-[var(--color-tint)] px-3")}
+          >
+            <span className="w-8 flex-shrink-0 text-[14px] font-semibold tabular-nums text-[var(--color-ink)]">
+              {r.position !== undefined ? `#${r.position}` : "–"}
+            </span>
+            <a
+              href={r.url ?? undefined}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex min-w-0 flex-1 items-center gap-3 hover:underline"
+              title={r.title}
+            >
+              <span className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
+                {r.mainImageUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={etsyThumb(r.mainImageUrl, "il_170x135") ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="block truncate text-[14px] text-[var(--color-ink)]">{r.title}</span>
+                {r.mine && (
+                  <span className="block text-[12px] font-semibold text-[var(--color-primary)]">
+                    {r.position !== undefined ? "Your listing" : `Your listing · not in top ${depth}`}
+                  </span>
+                )}
+              </span>
+            </a>
+            <span className={cn(col, "text-[14px] text-[var(--color-ink)]")}>{num(r.views)}</span>
+            <span className={cn(col, "text-[14px] text-[var(--color-ink)]")}>{num(r.favorites)}</span>
+            <span className={cn(col, "hidden text-[14px] text-[var(--color-ink)] sm:block")}>{r.imageCount || "–"}</span>
+          </li>
+        ))}
+      </ol>
+      <p className="mt-3 text-[12px] text-[var(--color-ink-soft)]">All-time numbers from Etsy.</p>
+    </div>
   );
 }
 
