@@ -18,6 +18,8 @@ export const ACTION_COSTS = {
   score: 1,
   generate: 5,
   checklist: 0,
+  /** Listing writer (text-only). Counts toward the global daily AI ceiling only. */
+  write: 1,
 } as const;
 
 export type BillableAction = keyof typeof ACTION_COSTS;

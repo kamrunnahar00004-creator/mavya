@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type MouseEvent } from "react";
-import { BarChart3, ImageIcon, Loader2 } from "lucide-react";
+import { BarChart3, ImageIcon, Loader2, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 /**
- * Photo | Analytics switch at the top of a product page (Listing Coach,
+ * Photo | Write | Analytics switch at the top of a product page (Listing Coach,
  * docs/NORTH_STAR_LISTING_COACH.md). Lives on the product page, not in the
  * global header: it belongs to this one listing. Each view is its own URL
  * (survives refresh/back).
@@ -22,18 +22,19 @@ export function ProductViewSwitch({
   active,
 }: {
   productId: string;
-  active: "photo" | "analytics";
+  active: "photo" | "write" | "analytics";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
-  const [target, setTarget] = useState<"photo" | "analytics" | null>(null);
+  const [target, setTarget] = useState<"photo" | "write" | "analytics" | null>(null);
   const base = `/dashboard/product/${productId}`;
   const items = [
     { key: "photo" as const, href: base, label: "Photo", Icon: ImageIcon },
+    { key: "write" as const, href: `${base}/write`, label: "Write", Icon: PenLine },
     { key: "analytics" as const, href: `${base}/analytics`, label: "Analytics", Icon: BarChart3 },
   ];
 
-  function go(e: MouseEvent<HTMLAnchorElement>, key: "photo" | "analytics", href: string) {
+  function go(e: MouseEvent<HTMLAnchorElement>, key: "photo" | "write" | "analytics", href: string) {
     // Let modified clicks (new tab/window) behave like normal links.
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
     e.preventDefault();

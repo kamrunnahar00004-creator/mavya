@@ -1,4 +1,4 @@
-import { BarChart3, ImageIcon } from "lucide-react";
+import { BarChart3, ImageIcon, PenLine } from "lucide-react";
 
 /**
  * Instant skeleton while the Analytics server page renders. Mirrors the real
@@ -16,6 +16,10 @@ export default function AnalyticsLoading() {
           <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)]">
             <ImageIcon className="h-4 w-4" aria-hidden="true" />
             Photo
+          </span>
+          <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)]">
+            <PenLine className="h-4 w-4" aria-hidden="true" />
+            Write
           </span>
           <span className="inline-flex items-center gap-2 rounded-full bg-[var(--color-neutral-dark)] px-5 py-2 text-[14px] font-semibold text-white">
             <BarChart3 className="h-4 w-4" aria-hidden="true" />

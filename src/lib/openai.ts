@@ -435,6 +435,40 @@ export async function checklistCall(args: {
 }
 
 /**
+ * Listing writer (title, 13 tags, description): TEXT-ONLY strict-JSON call.
+ * Model defaults to the vision model; OPENAI_TEXT_MODEL overrides it.
+ * Returns the raw JSON string (caller parses, sanitizes, and validates).
+ */
+export async function writerCall(args: {
+  systemPrompt: string;
+  userMessage: string;
+  schema: unknown;
+}): Promise<string> {
+  const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${getOpenAIKey()}`,
+    },
+    body: JSON.stringify({
+      model: process.env.OPENAI_TEXT_MODEL || getVisionModel(),
+      response_format: { type: "json_schema", json_schema: args.schema },
+      messages: [
+        { role: "system", content: args.systemPrompt },
+        { role: "user", content: args.userMessage },
+      ],
+    }),
+    signal: AbortSignal.timeout(OPENAI_JSON_TIMEOUT_MS),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`OpenAI writer ${res.status}: ${text.slice(0, 400)}`);
+  }
+  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
+  return data.choices?.[0]?.message?.content ?? "";
+}
+
+/**
  * Compare an original photo with a generated candidate. Returns the raw JSON
  * string the model produced under the fidelity schema (caller parses + validates).
  */
