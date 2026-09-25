@@ -3,10 +3,10 @@ import {
   EtsyApiError,
   fetchEtsyImage,
   fetchListingsBatch,
-  searchActiveListings,
   type EtsyListing,
 } from "@/lib/etsy";
 import type { TopEntry } from "@/lib/listing-analytics";
+import { getSearchCached } from "@/lib/search-cache";
 import { scorePhoto } from "@/lib/score-photo";
 import { rawOverall } from "@/lib/calibration";
 import { RUBRIC_VERSION } from "@/lib/versions";
@@ -132,7 +132,8 @@ export async function runListingMonitor(
   const searchResults = new Map<string, EtsyListing[]>();
   for (const kw of keywords) {
     try {
-      searchResults.set(kw, await searchActiveListings(kw, 100, deadlineAt));
+      // Shared daily cache: one Etsy search per keyword per day for all sellers.
+      searchResults.set(kw, (await getSearchCached(admin, kw, today, deadlineAt)).results);
     } catch (err) {
       summary.errors += 1;
       logEvent("listing_monitor.search_failed", {

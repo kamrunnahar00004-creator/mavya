@@ -48,7 +48,9 @@ describe("subscribe page pricing display matches the real, live generation budge
     expect(subscribePage).not.toContain("PLAN_FEATURES");
     expect(subscribePage).not.toContain('"Everything in Starter"');
     expect(subscribePage).not.toContain('"Everything in Shop"');
-    expect(subscribePage).toContain("`${plan.activeListingLimit} active listings`");
+    // Phase 2 (2026-09-25): plans are sized by shop, not 5/15/40 slots.
+    expect(subscribePage).toContain("`Track up to ${plan.activeListingLimit.toLocaleString(\"en-US\")} listings daily`");
+    expect(subscribePage).toContain("`${keywordLimitFor(plan.activeListingLimit)} tracked search keywords`");
     // Founder moved this out of the repeated features into the price block.
     expect(subscribePage).toContain("Generate up to {(plan.dailyFixes * 30).toLocaleString()} images/month");
   });

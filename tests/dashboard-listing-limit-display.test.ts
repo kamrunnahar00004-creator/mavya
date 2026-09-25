@@ -17,7 +17,7 @@ describe("dashboard shows the active-listing limit proactively", () => {
   it("uses the already-fetched card count, not a second query", () => {
     const guardIndex = dashboard.indexOf('typeof entitlement.activeListingLimit === "number"');
     const block = dashboard.slice(guardIndex, guardIndex + 400);
-    expect(block).toContain("{cards.length} of {entitlement.activeListingLimit} active listings used.");
+    expect(block).toContain("{cards.length} of {entitlement.activeListingLimit} listings in use.");
   });
 
   it("shows a distinct hint once at or over the limit", () => {

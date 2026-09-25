@@ -122,7 +122,7 @@ describe("both product-creation paths use the enforced RPC, never a direct inser
   });
 
   it("photo-persistence.ts fails closed on a missing/invalid limit before ever calling the RPC", () => {
-    expect(persistence).toContain("![5, 15, 40].includes(input.activeListingLimit)");
+    expect(persistence).toContain("!ALLOWED_LISTING_LIMITS.includes(input.activeListingLimit)");
     expect(persistence).toContain('"billing_unavailable"');
     expect(persistence).toContain('"Your plan could not be verified. Try again shortly."');
   });

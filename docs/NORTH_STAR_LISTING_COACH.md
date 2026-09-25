@@ -443,3 +443,7 @@ Build order:
 
 Not now: weekly email, competitor watch, 1,000-listing extras, win cards,
 further photo polish.
+
+Status 2026-09-25: steps 0-6 BUILT and committed locally (not pushed).
+Needs migration 0033 applied, then Codex review, then push. See
+docs/CODEX_HANDOFF_WRITE_TAB_2026-09-25.md and docs/CODEX_HANDOFF_PHASE2_2026-09-25.md.

@@ -223,7 +223,7 @@ describe("daily cron boundaries", () => {
     m.admin.mockReturnValue(admin);
     expect((await cron(cronRequest("test-secret"))).status).toBe(200);
     expect(admin.calls).toContainEqual({ table: "listing_monitors", method: "limit", args: [200] });
-    expect(admin.calls.filter((c) => c.method === "lte" && c.args[0] === "next_check_at")).toHaveLength(2);
+    expect(admin.calls.filter((c) => c.table === "listing_monitors" && c.method === "lte" && c.args[0] === "next_check_at")).toHaveLength(2);
     expect(m.runner).toHaveBeenCalledTimes(1);
     expect(m.runner.mock.calls[0][2]).toEqual(expect.objectContaining({ maxWinnerScores: 0, deadlineAt: expect.any(Number) }));
   });

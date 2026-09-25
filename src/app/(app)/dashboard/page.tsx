@@ -9,6 +9,9 @@ import { getEntitlement } from "@/lib/entitlements";
 import { signThumbUrls } from "@/lib/batch-sign-urls";
 import { loadDashboardOverview } from "@/lib/dashboard-overview";
 import { timed } from "@/lib/perf";
+import { loadShopHome } from "@/lib/shop-monitor";
+import { todayUtc } from "@/lib/listing-monitor";
+import { ShopHome } from "@/components/dashboard/shop-home";
 
 export const dynamic = "force-dynamic";
 
@@ -29,9 +32,10 @@ export default async function DashboardPage() {
   // Entitlement and RLS-scoped dashboard reads are independent once identity
   // is verified. Run them together, but render nothing until the paid gate
   // passes. This removes one serial Supabase round trip without weakening it.
-  const [entitlement, rows] = await Promise.all([
+  const [entitlement, rows, shopHome] = await Promise.all([
     timed("dashboard.entitlement", () => getEntitlement(user.id)),
     timed("dashboard.hydrate", () => loadDashboardOverview(supabase)),
+    timed("dashboard.shop", () => loadShopHome(supabase, todayUtc())),
   ]);
   const pastDue = entitlement.reason === "past_due";
   if (!entitlement.active && !pastDue) redirect("/subscribe");
@@ -121,34 +125,24 @@ export default async function DashboardPage() {
       );
     }
 
+    // No products yet. With a connected shop, the Shop home IS the start:
+    // "Fix these 3" opens listings and imports their photos. Without one,
+    // connecting the shop comes first, with photo upload as the alternative.
     return (
-      <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[1200px] flex-col items-center justify-center px-6 pt-12 pb-20 text-center">
-        <span className="flex h-16 w-16 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-tint)] text-[var(--color-primary)] shadow-[var(--shadow-soft)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
-          <ImageUp className="h-7 w-7" strokeWidth={1.7} aria-hidden="true" />
-        </span>
-        <h1 className="mt-5 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
-          Get More Etsy Clicks in 4 Simple Steps
-        </h1>
-        <ol className="mt-6 flex max-w-[440px] flex-col gap-3 text-left text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
-          {[
-            "Upload all photos from the same Etsy listing, or add them one by one.",
-            "See how every photo scores and what is hurting clicks.",
-            "Fix weak photos in one click.",
-            "Improve the full listing with stronger, more clickable images.",
-          ].map((step, i) => (
-            <li key={step} className="flex items-start gap-3">
-              <span
-                className="mt-0.5 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[var(--color-tint)] text-[13px] font-bold text-[var(--color-primary)]"
-                aria-hidden="true"
-              >
-                {i + 1}
-              </span>
-              <span>{step}</span>
-            </li>
-          ))}
-        </ol>
-        <div className="mt-8 w-full max-w-[520px]">
-          <AddProductCard variant="dropzone" />
+      <main className="mx-auto max-w-[760px] px-4 pt-8 pb-20 sm:px-6">
+        <h1 className="sr-only">Your shop</h1>
+        <ShopHome data={shopHome} canEdit={entitlement.active} />
+        <div className="mt-10 text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-[var(--radius-xl)] bg-[var(--color-tint)] text-[var(--color-primary)]">
+            <ImageUp className="h-6 w-6" strokeWidth={1.7} aria-hidden="true" />
+          </span>
+          <h2 className="mt-3 text-[18px] font-bold text-[var(--color-ink)]">
+            {shopHome.shop ? "Or upload photos yourself" : "Or start by uploading photos"}
+          </h2>
+          <p className="mt-1 text-[14.5px] text-[var(--color-ink-muted)]">Mavya scores every photo and makes an AI-improved version.</p>
+          <div className="mx-auto mt-5 w-full max-w-[520px]">
+            <AddProductCard variant="dropzone" />
+          </div>
         </div>
       </main>
     );
@@ -158,15 +152,19 @@ export default async function DashboardPage() {
     <main className="mx-auto max-w-[1200px] px-6 py-10">
       <DashboardRatingPoller jobs={activeRatings} />
       {pastDueBanner && <div className="mb-6">{pastDueBanner}</div>}
-      <h1 className="font-display text-[30px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
-        Your products
-      </h1>
+      <h1 className="sr-only">Your shop</h1>
+      <div className="mx-auto mb-12 max-w-[760px]">
+        <ShopHome data={shopHome} canEdit={entitlement.active} />
+      </div>
+      <h2 className="font-display text-[24px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
+        Listings you&apos;re working on
+      </h2>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
-        Each product is one Etsy listing.
+        Photos, writing, and tracking for each listing.
       </p>
       {typeof entitlement.activeListingLimit === "number" && (
         <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
-          {cards.length} of {entitlement.activeListingLimit} active listings used.
+          {cards.length} of {entitlement.activeListingLimit} listings in use.
           {!pastDue && cards.length >= entitlement.activeListingLimit && (
             <span className="text-[var(--color-ink)]"> Delete a listing to add another.</span>
           )}

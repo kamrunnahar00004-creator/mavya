@@ -7,6 +7,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AuthModal } from "@/components/auth-modal";
 import { cn } from "@/lib/utils";
 import { generationDailyMax } from "@/lib/generation-policy";
+import { keywordLimitFor } from "@/lib/plans";
 
 type PurchasablePlanKey = "starter" | "shop" | "power";
 type BillingCadence = "monthly" | "annual";
@@ -50,7 +51,7 @@ const PLAN_DISPLAY: Record<
     tagline: "For new and growing shops",
     monthlyCents: 2900,
     annualCents: 29000,
-    activeListingLimit: 5,
+    activeListingLimit: 100,
     dailyFixes: generationDailyMax("starter"),
   },
   shop: {
@@ -58,7 +59,7 @@ const PLAN_DISPLAY: Record<
     tagline: "For active Etsy sellers",
     monthlyCents: 5900,
     annualCents: 59000,
-    activeListingLimit: 15,
+    activeListingLimit: 300,
     dailyFixes: generationDailyMax("shop"),
     highlight: true,
   },
@@ -67,7 +68,7 @@ const PLAN_DISPLAY: Record<
     tagline: "For high-volume shops",
     monthlyCents: 9900,
     annualCents: 99000,
-    activeListingLimit: 40,
+    activeListingLimit: 1000,
     dailyFixes: generationDailyMax("power"),
     bestValue: true,
   },
@@ -80,13 +81,14 @@ const PLAN_DISPLAY: Record<
  *  cap, only a 6/min anti-spam throttle -- verified against the route
  *  directly, not assumed. */
 function planFeatures(plan: (typeof PLAN_DISPLAY)[PurchasablePlanKey]): string[] {
+  // Phase 2 (2026-09-25): plans are sized by shop, not by 5/15/40 slots.
   return [
-    `${plan.activeListingLimit} active listings`,
+    `Track up to ${plan.activeListingLimit.toLocaleString("en-US")} listings daily`,
+    `${keywordLimitFor(plan.activeListingLimit)} tracked search keywords`,
     `${plan.dailyFixes} image generations a day`,
+    "Shop home: what to fix first",
+    "AI-written titles, tags, and descriptions",
     "Score every photo, fix any photo in one click",
-    "Fix your whole listing at once",
-    "Unlimited rescoring",
-    "Full-resolution downloads",
     "Cancel anytime",
   ];
 }
@@ -363,7 +365,7 @@ function SubscribeInner() {
               </p>
               <p className="mt-2 text-[15px] text-[var(--color-ink)]">
                 {status.activeListingLimit != null
-                  ? `${status.activeListingLimit} active listing${status.activeListingLimit === 1 ? "" : "s"}`
+                  ? `Track up to ${status.activeListingLimit.toLocaleString("en-US")} listings`
                   : "Active"}
               </p>
               {status.currentPeriodEnd && (

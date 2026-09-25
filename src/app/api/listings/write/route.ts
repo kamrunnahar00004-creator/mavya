@@ -14,6 +14,10 @@ import {
   parseWriterOutput,
 } from "@/lib/listing-writer";
 import { loadWriterContext } from "@/lib/listing-writer-context";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
+import { isEtsyConfigured } from "@/lib/etsy";
+import { findKeywordIdeas } from "@/lib/keyword-finder-server";
+import { todayUtc } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -67,6 +71,22 @@ export async function POST(req: NextRequest) {
   if (!ctx) return apiError("forbidden", "Link your Etsy listing first, then Mavya can write for it.");
 
   if (!(await withinGlobalBudget("write"))) return apiError("rate_limited", "Mavya is busy right now. Try again in a little while.");
+
+  // Keyword check first (no AI; shared daily cache): lets the writer prefer
+  // low-competition phrases and skip crowded or quiet ones. Best effort.
+  if (ctx.listingId && isEtsyConfigured()) {
+    try {
+      ctx.ideas = await findKeywordIdeas(
+        createSupabaseAdminClient(),
+        { listingId: ctx.listingId, title: ctx.current.title, tags: ctx.current.tags },
+        ctx.keywords[0]?.keyword ?? null,
+        todayUtc(),
+        Date.now() + 25_000
+      );
+    } catch {
+      logEvent("listing.write_keywords_skipped", { userId: user.id });
+    }
+  }
 
   const userMessage = buildWriterMessage(ctx);
   for (let attempt = 0; attempt < 2; attempt++) {

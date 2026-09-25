@@ -6,6 +6,7 @@ import { useState, useTransition, type FormEvent } from "react";
 import { ArrowRight, Check, Clock, ExternalLink, Info, Link2, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CheckIssue, ChangeKind, Diagnosis, TestVerdict, TopEntry } from "@/lib/listing-analytics";
+import { LABEL_TEXT, type KeywordIdea, type KeywordLabel } from "@/lib/keyword-finder";
 
 export type AnalyticsViewModel = {
   productId: string;
@@ -124,6 +125,7 @@ export function ListingAnalyticsView({ vm }: { vm: AnalyticsViewModel }) {
           <ViewsChart vm={vm} />
           <ThingsToFix vm={vm} />
           <Search vm={vm} />
+          <KeywordIdeas vm={vm} />
           <Changes vm={vm} />
           <p className="flex items-start gap-2 px-1 text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
             <Info className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" aria-hidden="true" />
@@ -723,6 +725,122 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
             top={k.top.slice(0, 5)}
           />
         </>
+      )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Keyword ideas (keyword finder): no AI, public Etsy data, shared daily cache
+// ---------------------------------------------------------------------------
+
+const LABEL_STYLE: Record<KeywordLabel, string> = {
+  winning: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
+  add: "bg-[var(--color-tint)] text-[var(--color-primary)]",
+  keep: "bg-[var(--color-page-deep)] text-[var(--color-ink)]",
+  crowded: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]",
+  quiet: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
+};
+
+function KeywordIdeas({ vm }: { vm: AnalyticsViewModel }) {
+  const router = useRouter();
+  const tracked = vm.monitor!.keywords;
+  const [ideas, setIdeas] = useState<KeywordIdea[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function find() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/listings/keywords", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productId: vm.productId }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; ideas?: KeywordIdea[]; error?: string };
+      if (!res.ok || !json.ideas) setError(json.error ?? "Could not check keywords. Try again.");
+      else setIdeas(json.ideas);
+    } catch {
+      setError("Network error. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function track(keyword: string) {
+    setSaving(keyword);
+    setError(null);
+    const res = await postJson("/api/listings/settings", { productId: vm.productId, keywords: [...tracked, keyword].slice(-3) });
+    setSaving(null);
+    if (!res.ok) setError(res.error ?? "Could not track that keyword.");
+    else router.refresh();
+  }
+
+  return (
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="ideas-title">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="ideas-title" className={sectionTitle}>
+          Keyword ideas
+        </h2>
+        {ideas && (
+          <button type="button" onClick={find} disabled={busy} className={cn(btnGhost, "-mr-3")}>
+            {busy ? "Checking…" : "Check again"}
+          </button>
+        )}
+      </div>
+      {!ideas ? (
+        <>
+          <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
+            Mavya checks phrases from your listing and from top listings, then marks which are worth a tag.
+          </p>
+          <button type="button" onClick={find} disabled={busy || !vm.canEdit} className={cn(btnPrimary, "mt-4")}>
+            {busy ? "Checking Etsy…" : "Find keyword ideas"}
+          </button>
+        </>
+      ) : ideas.length === 0 ? (
+        <p className="mt-2 text-[14px] text-[var(--color-ink-muted)]">No ideas found for this listing yet.</p>
+      ) : (
+        <>
+          <ul className="mt-2 divide-y divide-[var(--color-border-soft)]">
+            {ideas.map((i) => {
+              const isTracked = tracked.includes(i.keyword);
+              return (
+                <li key={i.keyword} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[15px] text-[var(--color-ink)]">&ldquo;{i.keyword}&rdquo;</p>
+                    <p className="text-[12.5px] tabular-nums text-[var(--color-ink-muted)]">
+                      {compact.format(i.competition)} listings
+                      {i.interest !== null && ` · top listings ${compact.format(i.interest)} views`}
+                      {i.position !== null ? ` · you about #${i.position}` : " · you not in first 100"}
+                    </p>
+                  </div>
+                  <span className={cn("rounded-full px-2.5 py-1 text-[12px] font-semibold", LABEL_STYLE[i.label])}>{LABEL_TEXT[i.label]}</span>
+                  {(i.label === "add" || i.label === "winning" || i.label === "keep") && !isTracked && (
+                    <button
+                      type="button"
+                      onClick={() => track(i.keyword)}
+                      disabled={saving !== null || !vm.canEdit}
+                      className={cn(btnGhost, "border border-[var(--color-border)]")}
+                    >
+                      {saving === i.keyword ? "Saving…" : "Track"}
+                    </button>
+                  )}
+                  {isTracked && <span className="text-[12.5px] text-[var(--color-ink-soft)]">Tracked</span>}
+                </li>
+              );
+            })}
+          </ul>
+          <p className="mt-2 text-[12px] text-[var(--color-ink-soft)]">
+            &ldquo;Views&rdquo; means the top listings for that phrase, all time. Etsy does not share search volume. Tracking keeps your 3 newest keywords.
+          </p>
+        </>
+      )}
+      {error && (
+        <p role="alert" className="mt-3 text-[13.5px] text-[var(--color-weak)]">
+          {error}
+        </p>
       )}
     </section>
   );

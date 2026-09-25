@@ -46,14 +46,14 @@ describe("entitlementFromRow (server-side subscription policy)", () => {
     expect(e.activeListingLimit).toBeNull();
   });
 
-  it("active legacy subscription -> access, 5 active-listing slots, no policy lookup needed", () => {
+  it("active legacy subscription -> access, 100-listing limit, no policy lookup needed", () => {
     const e = entitlement(row({}));
     expect(e.active).toBe(true);
     expect(e.reason).toBe("ok");
     expect(e.periodKey).toBe("month:2026-07");
     expect(e.planKey).toBe("legacy");
     expect(e.cadence).toBe("monthly");
-    expect(e.activeListingLimit).toBe(5);
+    expect(e.activeListingLimit).toBe(100);
   });
 
   it("uses one UTC monthly abuse-backstop bucket for monthly and annual plans", () => {
@@ -73,12 +73,12 @@ describe("entitlementFromRow (server-side subscription policy)", () => {
     expect(e.active).toBe(true);
     expect(e.planKey).toBe("starter");
     expect(e.cadence).toBe("monthly");
-    expect(e.activeListingLimit).toBe(5);
+    expect(e.activeListingLimit).toBe(100);
   });
 
   it("active shop/power subscriptions resolve their own active-listing limits", () => {
-    expect(entitlement(row({ price_id: "price_shop_monthly" })).activeListingLimit).toBe(15);
-    expect(entitlement(row({ price_id: "price_power_monthly" })).activeListingLimit).toBe(40);
+    expect(entitlement(row({ price_id: "price_shop_monthly" })).activeListingLimit).toBe(300);
+    expect(entitlement(row({ price_id: "price_power_monthly" })).activeListingLimit).toBe(1000);
   });
 
   it("trialing counts as active", () => {

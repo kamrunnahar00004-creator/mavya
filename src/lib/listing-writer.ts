@@ -1,3 +1,5 @@
+import type { KeywordIdea } from "@/lib/keyword-finder";
+
 /**
  * Listing writer: title, 13 tags, description (north star 11.4 F, 11.12).
  *
@@ -41,8 +43,12 @@ export type WriterContext = {
   keywords: { keyword: string; position: number | null; depth: number }[];
   /** Tags the top listings for those keywords use, with how many use each. */
   winnerTags: { tag: string; count: number; total: number }[];
+  /** Keyword finder results (checked against Etsy today), when available. */
+  ideas?: KeywordIdea[];
   isDigital: boolean;
   facts: SellerFacts;
+  /** Linked Etsy listing id (lets the route run the keyword finder). */
+  listingId?: number;
 };
 
 export type RawWriterOutput = {
@@ -101,8 +107,9 @@ Hard rules:
 5. Tags: exactly 13. Each at most 20 characters. Letters, numbers, spaces,
    hyphens, and apostrophes only. Prefer 2 to 3 word phrases buyers would type.
    No duplicates and no near-duplicates. Keep the seller's strong existing tags,
-   and fill empty slots with relevant phrases from TOP LISTING TAGS that truly
-   describe this product. Skip anything that does not describe it.
+   and fill empty slots with relevant phrases from GOOD PHRASES first, then
+   TOP LISTING TAGS, that truly describe this product. NEVER use a phrase from
+   AVOID PHRASES. Skip anything that does not describe it.
 6. Description: plain, friendly, scannable. First 1-2 sentences say what it is
    and who it is for. Then short sections: What you get, Details (size,
    materials), and Care or How to use (for digital: file format and how it is
@@ -125,6 +132,11 @@ export function buildWriterMessage(ctx: WriterContext): string {
     `- "${k.keyword}": ${k.position === null ? `not in the first ${k.depth} results` : `about #${k.position}`}`
   );
   const winners = ctx.winnerTags.slice(0, 25).map((w) => `- ${w.tag} (used by ${w.count} of ${w.total})`);
+  const ideas = ctx.ideas ?? [];
+  const good = ideas
+    .filter((i) => i.label === "winning" || i.label === "add" || i.label === "keep")
+    .map((i) => `- ${i.keyword} (${i.competition.toLocaleString("en-US")} listings${i.position ? `, seller about #${i.position}` : ""})`);
+  const avoid = ideas.filter((i) => i.label === "crowded" || i.label === "quiet").map((i) => `- ${i.keyword}`);
   return [
     "CURRENT LISTING",
     `Title: ${ctx.current.title || "(none)"}`,
@@ -144,6 +156,12 @@ export function buildWriterMessage(ctx: WriterContext): string {
     "",
     "TOP LISTING TAGS (tags other top listings use)",
     ...(winners.length ? winners : ["(none)"]),
+    "",
+    "GOOD PHRASES (checked on Etsy today: buyers look, not too crowded)",
+    ...(good.length ? good : ["(none checked)"]),
+    "",
+    "AVOID PHRASES (checked on Etsy today: too crowded or almost nobody looks)",
+    ...(avoid.length ? avoid : ["(none)"]),
   ].join("\n");
 }
 
@@ -189,17 +207,26 @@ export function sanitizeTags(raw: string[]): string[] {
 }
 
 /** Why each tag is there, from real data only. */
-export function tagReasons(tags: string[], ctx: Pick<WriterContext, "current" | "keywords" | "winnerTags">): WrittenTag[] {
+const compact = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 });
+
+export function tagReasons(tags: string[], ctx: Pick<WriterContext, "current" | "keywords" | "winnerTags" | "ideas">): WrittenTag[] {
   const own = new Set(ctx.current.tags.map((t) => t.trim().toLowerCase()));
   const winners = new Map(ctx.winnerTags.map((w) => [w.tag.toLowerCase(), w]));
   const tracked = new Map(ctx.keywords.map((k) => [k.keyword.toLowerCase(), k]));
+  const ideas = new Map((ctx.ideas ?? []).map((i) => [i.keyword.toLowerCase(), i]));
   return tags.map((tag) => {
     const key = tag.toLowerCase();
     const isNew = !own.has(key);
     const w = winners.get(key);
     const k = tracked.get(key);
+    const idea = ideas.get(key);
     let reason: string;
-    if (k) reason = k.position === null ? "Your search phrase, not near the top yet" : `Your search phrase, about #${k.position}`;
+    if (idea?.label === "winning") reason = `You're about #${idea.position} for this`;
+    else if (idea?.label === "add" || idea?.label === "keep")
+      reason = `Low competition (${compact.format(idea.competition)} listings)${idea.position ? `, you about #${idea.position}` : ""}`;
+    else if (idea?.label === "crowded") reason = `Very crowded (${compact.format(idea.competition)} listings)`;
+    else if (idea?.label === "quiet") reason = "Few buyers look at this";
+    else if (k) reason = k.position === null ? "Your search phrase, not near the top yet" : `Your search phrase, about #${k.position}`;
     else if (w) reason = `Used by ${w.count} of ${w.total} top listings`;
     else if (!isNew) reason = "You already use this";
     else reason = "Describes your product";
@@ -242,7 +269,11 @@ export function parseWriterOutput(json: string): RawWriterOutput {
 
 export function finalizeWriterOutput(raw: RawWriterOutput, ctx: WriterContext): WriterResult {
   const titles = [...new Set(raw.titles.map(sanitizeTitle).filter((t) => t.length >= 10))].slice(0, 2);
-  const tags = sanitizeTags(raw.tags);
+  // New tags the keyword check marked crowded or quiet are dropped: they would
+  // waste a slot. Tags the seller already uses are never removed here.
+  const avoid = new Set((ctx.ideas ?? []).filter((i) => i.label === "crowded" || i.label === "quiet").map((i) => i.keyword.toLowerCase()));
+  const own = new Set(ctx.current.tags.map((t) => t.trim().toLowerCase()));
+  const tags = sanitizeTags(raw.tags).filter((t) => !avoid.has(t.toLowerCase()) || own.has(t.toLowerCase()));
   const description = sanitizeDescription(raw.description);
   if (titles.length === 0 || tags.length < 5 || description.length < 40) throw new Error("writer_unusable");
   return {

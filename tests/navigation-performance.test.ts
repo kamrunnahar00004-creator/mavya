@@ -41,7 +41,7 @@ describe("authenticated page concurrency", () => {
   it("runs dashboard entitlement and RLS hydration concurrently", () => {
     const dashboard = read("src/app/(app)/dashboard/page.tsx");
     expect(dashboard).toContain("getProtectedPageIdentity()");
-    expect(dashboard).toContain("const [entitlement, rows] = await Promise.all([");
+    expect(dashboard).toContain("const [entitlement, rows, shopHome] = await Promise.all([");
     expect(dashboard).toContain('timed("dashboard.entitlement"');
     expect(dashboard).toContain('timed("dashboard.hydrate"');
     expect(dashboard.indexOf("if (!entitlement.active")).toBeLessThan(

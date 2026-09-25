@@ -8,6 +8,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { EtsyApiError, fetchListingsBatch, isEtsyConfigured, parseEtsyListingInput } from "@/lib/etsy";
 import { normalizeKeywords, suggestKeywords } from "@/lib/listing-analytics";
 import { runListingMonitor } from "@/lib/listing-monitor";
+import { keywordsRemaining } from "@/lib/keyword-quota";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -77,10 +78,14 @@ export async function POST(req: NextRequest) {
   }
   if (!listing) return apiError("listing_not_found", "Etsy could not find that listing. Check the link.");
 
-  const keywords =
+  // Plan keyword allowance across all listings; suggestions are trimmed to
+  // what is left (a listing can still be tracked with zero keywords).
+  const quota = await keywordsRemaining(supabase, entitlement.activeListingLimit, productId);
+  const keywords = (
     requestedKeywords && requestedKeywords.length > 0
       ? requestedKeywords
-      : suggestKeywords(listing.title, listing.tags);
+      : suggestKeywords(listing.title, listing.tags)
+  ).slice(0, quota.remaining);
 
   const admin = createSupabaseAdminClient();
   const { data: previous, error: previousError } = await supabase.from("listing_monitors")

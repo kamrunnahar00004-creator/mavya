@@ -2,6 +2,7 @@ import sharp from "sharp";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { logEvent } from "@/lib/errors";
 import { MAX_SERVER_IMAGE_BYTES } from "@/lib/upload-limits";
+import { ALLOWED_LISTING_LIMITS } from "@/lib/plans";
 import { MAX_IMAGE_DIMENSION, MAX_SUPPORTING_PHOTOS, MIN_IMAGE_DIMENSION } from "@/lib/versions";
 import { hashImageBytes } from "@/lib/image-hash";
 import { runQueuedRatingOnce } from "@/lib/rating-jobs";
@@ -150,7 +151,7 @@ export async function persistPhotoAndQueueRating(
       // a clear message is better than relying solely on the DB layer).
       if (
         typeof input.activeListingLimit !== "number" ||
-        ![5, 15, 40].includes(input.activeListingLimit)
+        !ALLOWED_LISTING_LIMITS.includes(input.activeListingLimit)
       ) {
         return fail(
           "billing_unavailable",
@@ -170,7 +171,7 @@ export async function persistPhotoAndQueueRating(
         if (error.message?.includes("active_listing_limit_reached")) {
           return fail(
             "active_listing_limit_reached",
-            "You've reached your active listing limit. Delete a listing to free a slot.",
+            "You've reached your plan's listing limit. Delete a listing to add another.",
             409
           );
         }

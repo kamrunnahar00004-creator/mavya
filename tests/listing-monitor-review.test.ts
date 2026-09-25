@@ -11,6 +11,14 @@ vi.mock("@/lib/etsy", () => ({
   EtsyApiError: class extends Error {}, fetchListingsBatch: mocks.fetch,
   searchActiveListings: mocks.search, fetchEtsyImage: mocks.image,
 }));
+// The runner searches through the shared daily cache; route it to the same
+// search mock so the deadline and result assertions below stay meaningful.
+vi.mock("@/lib/search-cache", () => ({
+  getSearchCached: async (_admin: unknown, kw: string, _today: string, deadlineAt: number) => {
+    const results = await mocks.search(kw, 100, deadlineAt);
+    return { count: results.length, results, cached: false };
+  },
+}));
 vi.mock("@/lib/score-photo", () => ({ scorePhoto: mocks.score }));
 vi.mock("@/lib/calibration", () => ({ rawOverall: () => 7 }));
 vi.mock("@/lib/usage", () => ({ aiDisabled: mocks.disabled, withinGlobalBudget: mocks.budget }));
@@ -23,7 +31,7 @@ import { RUBRIC_VERSION } from "@/lib/versions";
 const monitor = { product_id: "p", user_id: "u", etsy_listing_id: 1, keywords: ["bunny"], revision: "rev", listing_revision: "lrev" };
 const today = "2026-09-24";
 function listing(id: number): EtsyListing {
-  return { listingId: id, shopId: 1, state: "active", title: "Bunny", description: "", tags: [], views: 100, favorites: 10, priceCents: 1000, currency: "USD", url: `https://www.etsy.com/listing/${id}`, createdAt: null, images: [{ id: id * 10, rank: 1, url570: "https://i.etsystatic.com/a.jpg", url170: null }] };
+  return { listingId: id, shopId: 1, state: "active", title: "Bunny", description: "", tags: [], views: 100, favorites: 10, priceCents: 1000, currency: "USD", url: `https://www.etsy.com/listing/${id}`, createdAt: null, images: [{ id: id * 10, rank: 1, url570: "https://i.etsystatic.com/a.jpg", url170: null, urlFull: null }] };
 }
 function database(rows: unknown[] = [{ ...monitor, enabled: true, last_checked_on: null }], scores: unknown[] = []) {
   const writes: { table: string; values: unknown; options?: unknown }[] = [];

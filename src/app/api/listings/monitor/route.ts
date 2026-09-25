@@ -5,6 +5,7 @@ import { logEvent } from "@/lib/errors";
 import { timingSafeEqualString } from "@/lib/secret-compare";
 import { isEtsyConfigured } from "@/lib/etsy";
 import { runListingMonitor, todayUtc, type MonitorRow } from "@/lib/listing-monitor";
+import { runShopMonitor, type ShopMonitorRow } from "@/lib/shop-monitor";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -103,8 +104,45 @@ async function handle(req: NextRequest) {
     }
   }
 
-  logEvent("listing_monitor.run", totals);
-  return NextResponse.json({ ok: true, ...totals });
+  // Shop tracking (Shop home) shares this daily run: Hobby allows daily crons
+  // only. Each shop is claimed before work, paid-only, bounded by the budget.
+  const shops = { due: 0, processed: 0, listings: 0, errors: 0 };
+  if (Date.now() - started < TIME_BUDGET_MS - 30_000) {
+    const { data: dueShops } = await admin
+      .from("shop_monitors")
+      .select("user_id, etsy_shop_id, shop_name")
+      .eq("enabled", true)
+      .lte("next_check_at", now)
+      .or(`last_checked_on.is.null,last_checked_on.lt.${today}`)
+      .order("next_check_at", { ascending: true })
+      .limit(50);
+    for (const s of (dueShops as ShopMonitorRow[] | null) ?? []) {
+      if (Date.now() - started >= TIME_BUDGET_MS - 30_000) break;
+      const { data: claimed } = await admin
+        .from("shop_monitors")
+        .update({ next_check_at: new Date(Date.now() + 3_600_000).toISOString() })
+        .eq("user_id", s.user_id)
+        .lte("next_check_at", now)
+        .select("user_id");
+      if (!claimed?.length) continue;
+      shops.due += 1;
+      const ent = await getEntitlement(s.user_id);
+      if (!ent.active || !ent.activeListingLimit) {
+        await admin.from("shop_monitors").update({ next_check_at: new Date(started + 86_400_000).toISOString() }).eq("user_id", s.user_id);
+        continue;
+      }
+      try {
+        const r = await runShopMonitor(admin, s, ent.activeListingLimit, today, started + TIME_BUDGET_MS);
+        shops.processed += 1;
+        shops.listings += r.listings;
+      } catch {
+        shops.errors += 1;
+      }
+    }
+  }
+
+  logEvent("listing_monitor.run", { ...totals, shops });
+  return NextResponse.json({ ok: true, ...totals, shops });
 }
 
 export const GET = handle;

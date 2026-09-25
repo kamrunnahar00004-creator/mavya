@@ -31,6 +31,8 @@ export type EtsyImage = {
   rank: number;
   url570: string | null;
   url170: string | null;
+  /** Full-size original; used only to import a seller's own photo. */
+  urlFull: string | null;
 };
 
 export type EtsyListing = {
@@ -126,6 +128,23 @@ const num = (v: unknown): number | null =>
   typeof v === "number" && Number.isFinite(v) ? v : null;
 const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 
+/**
+ * Etsy's API returns titles, tags, and descriptions HTML-encoded ("She&#39;s",
+ * "&quot;", "&amp;"). Decode once here, where all listing text enters Mavya,
+ * so pages, the writer, and keyword matching all see the real text.
+ */
+export function decodeEntities(s: string): string {
+  return s
+    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&");
+}
+
 /** Normalize one raw Etsy listing object. Exported for tests. */
 export function normalizeListing(raw: unknown): EtsyListing | null {
   if (!raw || typeof raw !== "object") return null;
@@ -143,6 +162,7 @@ export function normalizeListing(raw: unknown): EtsyListing | null {
           rank: num(i.rank) ?? 99,
           url570: str(i.url_570xN),
           url170: str(i.url_170x135),
+          urlFull: str(i.url_fullxfull),
         }))
         .filter((i) => i.id > 0)
         .sort((a, b) => a.rank - b.rank)
@@ -151,9 +171,9 @@ export function normalizeListing(raw: unknown): EtsyListing | null {
     listingId,
     shopId: num(r.shop_id),
     state: str(r.state),
-    title: str(r.title) ?? "",
-    description: str(r.description) ?? "",
-    tags: Array.isArray(r.tags) ? (r.tags as unknown[]).filter((t): t is string => typeof t === "string") : [],
+    title: decodeEntities(str(r.title) ?? ""),
+    description: decodeEntities(str(r.description) ?? ""),
+    tags: Array.isArray(r.tags) ? (r.tags as unknown[]).filter((t): t is string => typeof t === "string").map(decodeEntities) : [],
     views: num(r.views),
     favorites: num(r.num_favorers),
     priceCents:
@@ -211,12 +231,80 @@ function resultsOf(body: unknown): EtsyListing[] {
  * Returns listings in rank order without images.
  */
 export async function searchActiveListings(keyword: string, limit = 100, deadlineAt = Date.now() + 30_000): Promise<EtsyListing[]> {
+  return (await searchActiveListingsWithCount(keyword, limit, deadlineAt)).results;
+}
+
+/** Same search, plus Etsy's total match count (competition signal). */
+export async function searchActiveListingsWithCount(
+  keyword: string,
+  limit = 100,
+  deadlineAt = Date.now() + 30_000
+): Promise<{ count: number; results: EtsyListing[] }> {
   const body = await etsyGet("/listings/active", {
     keywords: keyword,
     sort_on: "score",
     limit: Math.min(Math.max(limit, 1), 100),
   }, deadlineAt);
-  return resultsOf(body);
+  const count = num((body as { count?: unknown })?.count) ?? 0;
+  return { count, results: resultsOf(body) };
+}
+
+export type EtsyShop = { shopId: number; shopName: string; activeListings: number | null };
+
+/**
+ * Parse a pasted shop reference: a shop name, "etsy.com/shop/Name", or a full
+ * shop URL. Returns the shop name, or null.
+ */
+export function parseEtsyShopInput(input: string): string | null {
+  const trimmed = input.trim();
+  if (/^[A-Za-z0-9]{3,40}$/.test(trimmed)) return trimmed;
+  let url: URL;
+  try {
+    url = new URL(/^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.toLowerCase();
+  if (host !== "etsy.com" && !host.endsWith(".etsy.com")) return null;
+  const match = url.pathname.match(/\/shop\/([A-Za-z0-9]{3,40})(?:[/?#]|$)/);
+  return match ? match[1] : null;
+}
+
+/** Exact (case-insensitive) shop-name lookup via the public findShops endpoint. */
+export async function fetchShopByName(name: string, deadlineAt = Date.now() + 20_000): Promise<EtsyShop | null> {
+  const body = await etsyGet("/shops", { shop_name: name, limit: 25 }, deadlineAt);
+  const results = (body as { results?: unknown })?.results;
+  if (!Array.isArray(results)) throw new EtsyApiError("Unexpected Etsy response", 200, "bad_response");
+  for (const r of results as Record<string, unknown>[]) {
+    const shopName = str(r.shop_name);
+    const shopId = num(r.shop_id);
+    if (shopName && shopId && shopName.toLowerCase() === name.toLowerCase()) {
+      return { shopId, shopName, activeListings: num(r.listing_active_count) };
+    }
+  }
+  return null;
+}
+
+/**
+ * All active listings of a shop (public), up to `max`, most viewed first when
+ * the shop is larger than `max`. One call per 100 listings, then one batch
+ * call per 100 for images. Cost is ~2 calls per 100 listings.
+ */
+export async function fetchShopActiveListings(
+  shopId: number,
+  max: number,
+  deadlineAt = Date.now() + 60_000
+): Promise<EtsyListing[]> {
+  const all: EtsyListing[] = [];
+  for (let offset = 0; offset < 5000; offset += 100) {
+    const body = await etsyGet(`/shops/${shopId}/listings/active`, { limit: 100, offset }, deadlineAt);
+    const page = resultsOf(body);
+    all.push(...page);
+    if (page.length < 100) break;
+  }
+  const chosen = all.sort((a, b) => (b.views ?? 0) - (a.views ?? 0)).slice(0, Math.max(0, max));
+  const withImages = await fetchListingsBatch(chosen.map((l) => l.listingId), deadlineAt);
+  return chosen.map((l) => withImages.get(l.listingId) ?? l);
 }
 
 /** Download an Etsy CDN image (winner photo scoring). Only i.etsystatic.com is allowed. */

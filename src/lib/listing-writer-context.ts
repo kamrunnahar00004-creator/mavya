@@ -16,7 +16,7 @@ export async function loadWriterContext(
 ): Promise<WriterContext | null> {
   const { data: monitor } = await supabase
     .from("listing_monitors")
-    .select("keywords, revision, listing_revision")
+    .select("etsy_listing_id, keywords, revision, listing_revision")
     .eq("product_id", productId)
     .maybeSingle();
   if (!monitor) return null;
@@ -64,6 +64,7 @@ export async function loadWriterContext(
     rubric?.upload_kind === "digital_product" || /\b(pdf|pattern|digital|download|printable|svg|template)\b/i.test(title);
 
   return {
+    listingId: Number(monitor.etsy_listing_id),
     current: { title, tags: snap.tags ?? [], description: snap.description ?? "" },
     photo: { productSummary: rubric?.product_summary || null, category: rubric?.detected_category || null },
     keywords: latest.map((k) => ({ keyword: k.keyword, position: k.position, depth: k.depth })),

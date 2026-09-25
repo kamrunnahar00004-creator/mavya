@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
     if (productError.message?.includes("active_listing_limit_reached")) {
       return apiError(
         "active_listing_limit_reached",
-        "You've reached your active listing limit. Delete a listing to free a slot."
+        "You've reached your plan's listing limit. Delete a listing to add another."
       );
     }
     logEvent("batch.product_failed", { userId: user.id, batchId, error: productError.message });

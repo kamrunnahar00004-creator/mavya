@@ -7,6 +7,7 @@ import { apiError, logEvent } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { isEtsyConfigured } from "@/lib/etsy";
 import { normalizeKeywords } from "@/lib/listing-analytics";
+import { keywordsRemaining } from "@/lib/keyword-quota";
 import { runListingMonitor } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
@@ -48,6 +49,7 @@ export async function POST(req: NextRequest) {
   }
 
   const turningOnOrEditing = body.enabled === true || keywords !== undefined;
+  let listingLimit: number | null = null;
   if (turningOnOrEditing) {
     const entitlement = await getEntitlement(user.id);
     if (!entitlement.active) {
@@ -56,6 +58,7 @@ export async function POST(req: NextRequest) {
         "Listing monitoring needs an active subscription."
       );
     }
+    listingLimit = entitlement.activeListingLimit;
   }
 
   // Ownership under RLS: the monitor row is only visible to its owner.
@@ -67,6 +70,16 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (!monitor) return apiError("forbidden", "Link an Etsy listing first.");
   if (turningOnOrEditing && !(await rateLimit(`listing-check:u:${user.id}`, 30, 86_400_000)).ok) return apiError("rate_limited", "Daily manual check limit reached. Automatic monitoring will continue.");
+  // Plan keyword allowance across all listings (each keyword = 1 Etsy call a day).
+  if (keywords !== undefined && keywords.length > 0) {
+    const quota = await keywordsRemaining(supabase, listingLimit, productId);
+    if (keywords.length > quota.remaining) {
+      return apiError(
+        "bad_request",
+        `Your plan tracks up to ${quota.limit} keywords across your listings (${quota.used} in use). Remove one to add another.`
+      );
+    }
+  }
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;

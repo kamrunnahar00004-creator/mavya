@@ -202,7 +202,7 @@ export function batchErrorMessage(body: unknown, status: number): string {
   const code = typeof b.code === "string" ? b.code : "";
   if (code === "insufficient_credits") return "Your rating credit ran out";
   if (code === "active_listing_limit_reached") {
-    return "You've reached your active listing limit. Delete a listing to free a slot.";
+    return "You've reached your plan's listing limit. Delete a listing to add another.";
   }
   if (code === "subscription_required" || code === "subscription_past_due") {
     return "An active plan is needed to rate photos. Check Settings to update billing.";

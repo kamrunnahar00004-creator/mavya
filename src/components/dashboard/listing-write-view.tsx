@@ -173,7 +173,7 @@ export function ListingWriteView({
 
         <div className="mt-5 flex flex-wrap items-center gap-2">
           <button type="submit" className={btnPrimary} disabled={busy || !canWrite}>
-            {busy ? "Writing… about 20 seconds" : result ? (
+            {busy ? "Checking keywords and writing… up to a minute" : result ? (
               <>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" /> Write again
               </>

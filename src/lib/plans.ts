@@ -66,12 +66,12 @@ export type PlanPolicy = Readonly<{
  * deleting a listing frees its slot immediately, regardless of cadence.
  */
 const PLAN_POLICY_VALUES = [
-  { planKey: "starter", cadence: "monthly", activeListingLimit: 5, priceCents: 2900, currency: "usd", availableForNewCheckout: true },
-  { planKey: "starter", cadence: "annual", activeListingLimit: 5, priceCents: 29000, currency: "usd", availableForNewCheckout: true },
-  { planKey: "shop", cadence: "monthly", activeListingLimit: 15, priceCents: 5900, currency: "usd", availableForNewCheckout: true },
-  { planKey: "shop", cadence: "annual", activeListingLimit: 15, priceCents: 59000, currency: "usd", availableForNewCheckout: true },
-  { planKey: "power", cadence: "monthly", activeListingLimit: 40, priceCents: 9900, currency: "usd", availableForNewCheckout: true },
-  { planKey: "power", cadence: "annual", activeListingLimit: 40, priceCents: 99000, currency: "usd", availableForNewCheckout: true },
+  { planKey: "starter", cadence: "monthly", activeListingLimit: 100, priceCents: 2900, currency: "usd", availableForNewCheckout: true },
+  { planKey: "starter", cadence: "annual", activeListingLimit: 100, priceCents: 29000, currency: "usd", availableForNewCheckout: true },
+  { planKey: "shop", cadence: "monthly", activeListingLimit: 300, priceCents: 5900, currency: "usd", availableForNewCheckout: true },
+  { planKey: "shop", cadence: "annual", activeListingLimit: 300, priceCents: 59000, currency: "usd", availableForNewCheckout: true },
+  { planKey: "power", cadence: "monthly", activeListingLimit: 1000, priceCents: 9900, currency: "usd", availableForNewCheckout: true },
+  { planKey: "power", cadence: "annual", activeListingLimit: 1000, priceCents: 99000, currency: "usd", availableForNewCheckout: true },
 ] satisfies readonly PlanPolicy[];
 
 const PLAN_POLICIES: readonly PlanPolicy[] = Object.freeze(
@@ -80,6 +80,22 @@ const PLAN_POLICIES: readonly PlanPolicy[] = Object.freeze(
 
 /** Null for any plan/cadence with no assigned policy -- always true for
  *  "legacy" in this slice, by design, not by omission. */
+/**
+ * Phase 2 (north star 11.12 step 6, 2026-09-25): plans are sized by the shop,
+ * not by 5/15/40 slots. activeListingLimit now means "listings Mavya tracks
+ * and you can work on" (100 / 300 / 1,000 at $29 / $59 / $99). The only valid
+ * values; product creation rejects anything else (fail closed).
+ */
+export const ALLOWED_LISTING_LIMITS: readonly number[] = Object.freeze([100, 300, 1000]);
+
+/** Tracked search keywords across all listings (each costs 1 Etsy call a day). */
+export function keywordLimitFor(activeListingLimit: number | null): number {
+  if (activeListingLimit === null) return 0;
+  if (activeListingLimit >= 1000) return 100;
+  if (activeListingLimit >= 300) return 30;
+  return 10;
+}
+
 export function getPlanPolicy(planKey: PlanKey, cadence: BillingCadence): PlanPolicy | null {
   if (planKey === "legacy") return null;
   return (

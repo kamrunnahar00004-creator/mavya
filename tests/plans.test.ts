@@ -60,9 +60,9 @@ describe("plan registry", () => {
   });
 
   it("asserts the exact active-listing limits", () => {
-    expect(getPlanPolicy("starter", "monthly")?.activeListingLimit).toBe(5);
-    expect(getPlanPolicy("shop", "monthly")?.activeListingLimit).toBe(15);
-    expect(getPlanPolicy("power", "monthly")?.activeListingLimit).toBe(40);
+    expect(getPlanPolicy("starter", "monthly")?.activeListingLimit).toBe(100);
+    expect(getPlanPolicy("shop", "monthly")?.activeListingLimit).toBe(300);
+    expect(getPlanPolicy("power", "monthly")?.activeListingLimit).toBe(1000);
   });
 
   it("annual plans keep the same active-listing limit as their monthly counterpart", () => {

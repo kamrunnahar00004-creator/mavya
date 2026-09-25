@@ -17,6 +17,7 @@ import {
   type PlanKey,
 } from "@/lib/plans";
 import { generationDailyMax } from "@/lib/generation-policy";
+import { keywordLimitFor } from "@/lib/plans";
 
 type BillingStatus = {
   active: boolean;
@@ -279,8 +280,9 @@ export default function SettingsPage() {
           <div className="mt-4 space-y-1.5">
             {status.activeListingLimit != null && (
               <p className="text-[14px] text-[var(--color-ink)]">
-                {status.activeListingLimit} active listing
-                {status.activeListingLimit === 1 ? "" : "s"} included
+                Track up to {status.activeListingLimit.toLocaleString("en-US")} listings
+                {" · "}
+                {keywordLimitFor(status.activeListingLimit)} search keywords
               </p>
             )}
             {status.planKey && (

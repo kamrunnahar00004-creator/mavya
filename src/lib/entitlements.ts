@@ -30,7 +30,7 @@ import { getPlanRegistry } from "@/lib/plans.server";
  * limit (5) is asserted directly here, not read from a nonexistent policy.
  */
 
-const LEGACY_ACTIVE_LISTING_LIMIT = 5;
+const LEGACY_ACTIVE_LISTING_LIMIT = 100;
 const EMPTY_PLAN_REGISTRY: PriceRegistry = Object.freeze([]);
 
 export type SubscriptionRow = {
@@ -59,7 +59,7 @@ export type Entitlement = {
    *  or there is no subscription -- never guessed, never client-supplied. */
   planKey: PlanKey | null;
   cadence: BillingCadence | null;
-  /** Null only alongside planKey === null. Legacy always resolves to 5. */
+  /** Null only alongside planKey === null. Legacy always resolves to 100. */
   activeListingLimit: number | null;
   cancelAtPeriodEnd: boolean;
   currentPeriodEnd: string | null;
