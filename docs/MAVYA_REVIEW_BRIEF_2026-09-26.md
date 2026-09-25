@@ -65,7 +65,7 @@ Consequences that shape everything below:
   as a stand-in for "people search this". It is not search volume.
 
 API budget: 5 requests/second, **5,000 calls/day** for the whole app (Personal
-Access tier). This caps how many customers we can serve (see 7.9).
+Access tier). This caps how many customers we can serve (see section 6, item 7).
 
 ---
 
