@@ -4,6 +4,7 @@ import { getEntitlement } from "@/lib/entitlements";
 import { unwrapOrThrow } from "@/lib/unwrap";
 import { ProductViewSwitch } from "@/components/dashboard/product-view-switch";
 import { ListingWriteView } from "@/components/dashboard/listing-write-view";
+import { loadWriterContext } from "@/lib/listing-writer-context";
 
 export const dynamic = "force-dynamic";
 
@@ -41,12 +42,15 @@ export default async function ProductWritePage({ params }: { params: Promise<{ i
     const snap = data as { title: string | null; tags: string[] | null } | null;
     if (snap) current = { title: snap.title ?? "", tagCount: snap.tags?.length ?? 0 };
   }
-  const looksDigital = current ? /\b(pdf|pattern|digital|download|printable|svg|template)\b/i.test(current.title) : false;
+  const context = monitor ? await loadWriterContext(supabase, id, {}) : null;
+  const looksDigital = context?.isDigital !== false;
 
   return (
     <>
       <ProductViewSwitch productId={product.id} active="write" />
       <ListingWriteView
+        key={`${product.id}:${monitor?.listing_revision ?? "unlinked"}`}
+        listingRevision={monitor?.listing_revision ?? "unlinked"}
         productId={product.id}
         linked={Boolean(monitor)}
         current={current}

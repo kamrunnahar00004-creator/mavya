@@ -90,6 +90,9 @@ export async function POST(req: NextRequest) {
 
   const userMessage = buildWriterMessage(ctx);
   for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0 && !(await withinGlobalBudget("write"))) {
+      return apiError("rate_limited", "Mavya is busy right now. Try again in a little while.");
+    }
     try {
       const raw = await writerCall({
         systemPrompt: WRITER_SYSTEM_PROMPT + (attempt ? REPAIR : ""),

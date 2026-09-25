@@ -16,7 +16,7 @@ const req = (body: unknown) => new NextRequest("http://localhost/api/listings/wr
 const ctx = { current: { title: "Soy candle", tags: ["soy candle"], description: "A candle." }, photo: { productSummary: null, category: null }, keywords: [], winnerTags: [], isDigital: false, facts: {} };
 const good = JSON.stringify({
   titles: ["Soy Candle, Lavender Scented Jar Candle", "Lavender Soy Candle in a Glass Jar"],
-  tags: ["soy candle", "lavender candle", "jar candle", "scented candle", "gift candle", "relaxing gift"],
+  tags: ["soy candle", "lavender candle", "jar candle", "scented candle", "gift candle", "relaxing gift", ...Array.from({ length: 7 }, (_, i) => `tag ${i}`)],
   description: "A lavender soy candle in a glass jar.\n\n- Size: [add size]",
 });
 
@@ -33,6 +33,13 @@ beforeEach(() => {
 });
 
 describe("POST /api/listings/write", () => {
+  it("reserves another unit of global budget before a repair call", async () => {
+    m.budget.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    m.call.mockResolvedValue("garbage");
+    expect((await POST(req({ productId }))).status).toBe(429);
+    expect(m.call).toHaveBeenCalledTimes(1);
+    expect(m.budget).toHaveBeenCalledTimes(2);
+  });
   it("requires login", async () => {
     m.user.mockResolvedValue(null);
     expect((await POST(req({ productId }))).status).toBe(401);

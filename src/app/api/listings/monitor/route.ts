@@ -13,6 +13,7 @@ export const maxDuration = 300;
 
 const CHUNK = 5;
 const TIME_BUDGET_MS = 240_000;
+const LISTING_BUDGET_MS = 120_000;
 
 /**
  * Daily Listing Coach cron (docs/NORTH_STAR_LISTING_COACH.md). NOT a user route.
@@ -63,7 +64,7 @@ async function handle(req: NextRequest) {
   const activeByUser = new Map<string, boolean>();
   const totals = { due: 0, processed: 0, snapshots: 0, keywordSnapshots: 0, winnerPhotosScored: 0, errors: 0 };
   for (let i = 0; i < rows.length; i += CHUNK) {
-    if (Date.now() - started >= TIME_BUDGET_MS - 20_000) break;
+    if (Date.now() - started >= LISTING_BUDGET_MS - 20_000) break;
     const pending = rows.slice(i, i + CHUNK);
     // Claim just the batch we can start. A timeout/crash cannot erase the
     // scheduling priority of every unprocessed row in the 200-row scan.
@@ -90,7 +91,7 @@ async function handle(req: NextRequest) {
     totals.due += chunk.length;
     if (!chunk.length) continue;
     try {
-      const s = await runListingMonitor(admin, chunk, { today, maxWinnerScores: 0, deadlineAt: started + TIME_BUDGET_MS });
+      const s = await runListingMonitor(admin, chunk, { today, maxWinnerScores: 0, deadlineAt: started + LISTING_BUDGET_MS });
       totals.processed += chunk.length;
       totals.snapshots += s.snapshots;
       totals.keywordSnapshots += s.keywordSnapshots;
@@ -104,8 +105,8 @@ async function handle(req: NextRequest) {
     }
   }
 
-  // Shop tracking (Shop home) shares this daily run: Hobby allows daily crons
-  // only. Each shop is claimed before work, paid-only, bounded by the budget.
+  // Reserve the second half for shops even under sustained listing load.
+  // Both queues retain untouched rows' priority for the next daily run.
   const shops = { due: 0, processed: 0, listings: 0, errors: 0 };
   if (Date.now() - started < TIME_BUDGET_MS - 30_000) {
     const { data: dueShops } = await admin
@@ -122,6 +123,8 @@ async function handle(req: NextRequest) {
         .from("shop_monitors")
         .update({ next_check_at: new Date(Date.now() + 3_600_000).toISOString() })
         .eq("user_id", s.user_id)
+        .eq("etsy_shop_id", s.etsy_shop_id)
+        .eq("enabled", true)
         .lte("next_check_at", now)
         .select("user_id");
       if (!claimed?.length) continue;

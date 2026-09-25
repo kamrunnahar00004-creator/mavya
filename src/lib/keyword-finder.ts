@@ -10,7 +10,7 @@
  * Labels are deliberately plain and honest. Nothing here claims search volume.
  */
 
-export type KeywordLabel = "winning" | "add" | "keep" | "crowded" | "quiet";
+export type KeywordLabel = "winning" | "add" | "keep" | "crowded" | "quiet" | "unknown";
 
 export type KeywordIdea = {
   keyword: string;
@@ -65,6 +65,7 @@ export function buildCandidates(args: {
   };
   for (const seg of args.title.split(/[,|–—()]| - /)) push(seg);
   for (const t of args.tags) push(t);
+  const ownCandidates = out.splice(0);
   const freq = new Map<string, number>();
   for (const tags of args.topTags) for (const t of new Set(tags.map(normalize))) freq.set(t, (freq.get(t) ?? 0) + 1);
   const minCount = Math.max(2, Math.ceil((args.minShare ?? 0.12) * args.topTags.length));
@@ -72,17 +73,19 @@ export function buildCandidates(args: {
     .filter(([, n]) => n >= minCount)
     .sort((a, b) => b[1] - a[1])
     .forEach(([t]) => push(t));
-  return out.slice(0, MAX_CANDIDATES);
+  const discoveries = out.filter((k) => !ownCandidates.includes(k)).slice(0, MAX_CANDIDATES / 2);
+  return [...ownCandidates.slice(0, MAX_CANDIDATES - discoveries.length), ...discoveries];
 }
 
 export function labelKeyword(s: { competition: number; interest: number | null; position: number | null; inTags: boolean }): KeywordLabel {
+  if (s.interest === null) return "unknown";
   if (s.position !== null && s.position <= WINNING_TOP && (s.interest ?? 0) >= QUIET_BELOW) return "winning";
   if (s.competition >= CROWDED_AT) return "crowded";
   if (s.interest === null || s.interest < QUIET_BELOW) return "quiet";
   return s.inTags ? "keep" : "add";
 }
 
-const ORDER: Record<KeywordLabel, number> = { winning: 0, add: 1, keep: 2, crowded: 3, quiet: 4 };
+const ORDER: Record<KeywordLabel, number> = { winning: 0, add: 1, keep: 2, crowded: 3, quiet: 4, unknown: 5 };
 
 export function rankIdeas(ideas: KeywordIdea[]): KeywordIdea[] {
   return [...ideas].sort(
@@ -101,6 +104,7 @@ export const LABEL_TEXT: Record<KeywordLabel, string> = {
   winning: "Winning",
   add: "Add as tag",
   keep: "Good, keep it",
-  crowded: "Too crowded",
-  quiet: "Nobody's looking",
+  crowded: "High competition",
+  quiet: "Low lifetime views",
+  unknown: "Views unavailable",
 };

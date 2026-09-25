@@ -49,10 +49,17 @@ export async function POST(req: NextRequest) {
 
   // Ownership under RLS: the listing must be in the caller's tracked shop.
   const supabase = await createSupabaseServerClient();
+  const { data: shop, error: shopError } = await supabase.from("shop_monitors")
+    .select("etsy_shop_id, current_listing_ids").maybeSingle();
+  if (shopError) return apiError("persistence_failed", "Could not read your shop. Try again.");
+  if (!shop?.current_listing_ids?.some((id: number | string) => Number(id) === listingId)) {
+    return apiError("forbidden", "That listing is not currently tracked in your connected shop.");
+  }
   const { data: inShop } = await supabase
     .from("shop_listing_snapshots")
     .select("listing_id")
     .eq("listing_id", listingId)
+    .eq("etsy_shop_id", shop.etsy_shop_id)
     .limit(1)
     .maybeSingle();
   if (!inShop) return apiError("forbidden", "That listing is not in your connected shop.");
@@ -115,6 +122,7 @@ export async function POST(req: NextRequest) {
   // Link the Etsy listing to the new product for daily tracking.
   const admin = createSupabaseAdminClient();
   const quota = await keywordsRemaining(supabase, entitlement.activeListingLimit, null);
+  if (quota.error) return apiError("persistence_failed", "Photo saved, but linking failed. Open this listing again to retry.");
   const keywords = suggestKeywords(listing.title, listing.tags).slice(0, quota.remaining);
   const monitor = {
     product_id: result.productId,
@@ -124,13 +132,17 @@ export async function POST(req: NextRequest) {
     revision: randomUUID(),
     listing_revision: randomUUID(),
     keywords,
+    keyword_limit: quota.limit,
     enabled: true,
     next_check_at: new Date().toISOString(),
     last_error: null,
     updated_at: new Date().toISOString(),
   };
   const { error } = await admin.from("listing_monitors").upsert(monitor, { onConflict: "product_id", ignoreDuplicates: true });
-  if (error) logEvent("shop.open_link_failed", { userId: user.id });
+  if (error) {
+    logEvent("shop.open_link_failed", { userId: user.id });
+    return apiError("persistence_failed", "Photo saved, but linking failed. Open this listing again to retry.");
+  }
   else {
     try {
       await runListingMonitor(

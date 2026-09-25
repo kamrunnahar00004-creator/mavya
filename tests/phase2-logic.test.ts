@@ -55,7 +55,7 @@ describe("writer uses the keyword check", () => {
   });
   it("drops NEW tags the check marked crowded or quiet", () => {
     const out = finalizeWriterOutput(
-      { titles: ["Coraline Doll Crochet Pattern PDF"], tags: ["coraline", "coraline doll", "digital crochet", "doll pattern", "crochet doll", "amigurumi doll"], description: "A crochet pattern for a doll, sent as a PDF." },
+      { titles: ["Coraline Doll Crochet Pattern PDF", "Crochet Pattern PDF for a Coraline Doll"], tags: ["coraline", "coraline doll", "digital crochet", "doll pattern", "crochet doll", "amigurumi doll", ...Array.from({ length: 8 }, (_, i) => `tag ${i}`)], description: "A crochet pattern for a doll, sent as a PDF." },
       ctx
     );
     expect(out.tags.map((t) => t.tag)).not.toContain("digital crochet");

@@ -445,5 +445,10 @@ Not now: weekly email, competitor watch, 1,000-listing extras, win cards,
 further photo polish.
 
 Status 2026-09-25: steps 0-6 BUILT and committed locally (not pushed).
-Needs migration 0033 applied, then Codex review, then push. See
-docs/CODEX_HANDOFF_WRITE_TAB_2026-09-25.md and docs/CODEX_HANDOFF_PHASE2_2026-09-25.md.
+Codex review fixes are now in the local working tree, pending Claude verification.
+They require migrations 0033 then 0034 BEFORE the corrected code deploy; neither
+was applied during Codex's work. No push without founder approval. Keep Hobby.
+See docs/CLAUDE_PHASE2_FIX_VERIFICATION_2026-09-25.md for changes, verification,
+rollout caveats, and remaining real-database/browser checks. The original build
+handoffs remain docs/CODEX_HANDOFF_WRITE_TAB_2026-09-25.md and
+docs/CODEX_HANDOFF_PHASE2_2026-09-25.md.

@@ -49,11 +49,16 @@ export async function POST(req: NextRequest) {
   if (!shop) return apiError("listing_not_found", "Etsy could not find that shop. Check the spelling.");
 
   const admin = createSupabaseAdminClient();
+  const previous = await admin.from("shop_monitors").select("etsy_shop_id").eq("user_id", user.id).maybeSingle();
+  if (previous.error) return apiError("persistence_failed", "Could not read your connected shop. Try again.");
+  const switched = Number(previous.data?.etsy_shop_id) !== shop.shopId;
   const { error } = await admin.from("shop_monitors").upsert(
     {
       user_id: user.id,
       etsy_shop_id: shop.shopId,
       shop_name: shop.shopName,
+      active_listing_count: shop.activeListings,
+      ...(switched ? { last_checked_on: null, current_listing_ids: null } : {}),
       enabled: true,
       next_check_at: new Date(Date.now() + 3_600_000).toISOString(),
       last_error: null,

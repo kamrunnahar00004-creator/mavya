@@ -8,6 +8,7 @@ import { rateLimit } from "@/lib/rate-limit";
 import { isEtsyConfigured } from "@/lib/etsy";
 import { normalizeKeywords } from "@/lib/listing-analytics";
 import { keywordsRemaining } from "@/lib/keyword-quota";
+import { keywordLimitFor } from "@/lib/plans";
 import { runListingMonitor } from "@/lib/listing-monitor";
 
 export const runtime = "nodejs";
@@ -73,7 +74,8 @@ export async function POST(req: NextRequest) {
   // Plan keyword allowance across all listings (each keyword = 1 Etsy call a day).
   if (keywords !== undefined && keywords.length > 0) {
     const quota = await keywordsRemaining(supabase, listingLimit, productId);
-    if (keywords.length > quota.remaining) {
+    if (quota.error) return apiError("persistence_failed", "Could not verify keyword usage. Try again.");
+    if (keywords.length > quota.remaining && keywords.length >= (monitor.keywords?.length ?? 0)) {
       return apiError(
         "bad_request",
         `Your plan tracks up to ${quota.limit} keywords across your listings (${quota.used} in use). Remove one to add another.`
@@ -83,7 +85,7 @@ export async function POST(req: NextRequest) {
 
   const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (typeof body.enabled === "boolean") patch.enabled = body.enabled;
-  if (keywords !== undefined) patch.keywords = keywords;
+  if (keywords !== undefined) Object.assign(patch, { keywords, keyword_limit: keywordLimitFor(listingLimit) });
   const changedKeywords = keywords !== undefined && JSON.stringify(keywords) !== JSON.stringify(monitor.keywords);
   const revision = changedKeywords ? randomUUID() : monitor.revision as string;
   if (changedKeywords) Object.assign(patch, { revision, last_checked_on: null, last_error: null });
@@ -98,6 +100,7 @@ export async function POST(req: NextRequest) {
     .eq("revision", monitor.revision)
     .select("product_id");
   if (error) {
+    if (error.message?.includes("keyword_limit_reached")) return apiError("bad_request", "Your keyword allowance changed. Remove a keyword and try again.");
     logEvent("listing.settings_persist_failed", { userId: user.id });
     return apiError("persistence_failed", "Could not save. Try again.");
   }

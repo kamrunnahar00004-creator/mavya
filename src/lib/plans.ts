@@ -90,10 +90,10 @@ export const ALLOWED_LISTING_LIMITS: readonly number[] = Object.freeze([100, 300
 
 /** Tracked search keywords across all listings (each costs 1 Etsy call a day). */
 export function keywordLimitFor(activeListingLimit: number | null): number {
-  if (activeListingLimit === null) return 0;
-  if (activeListingLimit >= 1000) return 100;
-  if (activeListingLimit >= 300) return 30;
-  return 10;
+  if (activeListingLimit === 1000) return 100;
+  if (activeListingLimit === 300) return 30;
+  if (activeListingLimit === 100) return 10;
+  return 0;
 }
 
 export function getPlanPolicy(planKey: PlanKey, cadence: BillingCadence): PlanPolicy | null {

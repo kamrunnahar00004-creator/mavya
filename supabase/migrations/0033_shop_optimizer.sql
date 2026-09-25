@@ -2,8 +2,8 @@
 --
 -- 1. Plan limits by shop size: create_product_within_active_limit accepts the
 --    new listing limits (100 / 300 / 1000) as well as the old slot limits
---    (5 / 15 / 40), so this migration is safe to apply before OR after the
---    application deploy.
+--    (5 / 15 / 40), so the old application can run after this migration.
+--    Apply BEFORE the application deploy: the old function rejects new limits.
 -- 2. etsy_search_cache: one Etsy search per keyword per day, shared by every
 --    seller (protects the 5,000 calls/day API quota). Service-role only.
 -- 3. shop_monitors + shop_listing_snapshots: daily public snapshots of every

@@ -5,10 +5,20 @@ locally, NOT pushed. Migration `0033_shop_optimizer.sql` NOT applied.
 Step 0-1 notes: `docs/CODEX_HANDOFF_WRITE_TAB_2026-09-25.md`.
 
 ## Deploy order (important)
-1. Apply `supabase/migrations/0033_shop_optimizer.sql`. It accepts both old
-   (5/15/40) and new (100/300/1000) listing limits, so it is safe before or
-   after the code deploy.
-2. Push. No new env vars. Cron schedule unchanged (daily, Hobby).
+1. With founder approval, apply `supabase/migrations/0033_shop_optimizer.sql`
+   BEFORE deploying this code. Old code works with the new function; new code
+   does not work with the old function's 5/15/40-only limit check.
+2. The Codex review fixes additionally require `0034_phase2_review_guards.sql`,
+   after 0033 and before the corrected code. Both remain unapplied here.
+3. Independently verify the fixes, then obtain founder approval to push.
+   No new env vars. Cron schedule unchanged (daily, Hobby).
+
+Review corrections: see `CLAUDE_PHASE2_FIX_VERIFICATION_2026-09-25.md`.
+The original build description below is historical: cache misses are now
+lease-coordinated (failed owners can retry), and daily listing work has a
+120-second deadline to reserve time for shops. Enumerating a shop costs one
+call per 100 TOTAL listings plus one per 100 SELECTED listings for details,
+not two calls per 100 tracked listings when the shop is larger than the plan.
 
 ## What was built
 

@@ -45,7 +45,7 @@ export type WriterContext = {
   winnerTags: { tag: string; count: number; total: number }[];
   /** Keyword finder results (checked against Etsy today), when available. */
   ideas?: KeywordIdea[];
-  isDigital: boolean;
+  isDigital: boolean | null;
   facts: SellerFacts;
   /** Linked Etsy listing id (lets the route run the keyword finder). */
   listingId?: number;
@@ -146,7 +146,7 @@ export function buildWriterMessage(ctx: WriterContext): string {
     "PHOTO CHECK",
     `Product: ${ctx.photo.productSummary || "(not rated yet)"}`,
     `Category: ${ctx.photo.category || "(unknown)"}`,
-    `Digital download: ${ctx.isDigital ? "yes" : "no"}`,
+    `Digital download: ${ctx.isDigital === null ? "unknown; do not assume a delivery format" : ctx.isDigital ? "yes" : "no"}`,
     "",
     "SELLER FACTS (trust these)",
     ...(facts.length ? facts : ["(none given)"]),
@@ -157,10 +157,10 @@ export function buildWriterMessage(ctx: WriterContext): string {
     "TOP LISTING TAGS (tags other top listings use)",
     ...(winners.length ? winners : ["(none)"]),
     "",
-    "GOOD PHRASES (checked on Etsy today: buyers look, not too crowded)",
+    "GOOD PHRASES (lower competition and higher lifetime listing views; not measured search demand)",
     ...(good.length ? good : ["(none checked)"]),
     "",
-    "AVOID PHRASES (checked on Etsy today: too crowded or almost nobody looks)",
+    "AVOID PHRASES (high competition or low lifetime listing views; search demand is unknown)",
     ...(avoid.length ? avoid : ["(none)"]),
   ].join("\n");
 }
@@ -173,6 +173,7 @@ const clean = (s: string) => s.replace(/\s+/g, " ").trim();
 
 /** Make a title Etsy-valid: allowed characters only, %:&+ once each, <= 140 chars. */
 export function sanitizeTitle(raw: string): string {
+  if (/[\[\]]/.test(raw)) return "";
   let t = clean(raw.replace(/[[\]]/g, "").replace(TITLE_DISALLOWED, " "));
   for (const ch of TITLE_ONCE) {
     const first = t.indexOf(ch);
@@ -191,17 +192,18 @@ export function sanitizeTitle(raw: string): string {
  * tag is DROPPED, never cut, so no half-words), no case-insensitive
  * duplicates, at most 13.
  */
-export function sanitizeTags(raw: string[]): string[] {
+export function sanitizeTags(raw: string[], limit = TAG_SLOTS): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
   for (const r of raw) {
+    if (/[\[\]]/.test(r)) continue;
     const t = clean(r.replace(/[[\]]/g, "").replace(TAG_DISALLOWED, " "));
     if (!t || t.length > TAG_MAX) continue;
     const key = t.toLowerCase();
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(t);
-    if (out.length === TAG_SLOTS) break;
+    if (out.length === limit) break;
   }
   return out;
 }
@@ -225,7 +227,7 @@ export function tagReasons(tags: string[], ctx: Pick<WriterContext, "current" | 
     else if (idea?.label === "add" || idea?.label === "keep")
       reason = `Low competition (${compact.format(idea.competition)} listings)${idea.position ? `, you about #${idea.position}` : ""}`;
     else if (idea?.label === "crowded") reason = `Very crowded (${compact.format(idea.competition)} listings)`;
-    else if (idea?.label === "quiet") reason = "Few buyers look at this";
+    else if (idea?.label === "quiet") reason = "Top listings have low lifetime views";
     else if (k) reason = k.position === null ? "Your search phrase, not near the top yet" : `Your search phrase, about #${k.position}`;
     else if (w) reason = `Used by ${w.count} of ${w.total} top listings`;
     else if (!isNew) reason = "You already use this";
@@ -273,9 +275,9 @@ export function finalizeWriterOutput(raw: RawWriterOutput, ctx: WriterContext): 
   // waste a slot. Tags the seller already uses are never removed here.
   const avoid = new Set((ctx.ideas ?? []).filter((i) => i.label === "crowded" || i.label === "quiet").map((i) => i.keyword.toLowerCase()));
   const own = new Set(ctx.current.tags.map((t) => t.trim().toLowerCase()));
-  const tags = sanitizeTags(raw.tags).filter((t) => !avoid.has(t.toLowerCase()) || own.has(t.toLowerCase()));
+  const tags = sanitizeTags(raw.tags, raw.tags.length).filter((t) => !avoid.has(t.toLowerCase()) || own.has(t.toLowerCase())).slice(0, TAG_SLOTS);
   const description = sanitizeDescription(raw.description);
-  if (titles.length === 0 || tags.length < 5 || description.length < 40) throw new Error("writer_unusable");
+  if (titles.length !== 2 || tags.length !== TAG_SLOTS || description.length < 40) throw new Error("writer_unusable");
   return {
     titles,
     tags: tagReasons(tags, ctx),

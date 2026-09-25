@@ -7,7 +7,7 @@ import { buildShopView, type ShopSnapshotRow, type ShopView } from "@/lib/shop-a
 /**
  * Daily snapshot of every tracked active listing in a seller's shop (public
  * data only). SERVER ONLY, service-role client; callers check ownership and
- * entitlement first. Cost: ~2 Etsy calls per 100 listings. Idempotent per
+ * entitlement first. Cost: all shop pages plus selected-listing detail pages. Idempotent per
  * day: the first complete observation is kept (ignoreDuplicates).
  */
 
@@ -46,11 +46,12 @@ export async function runShopMonitor(
         .upsert(rows.slice(i, i + 500), { onConflict: "user_id,etsy_shop_id,listing_id,snapshot_date", ignoreDuplicates: true });
       if (error) throw new Error(`shop snapshot upsert failed: ${error.message}`);
     }
-    await admin
+    const completed = await admin
       .from("shop_monitors")
-      .update({ last_checked_on: today, last_error: null, updated_at: new Date().toISOString() })
+      .update({ last_checked_on: today, current_listing_ids: listings.map((l) => l.listingId), last_error: null, updated_at: new Date().toISOString() })
       .eq("user_id", shop.user_id)
       .eq("etsy_shop_id", shop.etsy_shop_id);
+    if (completed.error) throw new Error("shop_completion_failed");
     return { listings: rows.length };
   } catch (err) {
     logEvent("shop_monitor.failed", { code: err instanceof EtsyApiError ? err.code : "unknown" });
@@ -64,7 +65,7 @@ export async function runShopMonitor(
 }
 
 export type ShopHomeData = {
-  shop: { name: string; lastCheckedOn: string | null; lastError: string | null } | null;
+  shop: { name: string; lastCheckedOn: string | null; lastError: string | null; activeListings?: number | null } | null;
   view: ShopView | null;
   /** Etsy listing id -> Mavya product id, for listings already opened. */
   opened: Record<number, string>;
@@ -75,18 +76,20 @@ export type ShopHomeData = {
  * last 7 days plus the previous 4 weeks (35 days), paged 1,000 rows at a time.
  */
 export async function loadShopHome(supabase: SupabaseClient, today: string): Promise<ShopHomeData> {
-  const { data: monitor } = await supabase
+  const { data: monitor, error: monitorError } = await supabase
     .from("shop_monitors")
-    .select("etsy_shop_id, shop_name, last_checked_on, last_error")
+    .select("etsy_shop_id, shop_name, last_checked_on, last_error, current_listing_ids, active_listing_count")
     .maybeSingle();
+  if (monitorError) throw new Error("shop_hydration_failed");
   if (!monitor) return { shop: null, view: null, opened: {} };
   const rows: ShopSnapshotRow[] = [];
-  for (let page = 0; page < 40; page++) {
+  for (let page = 0; monitor.last_checked_on; page++) {
     const { data, error } = await supabase
       .from("shop_listing_snapshots")
       .select("listing_id, snapshot_date, views, favorites, image_count, main_image_id, main_image_url, title, tags")
       .eq("etsy_shop_id", monitor.etsy_shop_id)
       .gte("snapshot_date", addDays(today, -35))
+      .lte("snapshot_date", monitor.last_checked_on)
       .order("snapshot_date", { ascending: true })
       .order("listing_id", { ascending: true })
       .range(page * 1000, page * 1000 + 999);
@@ -100,8 +103,8 @@ export async function loadShopHome(supabase: SupabaseClient, today: string): Pro
     opened[Number(l.etsy_listing_id)] = l.product_id;
   }
   return {
-    shop: { name: monitor.shop_name, lastCheckedOn: monitor.last_checked_on, lastError: monitor.last_error },
-    view: rows.length ? buildShopView(rows, today) : null,
+    shop: { name: monitor.shop_name, lastCheckedOn: monitor.last_checked_on, lastError: monitor.last_error, activeListings: monitor.active_listing_count },
+    view: monitor.last_checked_on ? buildShopView(rows, today, monitor.current_listing_ids?.map(Number)) : null,
     opened,
   };
 }

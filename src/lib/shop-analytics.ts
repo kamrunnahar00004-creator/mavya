@@ -60,7 +60,7 @@ export type ShopChangeResult = {
   afterPerDay: number | null;
   shopChange: number | null;
   lift: number | null;
-  verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data";
+  verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
 };
 
 export type ShopView = {
@@ -74,7 +74,7 @@ export type ShopView = {
 
 export const MIN_HISTORY_DAYS = 14;
 const CHANGE_WINDOW = 7;
-const MIN_AFTER_DAYS = 5;
+const MIN_AFTER_DAYS = 7;
 const BETTER = 1.15;
 const WORSE = 0.87;
 
@@ -101,7 +101,7 @@ function toSnapshot(r: ShopSnapshotRow): ListingSnapshot {
   };
 }
 
-export function buildShopView(rows: ShopSnapshotRow[], today: string): ShopView {
+export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds?: readonly number[]): ShopView {
   const byListing = new Map<number, ListingSnapshot[]>();
   const dates = new Set<string>();
   for (const r of rows) {
@@ -112,6 +112,8 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string): ShopView 
     dates.add(r.snapshot_date);
   }
   const historyDays = dates.size;
+  const latestDate = [...dates].sort().at(-1);
+  const current = new Set(currentIds ?? rows.filter((r) => r.snapshot_date === latestDate).map((r) => Number(r.listing_id)));
   const last7From = addDays(today, -6);
   const prevFrom = addDays(today, -34);
   const prevTo = addDays(today, -7);
@@ -126,7 +128,8 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string): ShopView 
 
   // Shop median of net favorites per 100 views (listings with enough views).
   const favRates: number[] = [];
-  for (const w of work.values()) {
+  for (const [id, w] of work) {
+    if (!current.has(id)) continue;
     const s = windowStats(w.series, last30From, today);
     if (s.views >= 50 && s.favoritesPer100Views !== null) favRates.push(s.favoritesPer100Views);
   }
@@ -134,12 +137,13 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string): ShopView 
 
   const listings: ShopListingView[] = [];
   for (const [id, w] of work) {
+    if (!current.has(id)) continue;
     const last7 = windowStats(w.series, last7From, today);
     const prev = windowStats(w.series, prevFrom, prevTo);
     const last30 = windowStats(w.series, last30From, today);
     let status: ShopStatus = "steady";
-    if (historyDays < MIN_HISTORY_DAYS) status = "collecting";
-    else if (last30.days >= MIN_HISTORY_DAYS && last30.views <= 1) status = "dead";
+    if (last30.days < MIN_HISTORY_DAYS) status = "collecting";
+    else if (last30.days >= 30 && last30.views <= 1) status = "dead";
     else if (last7.days >= 5 && prev.days >= 7 && prev.viewsPerDay !== null && last7.viewsPerDay !== null) {
       if (prev.viewsPerDay >= 1 && last7.viewsPerDay <= prev.viewsPerDay * 0.6) status = "falling";
       else if (last7.viewsPerDay >= 1 && last7.viewsPerDay >= prev.viewsPerDay * 1.5) status = "rising";
@@ -226,7 +230,8 @@ function shopChanges(
     for (const e of ev) events.push({ id, title: e.after.title ?? `Listing ${id}`, date: e.date, kinds: e.kinds.filter((k) => k !== "description") });
   }
   const results: ShopChangeResult[] = [];
-  for (const e of events) {
+  // Bound expensive control comparisons before evaluation, not afterward.
+  for (const e of events.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20)) {
     const bFrom = addDays(e.date, -CHANGE_WINDOW);
     const bTo = addDays(e.date, -1);
     const aFrom = addDays(e.date, 1);
@@ -235,6 +240,15 @@ function shopChanges(
     const before = windowStats(series, bFrom, bTo);
     const after = windowStats(series, aFrom, aTo < today ? aTo : today);
     const base = { listingId: e.id, title: e.title, date: e.date, kinds: e.kinds, beforePerDay: before.viewsPerDay, afterPerDay: after.viewsPerDay, shopChange: null, lift: null };
+    const ownChanges = changeDates.get(e.id) ?? [];
+    if (ownChanges.some((d) => d > e.date && d <= aTo)) {
+      results.push({ ...base, verdict: "interrupted" });
+      continue;
+    }
+    if (ownChanges.some((d) => d >= bFrom && d < e.date)) {
+      results.push({ ...base, verdict: "not_enough_data" });
+      continue;
+    }
     if (after.days < MIN_AFTER_DAYS) {
       results.push({ ...base, verdict: aTo >= today ? "measuring" : "not_enough_data" });
       continue;
@@ -243,13 +257,18 @@ function shopChanges(
       results.push({ ...base, verdict: "not_enough_data" });
       continue;
     }
-    // Control: the rest of the shop (listings with no change in the window).
+    // The same control cohort must cover EVERY observed seller date in both
+    // windows. Independently averaging sparse windows manufactures lift.
+    const matchedDates = new Set(series.filter((p) => p.viewsPerDay !== null &&
+      ((p.date >= bFrom && p.date <= bTo) || (p.date >= aFrom && p.date <= aTo && p.date <= today))).map((p) => p.date));
     const ratios: number[] = [];
     for (const [id, w] of work) {
       if (id === e.id) continue;
       if ((changeDates.get(id) ?? []).some((d) => d >= bFrom && d <= aTo)) continue;
-      const b = windowStats(w.series, bFrom, bTo);
-      const a = windowStats(w.series, aFrom, aTo);
+      const matched = w.series.filter((p) => matchedDates.has(p.date) && p.viewsPerDay !== null);
+      if (matched.length !== matchedDates.size) continue;
+      const b = windowStats(matched, bFrom, bTo);
+      const a = windowStats(matched, aFrom, aTo);
       if (b.viewsPerDay && b.viewsPerDay > 0 && a.viewsPerDay !== null && b.days >= 3 && a.days >= MIN_AFTER_DAYS) ratios.push(a.viewsPerDay / b.viewsPerDay);
     }
     const shopChange = ratios.length >= 3 ? med(ratios) : null;

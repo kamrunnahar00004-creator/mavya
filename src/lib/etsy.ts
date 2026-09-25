@@ -288,7 +288,8 @@ export async function fetchShopByName(name: string, deadlineAt = Date.now() + 20
 /**
  * All active listings of a shop (public), up to `max`, most viewed first when
  * the shop is larger than `max`. One call per 100 listings, then one batch
- * call per 100 for images. Cost is ~2 calls per 100 listings.
+ * call per 100 selected listings for images. Selection requires reading all
+ * shop pages first, so cost depends on total shop size, not just the plan cap.
  */
 export async function fetchShopActiveListings(
   shopId: number,
@@ -301,10 +302,14 @@ export async function fetchShopActiveListings(
     const page = resultsOf(body);
     all.push(...page);
     if (page.length < 100) break;
+    const count = num((body as { count?: unknown })?.count);
+    if (count !== null && all.length >= count) break;
+    if (offset === 4900) throw new EtsyApiError("Shop enumeration limit reached", 422, "bad_response");
   }
   const chosen = all.sort((a, b) => (b.views ?? 0) - (a.views ?? 0)).slice(0, Math.max(0, max));
   const withImages = await fetchListingsBatch(chosen.map((l) => l.listingId), deadlineAt);
-  return chosen.map((l) => withImages.get(l.listingId) ?? l);
+  if (chosen.some((l) => !withImages.has(l.listingId))) throw new EtsyApiError("Incomplete shop details", 502, "bad_response");
+  return chosen.map((l) => withImages.get(l.listingId)!);
 }
 
 /** Download an Etsy CDN image (winner photo scoring). Only i.etsystatic.com is allowed. */

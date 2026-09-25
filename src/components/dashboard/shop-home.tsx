@@ -138,9 +138,16 @@ function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCance
   );
 }
 
-export function ShopHome({ data, canEdit }: { data: ShopHomeData; canEdit: boolean }) {
+export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit: boolean }) {
   const [switching, setSwitching] = useState(false);
-  const { open, busy, error } = useOpenListing(data.opened);
+  const { open, busy, error } = useOpenListing(data?.opened ?? {});
+  if (!data) {
+    return (
+      <p className={cn(card, "p-6 text-[15px] text-[var(--color-ink-muted)]")}>
+        Shop tracking is unavailable right now. Your listings below still work.
+      </p>
+    );
+  }
   if (!data.shop) return <ConnectShop canEdit={canEdit} />;
   if (switching) return <ConnectShop canEdit={canEdit} current={data.shop.name} onCancel={() => setSwitching(false)} />;
 
@@ -155,6 +162,11 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData; canEdit: boole
             {v ? `${v.listings.length} listings tracked · ` : ""}
             {checked}
           </p>
+          {v && data.shop.activeListings != null && v.listings.length < data.shop.activeListings && (
+            <p className="text-[13px] text-[var(--color-ink-muted)]">
+              Tracking {v.listings.length} of {data.shop.activeListings} listings, selected by lifetime views. Shop total as of connection.
+            </p>
+          )}
         </div>
         <button type="button" onClick={() => setSwitching(true)} className={btnGhost} disabled={!canEdit}>
           Switch shop
@@ -163,7 +175,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData; canEdit: boole
 
       {!v ? (
         <p className={cn(card, "p-6 text-[15px] text-[var(--color-ink-muted)]")}>
-          {data.shop.lastError ? "The last check did not finish. Mavya will try again today." : "Mavya is reading your shop. Refresh in a minute."}
+          {data.shop.lastError ? "The last check did not finish. Mavya will retry on the next daily run." : "First shop check pending."}
         </p>
       ) : (
         <>
@@ -238,8 +250,9 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData; canEdit: boole
   );
 }
 
-const VERDICT_LABEL = { better: "Better", worse: "Worse", no_change: "No change", measuring: "Measuring", not_enough_data: "Can't measure" } as const;
+const VERDICT_LABEL = { better: "Better", worse: "Worse", no_change: "No change", measuring: "Measuring", not_enough_data: "Can't measure", interrupted: "Changed again" } as const;
 const VERDICT_CLS = {
+  interrupted: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   better: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
   worse: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]",
   no_change: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",

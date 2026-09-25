@@ -35,8 +35,9 @@ describe("Etsy title rules (enforced in code)", () => {
     expect(t.split(":").length - 1).toBe(1);
     expect(t.split("+").length - 1).toBe(1);
   });
-  it("removes disallowed characters and placeholder brackets", () => {
-    expect(sanitizeTitle("Cute 🐰 Bunny [add size] Plush")).toBe("Cute Bunny add size Plush");
+  it("rejects titles containing placeholders rather than hiding the brackets", () => {
+    expect(sanitizeTitle("Cute Bunny [add size] Plush")).toBe("");
+    expect(sanitizeTags(["[add material]"])).toEqual([]);
   });
   it("never exceeds 140 characters and never cuts mid-word", () => {
     const long = Array.from({ length: 40 }, (_, i) => `word${i}`).join(" ");
@@ -90,13 +91,14 @@ describe("output handling", () => {
   it("finalizes a good answer into valid titles, tags, and reasons", () => {
     const out = finalizeWriterOutput(
       {
-        titles: ["Coraline Doll Crochet Pattern, Amigurumi PDF Download", "Coraline Doll Crochet Pattern, Amigurumi PDF Download"],
-        tags: ["coraline pattern", "amigurumi doll", "coraline", "crochet doll", "doll pattern", "pdf pattern"],
+        titles: ["Coraline Doll Crochet Pattern, Amigurumi PDF Download", "Amigurumi PDF Download, Coraline Doll Crochet Pattern"],
+        tags: ["coraline pattern", "amigurumi doll", "coraline", "crochet doll", "doll pattern", "pdf pattern", ...Array.from({ length: 7 }, (_, i) => `tag ${i}`)],
         description: "A crochet pattern for a doll.\n\n- Finished size: 25 cm tall\n- Includes: [add what is included]",
       },
       ctx
     );
-    expect(out.titles).toHaveLength(1);
+    expect(out.titles).toHaveLength(2);
+    expect(out.tags).toHaveLength(13);
     expect(out.tags[0]).toMatchObject({ tag: "coraline pattern", isNew: true });
     expect(out.placeholders).toEqual(["[add what is included]"]);
   });

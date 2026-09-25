@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-const m = vi.hoisted(() => ({ user: vi.fn(), entitlement: vi.fn(), server: vi.fn(), admin: vi.fn(), limit: vi.fn(), fetch: vi.fn(), runner: vi.fn(), scores: vi.fn(), after: vi.fn(), today: vi.fn() }));
+const m = vi.hoisted(() => ({ user: vi.fn(), entitlement: vi.fn(), server: vi.fn(), admin: vi.fn(), limit: vi.fn(), fetch: vi.fn(), runner: vi.fn(), shop: vi.fn(), scores: vi.fn(), after: vi.fn(), today: vi.fn() }));
 vi.mock("next/server", async (original) => ({ ...await original<typeof import("next/server")>(), after: m.after }));
 vi.mock("@/lib/supabase/server", () => ({ getSessionUser: m.user, createSupabaseServerClient: m.server }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: m.admin }));
 vi.mock("@/lib/entitlements", () => ({ getEntitlement: m.entitlement }));
 vi.mock("@/lib/rate-limit", () => ({ rateLimit: m.limit }));
 vi.mock("@/lib/listing-monitor", () => ({ runListingMonitor: m.runner, scoreWinnerPhotos: m.scores, todayUtc: m.today }));
+vi.mock("@/lib/shop-monitor", () => ({ runShopMonitor: m.shop }));
 vi.mock("@/lib/etsy", async (original) => ({ ...await original<typeof import("@/lib/etsy")>(), fetchListingsBatch: m.fetch, isEtsyConfigured: () => true }));
 import { POST as link } from "@/app/api/listings/link/route";
 import { POST as settings } from "@/app/api/listings/settings/route";
@@ -41,7 +42,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   m.today.mockReturnValue("2026-09-24");
   m.user.mockResolvedValue({ id: "user" });
-  m.entitlement.mockResolvedValue({ active: true });
+  m.entitlement.mockResolvedValue({ active: true, activeListingLimit: 100 });
   m.limit.mockResolvedValue({ ok: true });
   m.server.mockResolvedValue(db({ products: { id: productId }, listing_monitors: row }));
   m.admin.mockReturnValue(db({ listing_monitors: [row] }));
@@ -133,6 +134,30 @@ describe("listing write authorization", () => {
 });
 
 describe("daily cron boundaries", () => {
+  it("reserves shop progress on successive days with an always-full listing backlog", async () => {
+    vi.useFakeTimers();
+    m.entitlement.mockResolvedValue({ active: true, activeListingLimit: 100 });
+    m.admin.mockReturnValue(db({ listing_monitors: Array.from({ length: 10 }, (_, i) => ({ ...row, product_id: String(i) })), shop_monitors: [{ user_id: "user", etsy_shop_id: 7, shop_name: "Shop" }] }));
+    m.runner.mockImplementation(async (_db, _rows, options) => {
+      // Model a busy worker that consumes its complete assigned time slice.
+      vi.setSystemTime(options.deadlineAt);
+      return { snapshots: 5, keywordSnapshots: 0, winnerPhotosScored: 0, errors: 0 };
+    });
+    m.shop.mockImplementation(async (_db, _shop, _limit, _today, deadlineAt) => {
+      expect(deadlineAt - Date.now()).toBeGreaterThanOrEqual(120_000);
+      vi.setSystemTime(deadlineAt - 1);
+      return { listings: 100 };
+    });
+    for (const day of [24, 25, 26]) {
+      m.today.mockReturnValue(`2026-09-${day}`);
+      const start = new Date(`2026-09-${day}T09:00:00Z`).getTime();
+      vi.setSystemTime(start);
+      await cron(cronRequest("test-secret"));
+      expect(Date.now() - start).toBeLessThan(240_000);
+    }
+    expect(m.shop).toHaveBeenCalledTimes(3);
+    expect(m.runner).toHaveBeenCalledTimes(3);
+  });
   function scheduledDatabase() {
     const rows = Array.from({ length: 15 }, (_, i) => ({ ...row, product_id: String(i).padStart(2, "0"), next_check_at: "2026-09-23T09:00:00.000Z", last_checked_on: null as string | null }));
     type Row = typeof rows[number];

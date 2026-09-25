@@ -9,6 +9,7 @@ import { getEntitlement } from "@/lib/entitlements";
 import { signThumbUrls } from "@/lib/batch-sign-urls";
 import { loadDashboardOverview } from "@/lib/dashboard-overview";
 import { timed } from "@/lib/perf";
+import { logEvent } from "@/lib/errors";
 import { loadShopHome } from "@/lib/shop-monitor";
 import { todayUtc } from "@/lib/listing-monitor";
 import { ShopHome } from "@/components/dashboard/shop-home";
@@ -35,7 +36,15 @@ export default async function DashboardPage() {
   const [entitlement, rows, shopHome] = await Promise.all([
     timed("dashboard.entitlement", () => getEntitlement(user.id)),
     timed("dashboard.hydrate", () => loadDashboardOverview(supabase)),
-    timed("dashboard.shop", () => loadShopHome(supabase, todayUtc())),
+    // A shop read failure (or migrations 0033/0034 not yet applied) must not
+    // take down the whole dashboard: the listings grid still renders and the
+    // shop section says it is unavailable.
+    timed("dashboard.shop", () =>
+      loadShopHome(supabase, todayUtc()).catch(() => {
+        logEvent("dashboard.shop_unavailable", { userId: user.id });
+        return null;
+      })
+    ),
   ]);
   const pastDue = entitlement.reason === "past_due";
   if (!entitlement.active && !pastDue) redirect("/subscribe");
@@ -137,7 +146,7 @@ export default async function DashboardPage() {
             <ImageUp className="h-6 w-6" strokeWidth={1.7} aria-hidden="true" />
           </span>
           <h2 className="mt-3 text-[18px] font-bold text-[var(--color-ink)]">
-            {shopHome.shop ? "Or upload photos yourself" : "Or start by uploading photos"}
+            {shopHome?.shop ? "Or upload photos yourself" : "Or start by uploading photos"}
           </h2>
           <p className="mt-1 text-[14.5px] text-[var(--color-ink-muted)]">Mavya scores every photo and makes an AI-improved version.</p>
           <div className="mx-auto mt-5 w-full max-w-[520px]">

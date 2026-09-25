@@ -1,10 +1,11 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { searchActiveListingsWithCount, type EtsyListing } from "@/lib/etsy";
 
 /**
  * Shared daily Etsy search cache (north star 11.12 step 3). SERVER ONLY,
- * service-role client. Each keyword is searched at most once per UTC day for
- * ALL sellers, which keeps keyword tracking inside the 5,000 calls/day quota.
+ * service-role client. Completed searches are shared for the UTC day. A
+ * database lease coalesces concurrent misses; failed/expired owners may retry.
  *
  * Stored results drop descriptions (size) and keep what callers need: rank
  * order, id, shop, title, tags, views, favorites. Images are not part of
@@ -46,23 +47,40 @@ export async function getSearchCached(
   deadlineAt = Date.now() + 30_000
 ): Promise<CachedSearch> {
   const key = keyOf(keyword);
-  const { data } = await admin
-    .from("etsy_search_cache")
-    .select("result_count, results")
-    .eq("keyword", key)
-    .eq("search_date", today)
-    .maybeSingle();
-  const row = data as { result_count: number; results: StoredListing[] } | null;
-  if (row && Array.isArray(row.results)) {
-    return { count: row.result_count, results: row.results.map(fromStored), cached: true };
+  while (Date.now() < deadlineAt - 2_000) {
+    const { data, error } = await admin
+      .from("etsy_search_cache")
+      .select("result_count, results, ready")
+      .eq("keyword", key)
+      .eq("search_date", today)
+      .maybeSingle();
+    if (error) throw new Error("search_cache_read_failed");
+    const row = data as { result_count: number; results: StoredListing[]; ready: boolean } | null;
+    if (row?.ready && Array.isArray(row.results)) {
+      return { count: row.result_count, results: row.results.map(fromStored), cached: true };
+    }
+    const token = randomUUID();
+    const claim = await admin.rpc("claim_etsy_search", { p_keyword: key, p_date: today, p_token: token });
+    if (claim.error) throw new Error("search_cache_claim_failed");
+    if (claim.data !== true) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      continue;
+    }
+    try {
+      // Provider work cannot outlive the 45-second claim.
+      const fresh = await searchActiveListingsWithCount(key, 100, Math.min(deadlineAt, Date.now() + 20_000));
+      const saved = await admin.from("etsy_search_cache")
+        .update({ result_count: fresh.count, results: fresh.results.map(toStored), ready: true, lease_until: null })
+        .eq("keyword", key).eq("search_date", today).eq("claim_token", token).eq("ready", false)
+        .select("keyword");
+      if (saved.error || !saved.data?.length) throw new Error("search_cache_write_failed");
+      return { count: fresh.count, results: fresh.results, cached: false };
+    } catch (err) {
+      // Never release a replacement owner's lease or delete a completed result.
+      await admin.from("etsy_search_cache").delete()
+        .eq("keyword", key).eq("search_date", today).eq("claim_token", token).eq("ready", false);
+      throw err;
+    }
   }
-  const fresh = await searchActiveListingsWithCount(key, 100, deadlineAt);
-  // Best effort: a failed cache write must never fail the caller's check.
-  await admin
-    .from("etsy_search_cache")
-    .upsert(
-      { keyword: key, search_date: today, result_count: fresh.count, results: fresh.results.map(toStored) },
-      { onConflict: "keyword,search_date", ignoreDuplicates: true }
-    );
-  return { count: fresh.count, results: fresh.results, cached: false };
+  throw new Error("search_cache_deadline");
 }

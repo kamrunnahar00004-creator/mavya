@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
+import sharp from "sharp";
 
 const m = vi.hoisted(() => ({
   user: vi.fn(), entitlement: vi.fn(), limit: vi.fn(), server: vi.fn(), admin: vi.fn(),
@@ -29,7 +30,7 @@ import { POST as open } from "@/app/api/shop/open/route";
 import { POST as keywords } from "@/app/api/listings/keywords/route";
 
 /** Chainable query mock: `responses[table]` is what every query on that table resolves to. */
-function db(responses: Record<string, unknown>) {
+function db(responses: Record<string, unknown>, errors: Record<string, string> = {}) {
   const calls: { table: string; method: string; args: unknown[] }[] = [];
   const from = vi.fn((table: string) => {
     const q: Record<string, unknown> = {};
@@ -39,7 +40,7 @@ function db(responses: Record<string, unknown>) {
         return q;
       });
     }
-    q.then = (resolve: (r: unknown) => unknown) => Promise.resolve({ data: responses[table] ?? null, error: null }).then(resolve);
+    q.then = (resolve: (r: unknown) => unknown) => Promise.resolve({ data: responses[table] ?? null, error: errors[table] ? { message: errors[table] } : null }).then(resolve);
     return q;
   });
   return { from, calls };
@@ -88,6 +89,22 @@ describe("POST /api/shop/connect", () => {
 });
 
 describe("POST /api/shop/open", () => {
+  it("rejects a historical listing from a previously connected shop", async () => {
+    m.server.mockResolvedValue(db({ shop_monitors: { etsy_shop_id: 8, current_listing_ids: [456] }, shop_listing_snapshots: { listing_id: 123 } }));
+    expect((await open(req("http://x/api/shop/open", { listingId: 123 }))).status).toBe(403);
+    expect(m.persist).not.toHaveBeenCalled();
+  });
+  it("reports a recoverable link failure after saving the imported photo", async () => {
+    m.server.mockResolvedValue(db({ shop_monitors: { etsy_shop_id: 7, current_listing_ids: [123] }, shop_listing_snapshots: { listing_id: 123 } }));
+    m.admin.mockReturnValue(db({}, { listing_monitors: "write unavailable" }));
+    m.batch.mockResolvedValue(new Map([[123, { listingId: 123, shopId: 7, title: "Soy candle", tags: [], images: [{ urlFull: "https://i.etsystatic.com/main.jpg" }] }]]));
+    m.image.mockResolvedValue({ buffer: await sharp({ create: { width: 200, height: 200, channels: 3, background: "white" } }).jpeg().toBuffer() });
+    m.persist.mockResolvedValue({ ok: true, productId: "p", jobId: "j", photoId: "f", status: "queued" });
+    const response = await open(req("http://x/api/shop/open", { listingId: 123 }));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({ code: "persistence_failed", error: expect.stringContaining("Open this listing again") });
+    expect(m.persist).toHaveBeenCalledWith(expect.objectContaining({ idempotencyKey: "u:etsy-import:123:main" }));
+  });
   it("only opens listings in the caller's own tracked shop", async () => {
     m.server.mockResolvedValue(db({ shop_listing_snapshots: null }));
     expect((await open(req("http://x/api/shop/open", { listingId: 123 }))).status).toBe(403);
@@ -95,7 +112,7 @@ describe("POST /api/shop/open", () => {
     expect(m.persist).not.toHaveBeenCalled();
   });
   it("returns the existing product without importing again", async () => {
-    m.server.mockResolvedValue(db({ shop_listing_snapshots: { listing_id: 123 }, listing_monitors: { product_id: "p1" } }));
+    m.server.mockResolvedValue(db({ shop_monitors: { etsy_shop_id: 7, current_listing_ids: [123] }, shop_listing_snapshots: { listing_id: 123 }, listing_monitors: { product_id: "p1" } }));
     const res = await open(req("http://x/api/shop/open", { listingId: 123 }));
     expect(await res.json()).toMatchObject({ ok: true, productId: "p1", created: false });
     expect(m.persist).not.toHaveBeenCalled();
@@ -104,7 +121,7 @@ describe("POST /api/shop/open", () => {
     expect((await open(req("http://x/api/shop/open", { listingId: "123" }))).status).toBe(400);
   });
   it("honors the AI kill switch before importing (import costs one photo score)", async () => {
-    m.server.mockResolvedValue(db({ shop_listing_snapshots: { listing_id: 123 } }));
+    m.server.mockResolvedValue(db({ shop_monitors: { etsy_shop_id: 7, current_listing_ids: [123] }, shop_listing_snapshots: { listing_id: 123 } }));
     m.disabled.mockReturnValue(true);
     expect((await open(req("http://x/api/shop/open", { listingId: 123 }))).status).toBe(503);
     expect(m.persist).not.toHaveBeenCalled();

@@ -11,9 +11,10 @@ export async function keywordsRemaining(
   supabase: SupabaseClient,
   activeListingLimit: number | null,
   excludeProductId: string | null
-): Promise<{ limit: number; used: number; remaining: number }> {
+): Promise<{ limit: number; used: number; remaining: number; error?: boolean }> {
   const limit = keywordLimitFor(activeListingLimit);
-  const { data } = await supabase.from("listing_monitors").select("product_id, keywords");
+  const { data, error } = await supabase.from("listing_monitors").select("product_id, keywords");
+  if (error) return { limit, used: 0, remaining: 0, error: true };
   const rows = Array.isArray(data) ? (data as { product_id: string; keywords: string[] | null }[]) : [];
   const used = rows
     .filter((m) => m.product_id !== excludeProductId)

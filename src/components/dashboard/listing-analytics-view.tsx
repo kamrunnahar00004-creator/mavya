@@ -735,6 +735,7 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
 // ---------------------------------------------------------------------------
 
 const LABEL_STYLE: Record<KeywordLabel, string> = {
+  unknown: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   winning: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
   add: "bg-[var(--color-tint)] text-[var(--color-primary)]",
   keep: "bg-[var(--color-page-deep)] text-[var(--color-ink)]",

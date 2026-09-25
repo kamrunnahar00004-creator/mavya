@@ -60,8 +60,8 @@ export async function loadWriterContext(
   }
 
   const title = snap.title ?? "";
-  const isDigital =
-    rubric?.upload_kind === "digital_product" || /\b(pdf|pattern|digital|download|printable|svg|template)\b/i.test(title);
+  const isDigital = rubric?.upload_kind === "digital_product" ? true
+    : rubric?.upload_kind === "physical_product" ? false : null;
 
   return {
     listingId: Number(monitor.etsy_listing_id),

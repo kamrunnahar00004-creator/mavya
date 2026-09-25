@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
   // Plan keyword allowance across all listings; suggestions are trimmed to
   // what is left (a listing can still be tracked with zero keywords).
   const quota = await keywordsRemaining(supabase, entitlement.activeListingLimit, productId);
+  if (quota.error) return apiError("persistence_failed", "Could not verify keyword usage. Try again.");
   const keywords = (
     requestedKeywords && requestedKeywords.length > 0
       ? requestedKeywords
@@ -105,6 +106,7 @@ export async function POST(req: NextRequest) {
     revision,
     listing_revision: listingRevision,
     keywords,
+    keyword_limit: quota.limit,
     enabled: true,
     next_check_at: new Date().toISOString(),
     last_error: null,
@@ -113,6 +115,7 @@ export async function POST(req: NextRequest) {
   };
   const { error } = await admin.from("listing_monitors").upsert(monitor, { onConflict: "product_id" });
   if (error) {
+    if (error.message?.includes("keyword_limit_reached")) return apiError("bad_request", "Your keyword allowance changed. Try again with fewer keywords.");
     logEvent("listing.link_persist_failed", { userId: user.id });
     return apiError("persistence_failed", "Could not save. Try again.");
   }

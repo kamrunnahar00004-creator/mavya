@@ -24,7 +24,7 @@ type Result = {
   current: { title: string; tags: string[]; description: string };
 };
 
-const storageKey = (productId: string) => `mavya:write:${productId}`;
+const storageKey = (productId: string, listingRevision: string) => `mavya:write:${productId}:${listingRevision}`;
 const EMPTY_FACTS: Facts = { size: "", materials: "", included: "", format: "" };
 
 // Per-viewer convenience only: the last draft and facts survive a reload.
@@ -41,21 +41,31 @@ const noSubscribe = () => () => {};
 
 export function ListingWriteView({
   productId,
+  listingRevision,
   linked,
   current,
   looksDigital,
   canWrite,
 }: {
   productId: string;
+  listingRevision: string;
   linked: boolean;
   current: { title: string; tagCount: number } | null;
   looksDigital: boolean;
   canWrite: boolean;
 }) {
-  const savedRaw = useSyncExternalStore(noSubscribe, () => readSaved(storageKey(productId)), () => null);
+  const savedRaw = useSyncExternalStore(noSubscribe, () => readSaved(storageKey(productId, listingRevision)), () => null);
   const saved = useMemo(() => {
     try {
-      return savedRaw ? (JSON.parse(savedRaw) as { result?: Result; facts?: Facts }) : null;
+      const value = savedRaw ? JSON.parse(savedRaw) as { result?: Result; facts?: Facts } : null;
+      const r = value?.result;
+      const f = value?.facts;
+      if (!r || !f || !Array.isArray(r.titles) || !r.titles.every((t) => typeof t === "string") ||
+        !Array.isArray(r.tags) || !r.tags.every((t) => t && typeof t.tag === "string" && typeof t.reason === "string" && typeof t.isNew === "boolean") ||
+        typeof r.description !== "string" || !Array.isArray(r.placeholders) || !r.placeholders.every((p) => typeof p === "string") ||
+        typeof r.current?.title !== "string" ||
+        !(["size", "materials", "included", "format"] as const).every((k) => typeof f[k] === "string" && f[k].length <= 300)) return null;
+      return value;
     } catch {
       return null;
     }
@@ -87,7 +97,7 @@ export function ListingWriteView({
       const next = json as Result;
       setResult(next);
       try {
-        localStorage.setItem(storageKey(productId), JSON.stringify({ result: next, facts }));
+        localStorage.setItem(storageKey(productId, listingRevision), JSON.stringify({ result: next, facts }));
       } catch {
         /* ignore */
       }
