@@ -397,3 +397,49 @@ Real example (listing used 5 of 13 tags): recommend adding "coraline doll"
 - Landing/pricing page repositioning copy ("full listing optimizer").
 - Rank: keep as "About #N" or demote to a small visibility check, after the
   parity test.
+
+### 11.12 Agreed build (founder, 2026-09-25), supersedes 11.9 order
+
+Founder decisions:
+- Vercel Pro: not now; revisit at 5 paying customers.
+- API / AI cost caps: decide at 5 paying customers.
+- Trademark/IP checking: not Mavya's job. Only rule kept: the writer never ADDS
+  brand/character names the seller does not already use (Mavya's own output).
+- Weekly email: not now.
+- Marketing (free teardown page, outreach, affiliates, win cards): founder's
+  decision, not part of this build and not counted in its cost.
+- Main-photo scoring for Etsy-imported listings: only when the seller opens a
+  listing (no shop-wide auto-scoring yet).
+
+The whole flow:
+
+```text
+Sign up (paid) -> enter Etsy shop name once (no Etsy login)
+-> SHOP HOME: every listing tracked daily; Falling / Dead / Seen-not-liked;
+   "Fix these 3 today" (one reason + one button each)
+-> LISTING PAGE: Write | Photo | Analytics
+   Write: 2 titles, 13 tags, description, side by side, Copy buttons
+   Photo: photos pulled from Etsy automatically; score, AI-improved version,
+          supporting-photo checks; seller downloads and uploads to Etsy
+   Analytics: views, net favorites, keyword positions ("About #N"),
+          top listings, "Your changes"
+-> seller pastes/uploads the fix on Etsy
+-> Mavya detects the change next day -> before/after result (also summed per shop)
+-> back to Shop home -> next 3 fixes
+```
+
+Build order:
+
+| # | Step |
+|---|---|
+| 0 | Honesty fixes: "About #N" rank, "net favorites", rank out of headline numbers |
+| 1 | Write tab (title, 13 tags, description; code-validated; no invented facts) |
+| 2 | Keyword finder light (Add / Too crowded / Skip; feeds Write) |
+| 3 | Shared daily keyword cache |
+| 4 | Shop home + "Fix these 3 today" |
+| 4b | Open any listing from Shop; Etsy photos imported automatically; Photo tab works on them |
+| 5 | Shop-level results + "first results in about 2 weeks" onboarding line |
+| 6 | Plans switch: remove 5/15/40 slots, add listings-tracked limits (100/300/1,000) at $29/$59/$99 |
+
+Not now: weekly email, competitor watch, 1,000-listing extras, win cards,
+further photo polish.
