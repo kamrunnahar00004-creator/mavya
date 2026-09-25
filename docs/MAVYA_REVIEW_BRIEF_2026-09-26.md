@@ -1,7 +1,7 @@
 # Mavya: full review brief for outside reviewers
 
 Date: 2026-09-26. Written by Claude (builder) for independent AI reviewers and the founder.
-Code: this repo (`src/lib/*` holds all the logic named below). Live app: Vercel, deployed from `main`.
+You do not have the code. Every rule below is written exactly as it is implemented, with the real numbers.
 
 **Your job as a reviewer:** check the logic, find where it is wrong or misleading,
 judge whether this is the right product for Etsy sellers, and say what to add,
@@ -37,10 +37,10 @@ ongoing tracking plus proof, not a one-time fix.
 writing. An earlier short-video push got about 5,000 views and 0 sales. Founder
 rule: marketing until 10 paying customers.
 
-**Plans** (`src/lib/plans.ts`): Starter $29/mo, 100 tracked listings, 10 tracked
+**Plans**: Starter $29/mo, 100 tracked listings, 10 tracked
 keywords. Shop $59/mo, 300 listings, 30 keywords. Power $99/mo, 1,000 listings,
 100 keywords. Annual = 10x monthly. Photo scoring and AI fixes draw from a
-monthly credit backstop (`src/lib/allowances.ts`: 100,000 credits, a score costs
+monthly credit backstop (100,000 credits, a score costs
 10, a fix workflow costs 20).
 
 ---
@@ -70,8 +70,6 @@ Access tier). This caps how many customers we can serve (see 7.9).
 ---
 
 ## 3. Shop-level features (the Shop home and All listings pages)
-
-Logic: `src/lib/shop-analytics.ts`, `src/lib/shop-monitor.ts`.
 
 ### 3.1 Connect and daily scan
 - Seller types a shop name or URL. We fetch all active listings, sort by
@@ -150,7 +148,6 @@ the seller chooses what to spend. Also links the listing for daily tracking and
 auto-picks up to 3 keywords (see 4.6).
 
 ### 4.2 Photo scoring
-Code: `src/lib/rubric.ts`, `src/lib/score-photo.ts`, rubric doc `docs/PHOTO_AUDIT_RUBRIC.md`.
 - A vision model (default `gpt-5.6-sol`) returns a structured rubric: four
   pillars scored 0 to 10, weighted into one score out of 10.
   - Main photo: Thumbnail 40%, Lighting 25%, Background 20%, Click appeal 15%.
@@ -178,7 +175,6 @@ Code: `src/lib/rubric.ts`, `src/lib/score-photo.ts`, rubric doc `docs/PHOTO_AUDI
   charts, ingredients) because a redraw cannot guarantee the facts survive.
 
 ### 4.4 Listing check (Write tab, instant, no AI)
-Code: `src/lib/listing-check.ts`. Reads the live title, tags, description, photos.
 
 | Area | Flags |
 |---|---|
@@ -188,7 +184,6 @@ Code: `src/lib/listing-check.ts`. Reads the live title, tags, description, photo
 | Photos | main photo not scored yet, or scores under 7; fewer than 5 photos |
 
 ### 4.5 AI rewrite (Write tab)
-Code: `src/lib/listing-writer.ts`, `src/lib/listing-writer-context.ts`, route `src/app/api/listings/write`.
 - Runs automatically the first time a listing version is opened. Text-only model,
   strict JSON output.
 - Input: current title, tags, description; photo summary and category from the
@@ -206,7 +201,6 @@ Code: `src/lib/listing-writer.ts`, `src/lib/listing-writer-context.ts`, route `s
   of 10 top listings", "You already use this").
 
 ### 4.6 Keyword tracking and "About #N"
-Code: `src/lib/listing-monitor.ts`, `src/lib/search-cache.ts`.
 - Keywords auto-suggested from the listing: first title segment plus multi-word
   tags, up to 3 per listing. Plan caps total keywords (10 / 30 / 100).
 - Daily: search each keyword (top 100, relevance sort), record the listing's
@@ -215,7 +209,6 @@ Code: `src/lib/listing-monitor.ts`, `src/lib/search-cache.ts`.
   customers.
 
 ### 4.7 Keyword finder (ideas)
-Code: `src/lib/keyword-finder.ts`, `src/lib/keyword-finder-server.ts`.
 - Candidates (up to 12, 2 to 4 words): title segments, the seller's multi-word
   tags, and tags used by 12%+ of the top 25 listings for the main keyword. Each
   must share a real word with the seller's title or tags.
@@ -226,7 +219,6 @@ Code: `src/lib/keyword-finder.ts`, `src/lib/keyword-finder-server.ts`.
   **Add as tag** / **Good, keep it** otherwise.
 
 ### 4.8 Listing Analytics: the one "next best fix"
-Code: `diagnose()` in `src/lib/listing-analytics.ts`. First match wins:
 1. Not linked, paused, or today's check missing: say so.
 2. A change is being measured: "leave it for a week".
 3. Not in the top 48 (Etsy page one) for any tracked keyword: fix title and tags.
