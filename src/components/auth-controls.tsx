@@ -110,7 +110,7 @@ export function AuthControls({
           <Link
             href="/feedback"
             prefetch
-            className="hidden rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] sm:inline-flex"
+            className="hidden rounded-[var(--radius-md)] px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)] sm:inline-flex"
           >
             Feedback
           </Link>
@@ -118,7 +118,7 @@ export function AuthControls({
             <Link
               href="/dashboard"
               prefetch
-              className="inline-flex items-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
             >
               <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />
               Dashboard
@@ -128,7 +128,7 @@ export function AuthControls({
             <button
               type="button"
               onClick={() => setSettingsOpen(!settingsOpen)}
-              className="inline-flex items-center gap-1 rounded-full px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+              className="inline-flex items-center gap-1 rounded-[var(--radius-md)] px-3 py-2 text-[13px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
             >
               <Settings className="h-3.5 w-3.5" aria-hidden="true" />
               <span className="hidden sm:inline">Settings</span>
@@ -163,14 +163,14 @@ export function AuthControls({
           <button
             type="button"
             onClick={() => setModal("login")}
-            className="rounded-full px-3.5 py-2 text-[13.5px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
+            className="rounded-[var(--radius-md)] px-3.5 py-2 text-[13.5px] font-medium text-[var(--color-ink-muted)] transition-colors hover:text-[var(--color-ink)]"
           >
             Log in
           </button>
           <button
             type="button"
             onClick={() => setModal("signup")}
-            className="rounded-full bg-[var(--color-primary)] px-4 py-2 text-[13.5px] font-semibold text-white shadow-[0_2px_8px_rgba(232,107,57,0.25)] transition-colors hover:bg-[var(--color-primary-hover)]"
+            className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-4 py-2 text-[13.5px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
           >
             Sign up
           </button>

@@ -39,7 +39,7 @@ export default function ResetPasswordPage() {
   return (
     <main className="mx-auto flex min-h-[calc(100dvh-64px)] max-w-[460px] items-center px-6 py-12">
       <section className="w-full rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-7 shadow-[var(--shadow-soft)]">
-        <h1 className="text-[24px] font-bold text-[var(--color-ink)]">Set a new password</h1>
+        <h1 className="font-display text-[24px] font-semibold text-[var(--color-ink)]">Set a new password</h1>
         <form onSubmit={submit} className="mt-6 flex flex-col gap-4">
           <label className="text-[13px] font-semibold text-[var(--color-ink-muted)]">
             New password
@@ -66,7 +66,7 @@ export default function ResetPasswordPage() {
           <button
             type="submit"
             disabled={loading}
-            className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white disabled:opacity-60"
           >
             {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : null}
             Update password

@@ -71,12 +71,12 @@ export function VersionStrip({
                   className="h-full w-full object-cover"
                 />
                 {v.recommended && !isSelected && (
-                  <span className="absolute left-2 top-2 rounded-full bg-white/90 px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink)] shadow-sm">
+                  <span className="absolute left-2 top-2 rounded-[var(--radius-md)] bg-white/90 px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink)] shadow-sm">
                     Recommended
                   </span>
                 )}
                 {isSelected && (
-                  <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[10.5px] font-semibold text-white shadow-sm">
+                  <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-2 py-0.5 text-[10.5px] font-semibold text-white shadow-sm">
                     <Check className="h-3 w-3" aria-hidden="true" />
                     Selected
                   </span>
@@ -104,7 +104,7 @@ export function VersionStrip({
                 )}
                 <div className="mt-auto pt-1.5">
                   {isSelected ? (
-                    <span className="inline-flex w-full items-center justify-center rounded-full bg-[var(--color-page-deep)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink-muted)]">
+                    <span className="inline-flex w-full items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink-muted)]">
                       In use
                     </span>
                   ) : (
@@ -112,7 +112,7 @@ export function VersionStrip({
                       type="button"
                       disabled={disabled || busyId !== null}
                       onClick={() => onSelect(v.jobId)}
-                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-full border border-[var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-page-deep)] disabled:opacity-60"
+                      className="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-page-deep)] disabled:opacity-60"
                     >
                       {isBusy && (
                         <Loader2 className="h-3 w-3 animate-spin" aria-hidden="true" />

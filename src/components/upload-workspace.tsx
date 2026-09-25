@@ -36,7 +36,7 @@ export function UploadWorkspace({ onGateFailed, resumeSelection, onResumed }: Pr
       <div className="mx-auto grid max-w-[1120px] grid-cols-1 items-center gap-10 lg:grid-cols-[1.08fr_0.92fr] lg:gap-14">
         {/* LEFT — message */}
         <div className="text-center lg:text-left">
-          <h1 className="font-display text-[38px] font-bold leading-[1.06] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[46px] lg:text-[50px]">
+          <h1 className="font-display text-[38px] font-semibold leading-[1.06] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[46px] lg:text-[50px]">
             Your{" "}
             <span style={{ color: "var(--color-primary)" }}>Etsy</span> photos
             decide how much you sell

@@ -148,7 +148,7 @@ export function StylePickerModal({
             type="button"
             onClick={onClose}
             aria-label="Cancel"
-            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[var(--color-ink-soft)] hover:bg-[var(--color-page-deep)]"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-[var(--radius-lg)] text-[var(--color-ink-soft)] hover:bg-[var(--color-page-deep)]"
           >
             <X className="h-5 w-5" aria-hidden="true" />
           </button>
@@ -172,7 +172,7 @@ export function StylePickerModal({
                   "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]",
                 )}
               >
-                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary-hover)]">
+                <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary-hover)]">
                   <Icon className="h-5 w-5" aria-hidden="true" />
                 </span>
                 <span className="flex-1">
@@ -181,7 +181,7 @@ export function StylePickerModal({
                       {label}
                     </span>
                     {isRecommended ? (
-                      <span className="inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[11px] font-semibold text-white">
+                      <span className="inline-flex items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-2 py-0.5 text-[11px] font-semibold text-white">
                         <Check className="h-3 w-3" aria-hidden="true" />
                         Suggested
                       </span>
@@ -208,7 +208,7 @@ export function StylePickerModal({
                 "focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-primary)]",
               )}
             >
-              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-page-deep)] text-[var(--color-ink)]">
+              <span className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] text-[var(--color-ink)]">
                 <Wrench className="h-5 w-5" aria-hidden="true" />
               </span>
               <span className="flex-1">

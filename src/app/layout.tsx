@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import Script from "next/script";
-import { Inter, Fraunces } from "next/font/google";
+import { Inter, Source_Serif_4 } from "next/font/google";
 import "./globals.css";
 
 // Microsoft Clarity session recordings + heatmaps. Project id is public (it ships
@@ -18,11 +18,12 @@ const inter = Inter({
   weight: ["400", "500", "600", "700", "800"],
 });
 
-const fraunces = Fraunces({
+// Friendly serif for headings (warm tool system); Inter stays for UI text.
+const serif = Source_Serif_4({
   subsets: ["latin"],
   display: "swap",
-  variable: "--font-fraunces",
-  weight: ["600", "700"],
+  variable: "--font-serif",
+  weight: ["500", "600", "700"],
   style: ["normal"],
 });
 
@@ -78,7 +79,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${inter.variable} ${fraunces.variable}`}>
+    <html lang="en" className={`${inter.variable} ${serif.variable}`}>
       <body>
         {children}
         <Analytics />

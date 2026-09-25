@@ -227,7 +227,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
 
-        <h2 className="text-[24px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
+        <h2 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
           {isSignup ? "Create your account" : "Welcome back"}
         </h2>
         <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
@@ -342,7 +342,7 @@ export function AuthModal({ initialMode = "signup", onClose }: Props) {
           <button
             type="submit"
             disabled={loading}
-            className="mt-1 inline-flex items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
+            className="mt-1 inline-flex items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-70"
           >
             {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
             {isSignup ? "Create account" : "Log in"}

@@ -191,7 +191,7 @@ export default function SettingsPage() {
 
   return (
     <main className="mx-auto max-w-[560px] px-6 pb-20 pt-12">
-      <h1 className="font-display text-[28px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
+      <h1 className="font-display text-[28px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
         Settings
       </h1>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
@@ -204,7 +204,7 @@ export default function SettingsPage() {
           Account
         </h2>
         <div className="mt-3 flex items-center gap-3">
-          <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary)]">
             <Mail className="h-4 w-4" aria-hidden="true" />
           </span>
           <div className="min-w-0">
@@ -227,10 +227,10 @@ export default function SettingsPage() {
           <span
             className={
               label.tone === "strong"
-                ? "rounded-full bg-[var(--color-strong-soft)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-strong)]"
+                ? "rounded-[var(--radius-md)] bg-[var(--color-strong-soft)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-strong)]"
                 : label.tone === "weak"
-                ? "rounded-full bg-[var(--color-weak-soft)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-weak)]"
-                : "rounded-full bg-[var(--color-page-deep)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-ink-muted)]"
+                ? "rounded-[var(--radius-md)] bg-[var(--color-weak-soft)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-weak)]"
+                : "rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-2.5 py-1 text-[12px] font-semibold text-[var(--color-ink-muted)]"
             }
           >
             {label.text}
@@ -305,7 +305,7 @@ export default function SettingsPage() {
             <button
               type="button"
               onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
             >
               Refresh billing status
             </button>
@@ -314,7 +314,7 @@ export default function SettingsPage() {
               type="button"
               onClick={() => void openPortal()}
               disabled={busy !== null}
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-60"
             >
               {busy === "portal" ? (
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -326,7 +326,7 @@ export default function SettingsPage() {
           ) : (
             <Link
               href="/subscribe"
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
             >
               View plans
             </Link>
@@ -355,7 +355,7 @@ export default function SettingsPage() {
             type="button"
             onClick={() => void handleLogout()}
             disabled={busy !== null}
-            className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
+            className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60"
           >
             {busy === "logout" ? (
               <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

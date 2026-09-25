@@ -39,7 +39,7 @@ export function AppHeader({ showNewAudit = false, onNewAudit }: Props) {
               type="button"
               onClick={onNewAudit}
               className={cn(
-                "inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)]",
+                "inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white/60 px-4 py-2 text-[13px] font-medium text-[var(--color-ink)]",
                 "transition-colors hover:border-[var(--color-border-strong)] hover:bg-white"
               )}
             >

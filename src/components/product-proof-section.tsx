@@ -30,7 +30,7 @@ export function ProductProofSection() {
         <div className="mx-auto max-w-[700px] text-center">
           <h2
             id="product-proof-heading"
-            className="font-display text-[28px] font-bold leading-tight text-[var(--color-ink)] sm:text-[38px]"
+            className="font-display text-[28px] font-semibold leading-tight text-[var(--color-ink)] sm:text-[38px]"
           >
             What buyers see
           </h2>

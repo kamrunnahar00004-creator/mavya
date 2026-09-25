@@ -47,7 +47,7 @@ export function InvalidUploadState({ onTryAgain }: Props) {
             />
             Result
           </div>
-          <h2 className="text-[30px] font-bold leading-[1.08] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[36px] lg:text-[40px] lg:leading-[1.05]">
+          <h2 className="font-display text-[30px] font-semibold leading-[1.08] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[36px] lg:text-[40px] lg:leading-[1.05]">
             Not a product photo.
           </h2>
           <div className="space-y-2">
@@ -62,8 +62,8 @@ export function InvalidUploadState({ onTryAgain }: Props) {
             type="button"
             onClick={onTryAgain}
             className={cn(
-              "inline-flex w-full max-w-[280px] items-center justify-center gap-2 whitespace-nowrap rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] lg:w-fit lg:justify-start",
-              "transition-all hover:bg-[var(--color-primary-hover)] hover:shadow-[0_6px_16px_rgba(216,91,44,0.36)] active:translate-y-[1px]"
+              "inline-flex w-full max-w-[280px] items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-md)] bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white lg:w-fit lg:justify-start",
+              "transition-all hover:bg-[var(--color-primary-hover)] active:translate-y-[1px]"
             )}
           >
             Try another upload

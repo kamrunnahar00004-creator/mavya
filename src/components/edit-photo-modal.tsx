@@ -114,7 +114,7 @@ export function EditPhotoModal({
               type="button"
               onClick={() => setText(chip)}
               disabled={loading}
-              className="max-w-full whitespace-normal rounded-full border border-white/25 px-3 py-1 text-left text-[12.5px] text-white/85 hover:bg-white/10 disabled:opacity-50"
+              className="max-w-full whitespace-normal rounded-[var(--radius-md)] border border-white/25 px-3 py-1 text-left text-[12.5px] text-white/85 hover:bg-white/10 disabled:opacity-50"
             >
               {chip}
             </button>
@@ -142,7 +142,7 @@ export function EditPhotoModal({
             type="submit"
             disabled={!text.trim() || loading}
             className={cn(
-              "inline-flex h-10 items-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white",
+              "inline-flex h-10 items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white",
               "transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             )}
           >

@@ -643,7 +643,7 @@ export function AddProductCard({
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_14px_rgba(232,107,57,0.32)] transition-all hover:bg-[var(--color-primary-hover)] hover:shadow-[0_8px_20px_rgba(216,91,44,0.36)] active:translate-y-[1px]"
+          className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-7 py-3.5 text-[15px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)] active:translate-y-[1px]"
         >
           <Plus className="h-5 w-5" aria-hidden="true" />
           Rate my thumbnail
@@ -681,7 +681,7 @@ export function AddProductCard({
                   Up to 10 photos. All photos must be from the same listing.
                 </span>
               </span>
-              <span className="rounded-full bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+              <span className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-8 py-3.5 text-[15px] font-semibold text-white transition-all group-hover:bg-[var(--color-primary-hover)]">
                 Choose files
               </span>
             </div>
@@ -739,7 +739,7 @@ export function AddProductCard({
           className="group flex flex-col overflow-hidden rounded-[var(--radius-xl)] border border-dashed border-[var(--color-border-strong)] bg-white text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary)] hover:shadow-[var(--shadow-soft-strong)]"
         >
           <span className="flex aspect-square w-full items-center justify-center bg-[var(--color-page-deep)]/50 transition-colors duration-200 group-hover:bg-[var(--color-tint)]">
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
+            <span className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary)] ring-1 ring-inset ring-[var(--color-tint-deep)] transition-transform duration-200 group-hover:scale-105">
               <Plus className="h-6 w-6" aria-hidden="true" />
             </span>
           </span>
@@ -793,7 +793,7 @@ export function AddProductCard({
                 <X className="h-5 w-5" aria-hidden="true" />
               </button>
 
-              <h2 className="text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+              <h2 className="font-display text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-ink)]">
                 Add a product
               </h2>
               <p className="mt-1.5 text-[14px] text-[var(--color-ink-muted)]">
@@ -862,7 +862,7 @@ export function AddProductCard({
                             Add 1 photo, or up to 10 at once. JPG or PNG.
                           </span>
                         </span>
-                        <span className="rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all group-hover:bg-[var(--color-primary-hover)]">
+                        <span className="rounded-[var(--radius-md)] bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white transition-all group-hover:bg-[var(--color-primary-hover)]">
                           Score listing photos
                         </span>
                       </>
@@ -983,7 +983,7 @@ function BatchGrid({
             />
 
             {item.role === "main" && (
-              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-[var(--color-primary)] px-2 py-0.5 text-[10.5px] font-semibold text-white">
+              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-2 py-0.5 text-[10.5px] font-semibold text-white">
                 <Star className="h-3 w-3" aria-hidden="true" />
                 Main
               </span>
@@ -996,7 +996,7 @@ function BatchGrid({
             )}
             {item.status === "uploaded" && (
               <span className="absolute inset-0 flex items-center justify-center bg-black/25">
-                <span className="rounded-full bg-white px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink)]">
+                <span className="rounded-[var(--radius-md)] bg-white px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink)]">
                   Saved
                 </span>
               </span>
@@ -1052,7 +1052,7 @@ function BatchGrid({
               </>
             )}
             {submitting && item.status === "failed" && (
-              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
+              <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-[var(--radius-md)] bg-black/55 px-1.5 py-0.5 text-[10px] text-white">
                 <RotateCcw className="h-3 w-3" aria-hidden="true" />
               </span>
             )}
@@ -1095,7 +1095,7 @@ function BatchGrid({
                 type="button"
                 onClick={onAddMore}
                 disabled={!allReady}
-                className="rounded-full border border-[var(--color-border)] bg-white px-5 py-3 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-3 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)] disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Add more photos
               </button>
@@ -1104,7 +1104,7 @@ function BatchGrid({
               type="button"
               onClick={onSubmit}
               disabled={!finalizationPending && (!allReady || usableCount < 2)}
-              className="inline-flex items-center gap-2 rounded-full bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-7 py-3 text-[15px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {finalizationPending
                 ? "Finish upload"

@@ -78,7 +78,7 @@ export default function FeedbackPage() {
 
   return (
     <main className="mx-auto max-w-[560px] px-6 py-12">
-        <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
+        <h1 className="font-display text-[26px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
           Send feedback
         </h1>
         <p className="mt-1.5 text-[15px] leading-relaxed text-[var(--color-ink-muted)]">
@@ -95,14 +95,14 @@ export default function FeedbackPage() {
             </p>
             <Link
               href="/?auth=login"
-              className="mt-4 inline-flex rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
+              className="mt-4 inline-flex rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
             >
               Log in
             </Link>
           </div>
         ) : status === "done" ? (
           <div className="mt-8 flex flex-col items-center rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white p-8 text-center shadow-[var(--shadow-soft)]">
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-strong-soft)] text-[var(--color-strong)]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-strong-soft)] text-[var(--color-strong)]">
               <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
             </span>
             <p className="mt-4 text-[17px] font-bold text-[var(--color-ink)]">
@@ -113,7 +113,7 @@ export default function FeedbackPage() {
             </p>
             <Link
               href="/dashboard"
-              className="mt-5 inline-flex rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+              className="mt-5 inline-flex rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
             >
               Back to dashboard
             </Link>
@@ -134,7 +134,7 @@ export default function FeedbackPage() {
                     type="button"
                     onClick={() => setCategory(c.value)}
                     className={cn(
-                      "rounded-full border px-3.5 py-1.5 text-[13.5px] font-semibold transition-colors",
+                      "rounded-[var(--radius-md)] border px-3.5 py-1.5 text-[13.5px] font-semibold transition-colors",
                       category === c.value
                         ? "border-[var(--color-primary)] bg-[var(--color-tint)] text-[var(--color-primary)]"
                         : "border-[var(--color-border)] bg-white text-[var(--color-ink-muted)] hover:border-[var(--color-border-strong)]"
@@ -188,7 +188,7 @@ export default function FeedbackPage() {
             <button
               type="submit"
               disabled={status === "sending" || authState === "checking"}
-              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-[var(--radius-lg)] bg-[var(--color-primary)] px-5 py-3 text-[15px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
             >
               {status === "sending" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
               Send feedback

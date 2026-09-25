@@ -135,7 +135,7 @@ export function FeedbackNudge({ workflowId }: { workflowId: string }) {
                   type="button"
                   onClick={submit}
                   disabled={!canSubmit}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-4 py-2.5 text-[13.5px] font-semibold text-white shadow-[0_2px_8px_rgba(232,107,57,0.25)] transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-4 py-2.5 text-[13.5px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {submitting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                   {failed ? "Try again" : "Send feedback"}
@@ -156,7 +156,7 @@ export function FeedbackNudge({ workflowId }: { workflowId: string }) {
             setOpen(true);
             trackClientEvent("wf_feedback_opened");
           }}
-          className="group inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-4 py-2.5 text-[13px] font-semibold text-[var(--color-ink)] shadow-[var(--shadow-lg)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+          className="group inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 py-2.5 text-[13px] font-semibold text-[var(--color-ink)] shadow-[var(--shadow-lg)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
         >
           <span className="relative flex h-2.5 w-2.5">
             <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--color-primary)] opacity-60" />

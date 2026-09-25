@@ -48,7 +48,7 @@ export function ProductViewSwitch({
       <nav
         aria-label="Product view"
         aria-busy={pending}
-        className="inline-flex rounded-full border border-[var(--color-border)] bg-white p-1 shadow-[var(--shadow-soft)]"
+        className="inline-flex rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1 shadow-[var(--shadow-soft)]"
       >
         {items.map(({ key, href, label, Icon }) => {
           const isActive = key === active;
@@ -63,7 +63,7 @@ export function ProductViewSwitch({
               onFocus={() => !isActive && router.prefetch(href)}
               aria-current={isActive ? "page" : undefined}
               className={cn(
-                "inline-flex items-center gap-2 rounded-full px-5 py-2 text-[14px] font-semibold transition-colors",
+                "inline-flex items-center gap-2 rounded-[var(--radius-md)] px-5 py-2 text-[14px] font-semibold transition-colors",
                 isActive || loading
                   ? "bg-[var(--color-neutral-dark)] text-white"
                   : "text-[var(--color-ink-muted)] hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)]",

@@ -1875,7 +1875,7 @@ export function ProductWorkspace({
             <button
               type="button"
               onClick={() => void handleRemovePhoto()}
-              className="inline-flex items-center justify-center rounded-full bg-[var(--color-weak)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:brightness-95"
+              className="inline-flex items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-weak)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:brightness-95"
             >
               Remove this photo
             </button>
@@ -1886,7 +1886,7 @@ export function ProductWorkspace({
               onClick={() =>
                 setActiveId(photos.find((p) => p.kind === "main")?.id ?? "")
               }
-              className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+              className="inline-flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
             >
               Back to main photo
             </button>
@@ -1915,7 +1915,7 @@ export function ProductWorkspace({
           <button
             type="button"
             onClick={handleRetryDelayedRating}
-            className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)]"
+            className="inline-flex items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)]"
           >
             Check rating again
           </button>
@@ -1925,7 +1925,7 @@ export function ProductWorkspace({
               onClick={() =>
                 setActiveId(photos.find((p) => p.kind === "main")?.id ?? "")
               }
-              className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+              className="inline-flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
             >
               Back to main photo
             </button>
@@ -2064,7 +2064,7 @@ export function ProductWorkspace({
               })
             }
             disabled={bulkFixBusy}
-            className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_12px_rgba(232,107,57,0.30)] transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-default disabled:opacity-70"
+            className="inline-flex items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-all hover:bg-[var(--color-primary-hover)] disabled:cursor-default disabled:opacity-70"
           >
             {bulkFixBusy
               ? "Starting fixes…"
@@ -2100,14 +2100,14 @@ export function ProductWorkspace({
                 type="button"
                 onClick={() => void handleScoreUnscored()}
                 disabled={scoreBusy}
-                className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-6 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-70"
+                className="inline-flex items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary)] px-6 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-70"
               >
                 {scoreBusy ? "Starting..." : "Score this photo"}
               </button>
               <button
                 type="button"
                 onClick={() => void handleRemovePhoto()}
-                className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+                className="inline-flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
               >
                 Remove
               </button>

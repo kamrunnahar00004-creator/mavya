@@ -66,12 +66,12 @@ export type AnalyticsViewModel = {
 // meaning (next step, good/bad results), always paired with text.
 // ---------------------------------------------------------------------------
 
-const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
+const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
 const sectionTitle = "text-[15px] font-semibold text-[var(--color-ink)]";
 const btnPrimary =
-  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
+  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
 const btnGhost =
-  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
+  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
 const input =
   "min-h-[44px] w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 text-[15px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-soft)] focus:border-[var(--color-neutral-dark)] disabled:opacity-60";
 
@@ -165,10 +165,10 @@ function LinkListingCard({ productId, canEdit, onCancel }: { productId: string; 
 
   return (
     <section className={cn(card, "p-6 sm:p-8")}>
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
+      <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary)]">
         <Link2 className="h-5 w-5" aria-hidden="true" />
       </span>
-      <h2 className="mt-4 text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">Track this listing on Etsy</h2>
+      <h2 className="font-display mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-ink)]">Track this listing on Etsy</h2>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">Paste your listing link. Mavya checks it every day and tells you what to fix.</p>
       <form onSubmit={submit} className="mt-5 flex flex-col gap-3 sm:flex-row">
         <label htmlFor="etsy-link" className="sr-only">
@@ -351,7 +351,7 @@ function NextStep({ vm }: { vm: AnalyticsViewModel }) {
         <Icon className="h-4 w-4" aria-hidden="true" />
         {label}
       </p>
-      <h2 id="next-step" className="mt-2 text-[22px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)] sm:text-[24px]">
+      <h2 id="next-step" className="font-display mt-2 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-[var(--color-ink)] sm:text-[24px]">
         {d.headline}
       </h2>
       <p className="mt-1.5 max-w-[60ch] text-[15px] leading-relaxed text-[var(--color-ink-muted)]">{d.detail}</p>
@@ -562,7 +562,7 @@ function ThingsToFix({ vm }: { vm: AnalyticsViewModel }) {
                   {c.suggestions && c.suggestions.length > 0 && (
                     <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Suggestions">
                       {c.suggestions.map((s) => (
-                        <li key={s} className="rounded-full bg-[var(--color-page-deep)] px-2.5 py-1 text-[12.5px] text-[var(--color-ink)]">
+                        <li key={s} className="rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-2.5 py-1 text-[12.5px] text-[var(--color-ink)]">
                           {s}
                         </li>
                       ))}
@@ -817,7 +817,7 @@ function KeywordIdeas({ vm }: { vm: AnalyticsViewModel }) {
                       {i.position !== null ? ` · you about #${i.position}` : " · you not in first 100"}
                     </p>
                   </div>
-                  <span className={cn("rounded-full px-2.5 py-1 text-[12px] font-semibold", LABEL_STYLE[i.label])}>{LABEL_TEXT[i.label]}</span>
+                  <span className={cn("rounded-[var(--radius-md)] px-2.5 py-1 text-[12px] font-semibold", LABEL_STYLE[i.label])}>{LABEL_TEXT[i.label]}</span>
                   {(i.label === "add" || i.label === "winning" || i.label === "keep") && !isTracked && (
                     <button
                       type="button"
@@ -922,7 +922,7 @@ const VERDICT: Record<TestVerdict, { label: string; cls: string }> = {
   better: { label: "Better", cls: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" },
   worse: { label: "Worse", cls: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]" },
   no_clear_change: { label: "No change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
-  running: { label: "Measuring", cls: "bg-[var(--color-mid-soft)] text-[#7a4f0f]" },
+  running: { label: "Measuring", cls: "bg-[var(--color-mid-soft)] text-[#8A5A12]" },
   interrupted: { label: "Stopped", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   no_baseline: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   insufficient_data: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
@@ -963,7 +963,7 @@ function Changes({ vm }: { vm: AnalyticsViewModel }) {
                   </p>
                   <p className="text-[13.5px] text-[var(--color-ink-muted)]">{changeSentence(t)}</p>
                 </div>
-                <span className={cn("flex-shrink-0 rounded-full px-2.5 py-1 text-[12.5px] font-semibold", v.cls)}>{v.label}</span>
+                <span className={cn("flex-shrink-0 rounded-[var(--radius-md)] px-2.5 py-1 text-[12.5px] font-semibold", v.cls)}>{v.label}</span>
               </li>
             );
           })}

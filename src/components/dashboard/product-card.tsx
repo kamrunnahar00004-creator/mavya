@@ -211,7 +211,7 @@ export function ProductCard({
         )}
         {typeof score === "number" && (
           <span
-            className="absolute left-2 top-2 inline-flex items-center rounded-full px-2.5 py-1 text-[13px] font-bold tabular-nums shadow-[0_1px_3px_rgba(25,23,20,0.15)]"
+            className="absolute left-2 top-2 inline-flex items-center rounded-[var(--radius-md)] px-2.5 py-1 text-[13px] font-bold tabular-nums shadow-[0_1px_3px_rgba(25,23,20,0.15)]"
             style={{
               background: scoreColors(score).bg,
               color: scoreColors(score).fg,
@@ -369,7 +369,7 @@ export function ProductCard({
               className="dialog-pop w-full max-w-[400px] rounded-[var(--radius-2xl)] bg-white p-7 shadow-[var(--shadow-soft-strong)]"
               onClick={(e) => e.stopPropagation()}
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-weak-soft)] text-[var(--color-weak)]">
+              <span className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-weak-soft)] text-[var(--color-weak)]">
                 <Trash2 className="h-[22px] w-[22px]" strokeWidth={2} aria-hidden="true" />
               </span>
               <h2 className="mt-4 text-[19px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
@@ -396,7 +396,7 @@ export function ProductCard({
                   type="button"
                   onClick={() => setConfirming(false)}
                   disabled={busy}
-                  className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-50"
+                  className="inline-flex items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -404,7 +404,7 @@ export function ProductCard({
                   type="button"
                   onClick={handleDelete}
                   disabled={busy}
-                  className="inline-flex items-center justify-center gap-2 rounded-full bg-[var(--color-weak)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_12px_rgba(189,64,52,0.28)] transition-all hover:brightness-95 active:translate-y-[1px] disabled:opacity-60"
+                  className="inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-weak)] px-5 py-2.5 text-[14px] font-semibold text-white shadow-[0_4px_12px_rgba(189,64,52,0.28)] transition-all hover:brightness-95 active:translate-y-[1px] disabled:opacity-60"
                 >
                   {busy && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
                   Delete product

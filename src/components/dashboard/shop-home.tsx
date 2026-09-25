@@ -9,7 +9,7 @@ import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-an
 import type { ShopHomeData } from "@/lib/shop-monitor";
 
 // Same flat, single-column language as the listing tabs.
-const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
+const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
 const sectionTitle = "text-[15px] font-semibold text-[var(--color-ink)]";
 const addDaysUtc = (d: string, n: number) => {
   const x = new Date(`${d}T00:00:00Z`);
@@ -17,9 +17,11 @@ const addDaysUtc = (d: string, n: number) => {
   return x.toISOString().slice(0, 10);
 };
 const btnPrimary =
-  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
+  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
+const btnQuiet =
+  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:cursor-default disabled:opacity-50";
 const btnGhost =
-  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
+  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
 const input =
   "min-h-[44px] w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 text-[15px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-soft)] focus:border-[var(--color-neutral-dark)] disabled:opacity-60";
 
@@ -30,7 +32,7 @@ const fmt = (n: number | null) => (n === null ? "–" : n >= 10 ? Math.round(n).
 export const STATUS_META: Record<Exclude<ShopStatus, "steady" | "collecting">, { label: string; hint: string; cls: string }> = {
   rising: { label: "Rising", hint: "More views than usual", cls: "text-[var(--color-strong)]" },
   falling: { label: "Falling", hint: "Fewer views than usual", cls: "text-[var(--color-weak)]" },
-  seen_not_liked: { label: "Seen, not liked", hint: "Views but few favorites", cls: "text-[#7a4f0f]" },
+  seen_not_liked: { label: "Seen, not liked", hint: "Views but few favorites", cls: "text-[#8A5A12]" },
   dead: { label: "No views", hint: "Almost none in 30 days", cls: "text-[var(--color-ink-muted)]" },
 };
 
@@ -104,10 +106,10 @@ function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCance
   }
   return (
     <section className={cn(card, "p-6 sm:p-7")}>
-      <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
+      <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary)]">
         <Store className="h-5 w-5" aria-hidden="true" />
       </span>
-      <h2 className="mt-4 text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">
+      <h2 className="font-display mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-ink)]">
         {current ? "Switch shop" : "Connect your Etsy shop"}
       </h2>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
@@ -163,7 +165,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-end justify-between gap-2">
         <div className="min-w-0">
-          <h2 className="font-display text-[26px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">{data.shop.name}</h2>
+          <h2 className="font-display text-[30px] leading-tight text-[var(--color-ink)]">{data.shop.name}</h2>
           <p className="text-[13.5px] text-[var(--color-ink-muted)]">
             {v ? `${v.listings.length} listings tracked · ` : ""}
             {checked}
@@ -200,7 +202,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
               </p>
             ) : (
               <ol className="mt-2 divide-y divide-[var(--color-border-soft)]">
-                {v.fixQueue.map((f) => (
+                {v.fixQueue.map((f, i) => (
                   <li key={f.listingId} className="flex items-center gap-3 py-3">
                     <Thumb url={f.mainImageUrl} />
                     <div className="min-w-0 flex-1">
@@ -211,7 +213,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                       type="button"
                       onClick={() => open(f.listingId, f.action)}
                       disabled={busy !== null || !canEdit}
-                      className={cn(btnPrimary, "min-h-[40px] px-4")}
+                      className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
                     >
                       {busy === f.listingId ? "Opening..." : ACTION_LABEL[f.action]}
                       <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -335,8 +337,7 @@ function ShopViewsChart({ v }: { v: View }) {
                   {p.views !== null && (
                     <path
                       d={`M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + barW - r} Q${x + barW},${y} ${x + barW},${y + r} V${y + h} Z`}
-                      fill={hover === i ? "var(--color-primary)" : "var(--color-neutral-dark)"}
-                      opacity={hover === null || hover === i ? 1 : 0.5}
+                      fill={hover === i ? "var(--color-primary)" : i >= points.length - 7 ? "var(--color-neutral-dark)" : "var(--color-border-strong)"}
                     />
                   )}
                   <rect
@@ -401,9 +402,9 @@ function TrendsProgress({ days, lastChecked }: { days: number; lastChecked: stri
 
 function StatusTiles({ v }: { v: View }) {
   return (
-    <section aria-label="This week in your shop" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <section aria-label="This week in your shop" className={cn(card, "grid grid-cols-2 overflow-hidden sm:grid-cols-4 [&>*]:border-[var(--color-border-soft)] [&>*:nth-child(odd)]:border-r sm:[&>*]:border-r sm:[&>*:last-child]:border-r-0 [&>*:nth-child(-n+2)]:border-b sm:[&>*]:border-b-0")}>
       {(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => (
-        <Link key={k} href={`/dashboard/shop?filter=${k}`} className={cn(card, "block p-4 transition-colors hover:border-[var(--color-border-strong)]")}>
+        <Link key={k} href={`/dashboard/shop?filter=${k}`} className="block p-4 transition-colors hover:bg-[var(--color-page)]">
           <p className={cn("text-[26px] font-bold leading-none tabular-nums", v.counts[k] ? STATUS_META[k].cls : "text-[var(--color-ink-soft)]")}>{v.counts[k]}</p>
           <p className="mt-2 text-[14px] font-semibold text-[var(--color-ink)]">{STATUS_META[k].label}</p>
           <p className="text-[12.5px] text-[var(--color-ink-muted)]">{STATUS_META[k].hint}</p>
@@ -419,7 +420,7 @@ const VERDICT_CLS = {
   better: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
   worse: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]",
   no_change: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
-  measuring: "bg-[var(--color-mid-soft)] text-[#7a4f0f]",
+  measuring: "bg-[var(--color-mid-soft)] text-[#8A5A12]",
   not_enough_data: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
 } as const;
 
@@ -444,7 +445,7 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
                 {c.beforePerDay !== null && c.afterPerDay !== null && ` · ${fmt(c.beforePerDay)} → ${fmt(c.afterPerDay)} views a day`}
               </p>
             </div>
-            <span className={cn("flex-shrink-0 rounded-full px-2.5 py-1 text-[12.5px] font-semibold", VERDICT_CLS[c.verdict])}>{VERDICT_LABEL[c.verdict]}</span>
+            <span className={cn("flex-shrink-0 rounded-[var(--radius-md)] px-2.5 py-1 text-[12.5px] font-semibold", VERDICT_CLS[c.verdict])}>{VERDICT_LABEL[c.verdict]}</span>
           </li>
         ))}
       </ul>
@@ -469,7 +470,7 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
             href={c.key ? `/dashboard/shop?filter=${c.key}` : "/dashboard/shop"}
             aria-current={(filter ?? null) === c.key ? "page" : undefined}
             className={cn(
-              "rounded-full border px-3.5 py-1.5 text-[13px] font-semibold",
+              "rounded-[var(--radius-md)] border px-3.5 py-1.5 text-[13px] font-semibold",
               (filter ?? null) === c.key ? "border-[var(--color-neutral-dark)] bg-[var(--color-neutral-dark)] text-white" : "border-[var(--color-border)] bg-white text-[var(--color-ink)]"
             )}
           >

@@ -12,16 +12,16 @@ export default function AnalyticsLoading() {
   return (
     <div aria-busy="true" aria-label="Loading analytics">
       <div className="mx-auto flex max-w-[1200px] justify-center px-6 pt-5">
-        <div className="inline-flex rounded-full border border-[var(--color-border)] bg-white p-1 shadow-[var(--shadow-soft)]">
-          <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)]">
+        <div className="inline-flex rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1 shadow-[var(--shadow-soft)]">
+          <span className="inline-flex items-center gap-2 rounded-[var(--radius-md)] px-5 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)]">
             <ImageIcon className="h-4 w-4" aria-hidden="true" />
             Photo
           </span>
-          <span className="inline-flex items-center gap-2 rounded-full px-5 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)]">
+          <span className="inline-flex items-center gap-2 rounded-[var(--radius-md)] px-5 py-2 text-[14px] font-semibold text-[var(--color-ink-muted)]">
             <PenLine className="h-4 w-4" aria-hidden="true" />
             Write
           </span>
-          <span className="inline-flex items-center gap-2 rounded-full bg-[var(--color-neutral-dark)] px-5 py-2 text-[14px] font-semibold text-white">
+          <span className="inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-neutral-dark)] px-5 py-2 text-[14px] font-semibold text-white">
             <BarChart3 className="h-4 w-4" aria-hidden="true" />
             Analytics
           </span>

@@ -309,7 +309,7 @@ function SubscribeInner() {
         <button
           type="button"
           onClick={() => window.location.reload()}
-          className="mt-5 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+          className="mt-5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
         >
           Try again
         </button>
@@ -319,7 +319,7 @@ function SubscribeInner() {
 
   return (
     <main className="mx-auto max-w-[1080px] px-6 pb-20 pt-12 sm:pt-16">
-      <h1 className="text-center font-display text-[34px] font-bold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
+      <h1 className="text-center font-display text-[34px] font-semibold leading-[1.08] tracking-[-0.025em] text-[var(--color-ink)] sm:text-[40px]">
         Turn Etsy views into clicks
       </h1>
 
@@ -377,7 +377,7 @@ function SubscribeInner() {
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
                 href="/dashboard"
-                className="inline-flex flex-1 items-center justify-center rounded-full bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] sm:flex-none"
+                className="inline-flex flex-1 items-center justify-center rounded-[var(--radius-md)] bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] sm:flex-none"
               >
                 Go to dashboard
               </Link>
@@ -385,7 +385,7 @@ function SubscribeInner() {
                 type="button"
                 onClick={() => void openPortal()}
                 disabled={busy !== null}
-                className="inline-flex flex-1 items-center justify-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-6 py-3 text-[15px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60 sm:flex-none"
+                className="inline-flex flex-1 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-6 py-3 text-[15px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)] disabled:opacity-60 sm:flex-none"
               >
                 {busy?.kind === "portal" && (
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -402,14 +402,14 @@ function SubscribeInner() {
               math via annualSavingsCents), so it's shown once here instead
               of repeated as a per-card badge. */}
           <div className="flex items-center justify-center gap-2">
-            <div className="inline-flex rounded-full border border-[var(--color-border)] bg-white p-1">
+            <div className="inline-flex rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1">
               {(["monthly", "annual"] as const).map((c) => (
                 <button
                   key={c}
                   type="button"
                   onClick={() => setCadence(c)}
                   className={cn(
-                    "rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-colors",
+                    "rounded-[var(--radius-md)] px-4 py-1.5 text-[13.5px] font-semibold transition-colors",
                     cadence === c
                       ? "bg-[var(--color-primary)] text-white"
                       : "text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
@@ -419,7 +419,7 @@ function SubscribeInner() {
                 </button>
               ))}
             </div>
-            <span className="rounded-full bg-amber-300 px-2.5 py-1 text-[11px] font-semibold text-amber-950">
+            <span className="rounded-[var(--radius-md)] bg-amber-300 px-2.5 py-1 text-[11px] font-semibold text-amber-950">
               Yearly: {yearlyMonthsFree} months free
             </span>
           </div>
@@ -460,7 +460,7 @@ function SubscribeInner() {
                   {emphasized && (
                     <span
                       className={cn(
-                        "absolute -top-3 left-1/2 inline-flex -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-white shadow-[var(--shadow-soft)]",
+                        "absolute -top-3 left-1/2 inline-flex -translate-x-1/2 rounded-[var(--radius-md)] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-white shadow-[var(--shadow-soft)]",
                         plan.highlight ? "bg-[var(--color-primary)]" : "bg-[var(--color-ink)]"
                       )}
                     >
@@ -528,9 +528,9 @@ function SubscribeInner() {
                     }
                     disabled={busy !== null || billingStatusUnavailable}
                     className={cn(
-                      "mt-7 inline-flex items-center justify-center gap-2 rounded-full px-5 py-3 text-[14.5px] font-semibold transition-all disabled:opacity-60",
+                      "mt-7 inline-flex items-center justify-center gap-2 rounded-[var(--radius-md)] px-5 py-3 text-[14.5px] font-semibold transition-all disabled:opacity-60",
                       plan.highlight
-                        ? "bg-[var(--color-primary)] text-white shadow-[0_4px_14px_rgba(232,107,57,0.35)] hover:bg-[var(--color-primary-hover)]"
+                        ? "bg-[var(--color-primary)] text-white hover:bg-[var(--color-primary-hover)]"
                         : "border border-[var(--color-border-strong)] bg-white text-[var(--color-ink)] hover:bg-[var(--color-page-deep)]"
                     )}
                   >
@@ -557,7 +557,7 @@ function SubscribeInner() {
       )}
 
       <section className="mx-auto mt-16 max-w-[720px]">
-        <h2 className="text-center font-display text-[24px] font-bold text-[var(--color-ink)]">
+        <h2 className="text-center font-display text-[24px] font-semibold text-[var(--color-ink)]">
           Frequently asked questions
         </h2>
         <div className="mt-6 flex flex-col gap-2">

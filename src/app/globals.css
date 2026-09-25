@@ -1,42 +1,44 @@
 @import "tailwindcss";
 
 @theme {
-  /* Locked palette */
-  --color-page: #FAF8F4;
-  --color-page-deep: #F4EFE6;
+  /* Warm tool system (2026-09-25): Notion-era calm. White-leaning ground,
+     warm ink, hairlines instead of boxes, Mavya orange as the one accent,
+     soft mint / sand / rose for status. */
+  --color-page: #FCFCFB;
+  --color-page-deep: #F1F1EF;
   --color-surface: #FFFFFF;
-  --color-ink: #191714;
-  --color-ink-muted: #645E57;
-  --color-ink-soft: #8E867D;
-  --color-border: #E2DFDB;
-  --color-border-strong: #D9D4CC;
-  --color-border-soft: #EAE6E0;
-  --color-primary: #E86B39;
-  --color-primary-hover: #D85B2C;
-  --color-primary-soft: #FCDFD0;
-  --color-neutral-dark: #3F3A35;
-  --color-neutral-dark-hover: #2A2622;
-  --color-weak: #BD4034;
-  --color-weak-soft: #FBE3DF;
-  --color-mid: #D89427;
-  --color-mid-soft: #FBEDD2;
-  --color-strong: #238063;
-  --color-strong-soft: #E0F0E9;
-  --color-tint: #FFF1E7;
-  --color-tint-deep: #FBE3D2;
+  --color-ink: #37352F;
+  --color-ink-muted: #6F6E69;
+  --color-ink-soft: #9B9A97;
+  --color-border: #E3E2DE;
+  --color-border-strong: #D3D1CB;
+  --color-border-soft: #EDEDEA;
+  --color-primary: #E2622F;
+  --color-primary-hover: #CC5423;
+  --color-primary-soft: #FFE9DC;
+  --color-neutral-dark: #37352F;
+  --color-neutral-dark-hover: #22211E;
+  --color-weak: #C4453A;
+  --color-weak-soft: #FCE9E6;
+  --color-mid: #C98A1C;
+  --color-mid-soft: #FBF1D9;
+  --color-strong: #2F7D5B;
+  --color-strong-soft: #E4F4EC;
+  --color-tint: #FFF4EC;
+  --color-tint-deep: #FFE9DC;
 
-  --radius-sm: 6px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
-  --radius-2xl: 20px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
 
-  --shadow-soft: 0 1px 2px rgba(25, 23, 20, 0.04), 0 8px 24px rgba(25, 23, 20, 0.05);
-  --shadow-soft-strong: 0 1px 2px rgba(25, 23, 20, 0.06), 0 16px 40px rgba(25, 23, 20, 0.08);
-  --shadow-inset-frame: inset 0 0 0 1px rgba(25, 23, 20, 0.04);
+  --shadow-soft: 0 1px 2px rgba(15, 15, 15, 0.03), 0 2px 8px rgba(15, 15, 15, 0.04);
+  --shadow-soft-strong: 0 1px 3px rgba(15, 15, 15, 0.05), 0 8px 24px rgba(15, 15, 15, 0.08);
+  --shadow-inset-frame: inset 0 0 0 1px rgba(15, 15, 15, 0.05);
 
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: var(--font-fraunces), "Times New Roman", Georgia, serif;
+  --font-display: var(--font-serif), Georgia, "Times New Roman", serif;
 }
 
 @layer base {
@@ -49,7 +51,7 @@
     color: var(--color-ink);
     font-family: var(--font-sans);
     font-size: 15px;
-    line-height: 1.5;
+    line-height: 1.55;
     min-height: 100vh;
     background: var(--color-page);
   }
@@ -66,8 +68,13 @@
 @layer components {
   .font-display {
     font-family: var(--font-display);
-    font-feature-settings: "ss01" on, "ss02" on;
+    font-weight: 600;
+    letter-spacing: -0.01em;
   }
+
+  /* Headings read as friendly serif across the app. */
+  h1, h2 { text-wrap: balance; }
+  p { text-wrap: pretty; }
 
   .eyebrow {
     font-size: 11px;
@@ -88,7 +95,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    opacity: 0.5;
+    opacity: 0.2;
     mix-blend-mode: multiply;
     background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.45 0 0 0 0 0.4 0 0 0 0.06 0'/></filter><rect width='160' height='160' filter='url(%23n)'/></svg>");
     background-size: 160px 160px;
@@ -120,7 +127,7 @@
 
   /* Skeleton shimmer */
   .skeleton-shimmer {
-    background: linear-gradient(90deg, #F0EBE3 0%, #E8E3DB 50%, #F0EBE3 100%);
+    background: linear-gradient(90deg, #F1F1EF 0%, #E9E9E6 50%, #F1F1EF 100%);
     background-size: 200% 100%;
     animation: shimmer 1.4s ease-in-out infinite;
   }

@@ -7,12 +7,12 @@ import { cn } from "@/lib/utils";
 import type { CheckArea as Area, CheckItem } from "@/lib/listing-check";
 
 // Same flat, single-column language as the Analytics tab.
-const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
+const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
 const sectionTitle = "text-[15px] font-semibold text-[var(--color-ink)]";
 const btnPrimary =
-  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
+  "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
 const btnGhost =
-  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
+  "inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-[var(--radius-md)] px-3 text-[13px] font-semibold text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[var(--color-ink)] disabled:cursor-default disabled:opacity-50";
 const input =
   "min-h-[44px] w-full rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white px-4 text-[15px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-soft)] focus:border-[var(--color-neutral-dark)] disabled:opacity-60";
 
@@ -128,10 +128,10 @@ export function ListingWriteView({
       <main className="mx-auto w-full max-w-[760px] px-4 pb-20 pt-6 sm:px-6">
         <h1 className="sr-only">Write your listing</h1>
         <section className={cn(card, "p-6 sm:p-8")}>
-          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[var(--color-tint)] text-[var(--color-primary)]">
+          <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary)]">
             <Link2 className="h-5 w-5" aria-hidden="true" />
           </span>
-          <h2 className="mt-4 text-[22px] font-bold tracking-[-0.01em] text-[var(--color-ink)]">Link your Etsy listing first</h2>
+          <h2 className="font-display mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-ink)]">Link your Etsy listing first</h2>
           <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
             {linked ? "Mavya is reading your listing. Try again in a minute." : "Mavya writes from your current listing, so it needs the link."}
           </p>
@@ -171,7 +171,7 @@ export function ListingWriteView({
       <section className={card} aria-labelledby="check-h">
         <div className="border-b border-[var(--color-border-soft)] px-5 py-5 sm:px-6">
           <p className="text-[13px] font-medium text-[var(--color-ink-soft)]">Listing check</p>
-          <h2 id="check-h" className="mt-1 text-[22px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
+          <h2 id="check-h" className="font-display mt-1 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
             {toFix === 0 ? "Your listing looks solid" : `${toFix} thing${toFix === 1 ? "" : "s"} to improve`}
           </h2>
           <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">Read from your live Etsy listing.</p>
@@ -186,7 +186,7 @@ export function ListingWriteView({
           {current.tags.length ? (
             <ul className="flex flex-wrap gap-1.5">
               {current.tags.map((t) => (
-                <li key={t} className="rounded-full bg-[var(--color-page-deep)] px-2.5 py-1 text-[13px] text-[var(--color-ink)]">
+                <li key={t} className="rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-2.5 py-1 text-[13px] text-[var(--color-ink)]">
                   {t}
                 </li>
               ))}
@@ -206,7 +206,7 @@ export function ListingWriteView({
         <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-ink-soft)]">
           <Sparkles className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" /> Suggested rewrite
         </p>
-        <h2 id="rewrite-h" className="mt-1 text-[20px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
+        <h2 id="rewrite-h" className="font-display mt-1 text-[20px] font-semibold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
           {result ? "New title, tags, and description" : busy ? "Writing your suggestions" : "Get a stronger title, tags, and description"}
         </h2>
         <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
@@ -294,8 +294,8 @@ function CheckGroup({
         <h3 className="text-[15px] font-semibold text-[var(--color-ink)]">{label}</h3>
         <span
           className={cn(
-            "rounded-full px-2.5 py-0.5 text-[12px] font-semibold",
-            bad ? "bg-[var(--color-mid-soft)] text-[#7a4f0f]" : "bg-[var(--color-strong-soft)] text-[var(--color-strong)]"
+            "rounded-[var(--radius-md)] px-2.5 py-0.5 text-[12px] font-semibold",
+            bad ? "bg-[var(--color-mid-soft)] text-[#8A5A12]" : "bg-[var(--color-strong-soft)] text-[var(--color-strong)]"
           )}
         >
           {bad ? `${bad} to fix` : "Good"}
@@ -309,7 +309,7 @@ function CheckGroup({
               {c.ok ? (
                 <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-strong)]" aria-label="Good" />
               ) : (
-                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#b7791f]" aria-label="To fix" />
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-mid)]" aria-label="To fix" />
               )}
               <span className={c.ok ? "text-[var(--color-ink-muted)]" : "text-[var(--color-ink)]"}>{c.text}</span>
             </li>
@@ -396,7 +396,7 @@ function Tags({ result }: { result: Result }) {
             <span className="flex min-w-0 items-center gap-2">
               <span className="truncate text-[15px] text-[var(--color-ink)]">{t.tag}</span>
               {t.isNew && (
-                <span className="flex-shrink-0 rounded-full bg-[var(--color-strong-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-strong)]">New</span>
+                <span className="flex-shrink-0 rounded-[var(--radius-md)] bg-[var(--color-strong-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--color-strong)]">New</span>
               )}
             </span>
             <span className="flex-shrink-0 text-right text-[12.5px] text-[var(--color-ink-muted)]">{t.reason}</span>
@@ -419,14 +419,14 @@ function Description({ result }: { result: Result }) {
         <CopyButton text={result.description} />
       </div>
       {result.placeholders.length > 0 && (
-        <p className="mt-2 rounded-[var(--radius-lg)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] text-[#7a4f0f]">
+        <p className="mt-2 rounded-[var(--radius-lg)] bg-[var(--color-mid-soft)] px-3 py-2 text-[13px] text-[#8A5A12]">
           Fill in {result.placeholders.length} blank{result.placeholders.length > 1 ? "s" : ""} before pasting: {result.placeholders.join(", ")}
         </p>
       )}
       <div className="mt-3 whitespace-pre-wrap text-[14.5px] leading-relaxed text-[var(--color-ink)]">
         {parts.map((p, i) =>
           /^\[[^\]\n]{2,80}\]$/.test(p) ? (
-            <mark key={i} className="rounded bg-[var(--color-mid-soft)] px-1 text-[#7a4f0f]">
+            <mark key={i} className="rounded bg-[var(--color-mid-soft)] px-1 text-[#8A5A12]">
               {p}
             </mark>
           ) : (

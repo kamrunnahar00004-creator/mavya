@@ -77,7 +77,7 @@ export default function SubscriptionSuccessPage() {
 
         {state === "active" && (
           <>
-            <span className="flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-strong-soft)] text-[var(--color-strong)]">
+            <span className="flex h-12 w-12 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-strong-soft)] text-[var(--color-strong)]">
               <CheckCircle2 className="h-6 w-6" aria-hidden="true" />
             </span>
             <p className="mt-4 text-[17px] font-bold text-[var(--color-ink)]">
@@ -103,13 +103,13 @@ export default function SubscriptionSuccessPage() {
               <button
                 type="button"
                 onClick={() => window.location.reload()}
-                className="inline-flex rounded-full bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
+                className="inline-flex rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 py-2.5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
               >
                 Refresh
               </button>
               <Link
                 href="/subscribe"
-                className="inline-flex rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+                className="inline-flex rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
               >
                 Back to plan
               </Link>

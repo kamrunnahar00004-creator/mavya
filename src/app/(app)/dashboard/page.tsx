@@ -116,7 +116,7 @@ export default async function DashboardPage() {
           <span className="flex h-24 w-24 items-center justify-center rounded-[var(--radius-2xl)] bg-[var(--color-tint)] text-[var(--color-primary)] shadow-[var(--shadow-soft)] ring-1 ring-inset ring-[var(--color-tint-deep)]">
             <ImageUp className="h-11 w-11" strokeWidth={1.5} aria-hidden="true" />
           </span>
-          <h1 className="mt-7 font-display text-[30px] font-bold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
+          <h1 className="mt-7 font-display text-[30px] font-semibold leading-[1.1] tracking-[-0.02em] text-[var(--color-ink)] sm:text-[38px]">
             Your credits are paused
           </h1>
           <p className="mt-3 max-w-[400px] text-[16px] leading-relaxed text-[var(--color-ink-muted)]">
@@ -125,7 +125,7 @@ export default async function DashboardPage() {
           <div className="mt-7">
             <Link
               href="/settings"
-              className="inline-flex rounded-full bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
+              className="inline-flex rounded-[var(--radius-md)] bg-[var(--color-primary)] px-6 py-3 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]"
             >
               Fix billing in Settings
             </Link>
@@ -165,7 +165,7 @@ export default async function DashboardPage() {
       <div className="mx-auto mb-12 max-w-[760px]">
         <ShopHome data={shopHome} canEdit={entitlement.active} />
       </div>
-      <h2 className="font-display text-[24px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
+      <h2 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
         Listings you&apos;re working on
       </h2>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">

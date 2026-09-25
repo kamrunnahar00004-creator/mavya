@@ -229,11 +229,11 @@ function ChecklistRow({
           >
             {item.title}
           </span>
-          <span className="rounded-full bg-[var(--color-page-deep)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink-muted)]">
+          <span className="rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-2 py-0.5 text-[10.5px] font-semibold text-[var(--color-ink-muted)]">
             {DOUBT_LABEL[item.answers_doubt]}
           </span>
           {covered && (
-            <span className="rounded-full bg-[var(--color-strong-soft)] px-2 py-0.5 text-[10.5px] font-bold text-[var(--color-strong)]">
+            <span className="rounded-[var(--radius-md)] bg-[var(--color-strong-soft)] px-2 py-0.5 text-[10.5px] font-bold text-[var(--color-strong)]">
               Added
             </span>
           )}

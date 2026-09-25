@@ -299,7 +299,7 @@ export function AuditWorkspace({
       onClick={() => setEditModalOpen(true)}
       aria-label="AI Edit"
       title="Describe a background, lighting, crop, or cleanup change."
-      className="inline-flex items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+      className="inline-flex items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-all hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
     >
       <Wrench className="h-4 w-4" aria-hidden="true" />
       AI Edit
@@ -476,7 +476,7 @@ export function AuditWorkspace({
                 type="button"
                 onClick={() => setEditModalOpen(true)}
                 title="Edit however you like."
-                className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-full bg-[rgba(25,23,20,0.78)] px-4 py-2 text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(25,23,20,0.20)] backdrop-blur-sm transition-all hover:bg-[rgba(25,23,20,0.9)]"
+                className="absolute bottom-4 left-4 inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[rgba(25,23,20,0.78)] px-4 py-2 text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(25,23,20,0.20)] backdrop-blur-sm transition-all hover:bg-[rgba(25,23,20,0.9)]"
               >
                 <Wrench className="h-4 w-4" aria-hidden="true" />
                 Edit
@@ -505,7 +505,7 @@ export function AuditWorkspace({
                     window.open(url, "_blank", "noopener");
                   }
                 }}
-                className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-full bg-[rgba(25,23,20,0.78)] px-4 py-2 text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(25,23,20,0.20)] backdrop-blur-sm transition-all hover:bg-[rgba(25,23,20,0.9)]"
+                className="absolute bottom-4 right-4 inline-flex items-center gap-2 rounded-[var(--radius-md)] bg-[rgba(25,23,20,0.78)] px-4 py-2 text-[14px] font-semibold text-white shadow-[0_8px_20px_rgba(25,23,20,0.20)] backdrop-blur-sm transition-all hover:bg-[rgba(25,23,20,0.9)]"
               >
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Download
@@ -703,7 +703,7 @@ export function AuditWorkspace({
             <ScoringInfo isExtra={isExtra} />
             {isExtra && state.supportingRole && state.supportingRole !== "other" && (
               <div className="mt-3 flex flex-col gap-1.5">
-                <span className="inline-flex w-fit items-center gap-1.5 rounded-full bg-[var(--color-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--color-primary)]">
+                <span className="inline-flex w-fit items-center gap-1.5 rounded-[var(--radius-md)] bg-[var(--color-tint)] px-3 py-1 text-[12px] font-semibold text-[var(--color-primary)]">
                   {SUPPORTING_ROLE_LABELS[state.supportingRole] ?? "Supporting photo"} - detected
                 </span>
                 {state.buyerQuestion && (
@@ -820,7 +820,7 @@ export function AuditWorkspace({
                   <button
                     type="button"
                     disabled
-                    className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                    className="inline-flex cursor-wait items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
                   >
                     <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                     {improveCountdown}
@@ -841,7 +841,7 @@ export function AuditWorkspace({
             ) : previewActive ? (
               <div className="flex flex-col items-start gap-3">
                 {scoreDeltaLabel && (
-                  <div className="rounded-full bg-[var(--color-strong-soft)] px-3 py-1 text-[13px] font-bold text-[var(--color-strong)]">
+                  <div className="rounded-[var(--radius-md)] bg-[var(--color-strong-soft)] px-3 py-1 text-[13px] font-bold text-[var(--color-strong)]">
                     {scoreDeltaLabel}
                   </div>
                 )}
@@ -881,7 +881,7 @@ export function AuditWorkspace({
                       <button
                         type="button"
                         disabled
-                        className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                        className="inline-flex cursor-wait items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
                       >
                         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                         {improveLoading ? improveCountdown : backgroundCountdown}
@@ -917,7 +917,7 @@ export function AuditWorkspace({
                 <button
                   type="button"
                   disabled
-                  className="inline-flex cursor-wait items-center gap-2 rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
+                  className="inline-flex cursor-wait items-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink-muted)]"
                 >
                   <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
                   {backgroundCountdown}
@@ -1115,9 +1115,9 @@ function PrimaryButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "inline-flex items-center gap-2 rounded-full px-6 py-3 text-[15px] font-semibold text-white transition-all active:translate-y-[1px]",
+        "inline-flex items-center gap-2 rounded-[var(--radius-md)] px-6 py-3 text-[15px] font-semibold text-white transition-all active:translate-y-[1px]",
         variant === "primary"
-          ? "bg-[var(--color-primary)] shadow-[0_4px_12px_rgba(232,107,57,0.30)] hover:bg-[var(--color-primary-hover)] hover:shadow-[0_6px_16px_rgba(216,91,44,0.36)]"
+          ? "bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)]"
           : "bg-[var(--color-neutral-dark)] shadow-[0_4px_12px_rgba(63,58,53,0.25)] hover:bg-[var(--color-neutral-dark-hover)]",
         disabled && "cursor-not-allowed opacity-70"
       )}

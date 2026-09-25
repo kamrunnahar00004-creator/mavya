@@ -22,7 +22,7 @@ export default async function ShopListingsPage({ searchParams }: { searchParams:
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-[13.5px] font-semibold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Shop home
       </Link>
-      <h1 className="mt-2 font-display text-[26px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">
+      <h1 className="mt-2 font-display text-[26px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
         {data.shop ? `All listings in ${data.shop.name}` : "Your listings"}
       </h1>
       <div className="mt-5">
