@@ -366,14 +366,14 @@ function NextStep({ vm }: { vm: AnalyticsViewModel }) {
 // Three numbers
 // ---------------------------------------------------------------------------
 
+// Search rank is deliberately NOT a headline number: it is the order of
+// Etsy API results, not a verified shopper view (north star 11.2 rule 6).
 function Numbers({ vm }: { vm: AnalyticsViewModel }) {
-  const best = vm.keywords
-    .filter((k) => k.position !== null)
-    .sort((a, b) => (a.position as number) - (b.position as number))[0];
+  const tags = vm.listing?.tags.length;
   const items = [
     { value: fmt(vm.last7.viewsPerDay), label: "views a day" },
-    { value: best ? `#${best.position}` : vm.keywords.length ? "100+" : "–", label: "best search rank" },
-    { value: fmt(vm.last7.favoritesPer100Views), label: "favorites per 100 views" },
+    { value: fmt(vm.last7.favoritesPer100Views), label: "net favorites per 100 views" },
+    { value: tags === undefined ? "–" : `${tags}/13`, label: "tags used" },
   ];
   return (
     <section aria-label="Last 7 days" className={cn(card, "grid grid-cols-3 divide-x divide-[var(--color-border-soft)]")}>
@@ -672,7 +672,7 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
         </p>
       ) : (
         <>
-          <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">Where you show up when buyers search these words.</p>
+          <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">Where you show up when buyers search these words. From Mavya&apos;s daily check, so what you see on Etsy may differ a little.</p>
           <ul className="mt-3 flex flex-col gap-1.5" role="group" aria-label="Your keywords">
             {vm.keywords.map((kw, i) => {
               const selected = i === idx;
@@ -697,7 +697,7 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
                         found ? "text-[var(--color-ink)]" : "text-[var(--color-weak)]"
                       )}
                     >
-                      {found ? `You're #${kw.position}` : `Not in top ${kw.depth}`}
+                      {found ? `About #${kw.position}` : `Not in first ${kw.depth}`}
                     </span>
                   </button>
                 </li>

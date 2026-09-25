@@ -715,7 +715,7 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       state: "findability",
       fixTarget: "title_tags",
       headline: "Buyers may not be finding this listing",
-      detail: "It is not in the top 48 search results for your keywords. Start with the title and tags.",
+      detail: "It does not show near the top of search for your keywords. Start with the title and tags.",
       evidence,
     };
   }
