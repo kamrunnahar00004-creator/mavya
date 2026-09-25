@@ -164,6 +164,9 @@ describe("shop home", () => {
     expect(v.fixQueue.find((f) => f.listingId === 1)).toMatchObject({ action: "write", reason: "Very short title" });
     // Photo problem is shown first and drives the action; tags come second.
     expect(v.fixQueue.find((f) => f.listingId === 2)).toMatchObject({ action: "photo", reason: "Only 2 photos · 11 empty tag slots" });
+    // The seller is told what to DO, and the button names the first step.
+    expect(v.fixQueue.find((f) => f.listingId === 1)).toMatchObject({ todo: "Write a fuller title (say what it is and who it is for).", button: "Fix title" });
+    expect(v.fixQueue.find((f) => f.listingId === 2)).toMatchObject({ todo: "Add more photos (only 2), then fill 11 empty tags.", button: "Add photos" });
     // A few empty tag slots alone rank below a missing title or photos.
     expect(v.fixQueue.map((f) => f.listingId).slice(0, 2).sort()).toEqual([1, 2]);
   });

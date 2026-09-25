@@ -37,7 +37,6 @@ export const STATUS_META: Record<Exclude<ShopStatus, "steady" | "collecting">, {
   dead: { label: "No views", hint: "Almost none in 30 days", cls: "text-[var(--color-ink-muted)]" },
 };
 
-const ACTION_LABEL: Record<FixAction, string> = { write: "Write", photo: "Photo", analytics: "Open" };
 const ACTION_PATH: Record<FixAction, string> = { write: "/write", photo: "", analytics: "/analytics" };
 
 /** Open a shop listing: existing product, or import it (main photo + link). */
@@ -196,7 +195,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
             <h3 id="fix3" className={sectionTitle}>
               {v.fixQueue.length ? `Fix these ${v.fixQueue.length} first` : "Fix first"}
             </h3>
-            <p className="mt-0.5 text-[13px] text-[var(--color-ink-muted)]">Picked from title, photos, and tags, weighted by how many people see each listing.</p>
+            <p className="mt-0.5 text-[13px] text-[var(--color-ink-muted)]">Biggest gaps on your most seen listings. Fix it in Mavya, then paste into Etsy.</p>
             {v.fixQueue.length === 0 ? (
               <p className="mt-3 flex items-center gap-2 text-[14px] text-[var(--color-strong)]">
                 <Check className="h-4 w-4" aria-hidden="true" /> Nothing urgent. Check back tomorrow.
@@ -208,7 +207,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                     <Thumb url={f.mainImageUrl} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] text-[var(--color-ink)]">{f.title}</p>
-                      <p className="text-[13px] text-[var(--color-ink-muted)]">{f.reason}</p>
+                      <p className="text-[13.5px] text-[var(--color-ink)]">{f.todo}</p>
                     </div>
                     <button
                       type="button"
@@ -216,7 +215,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                       disabled={busy !== null || !canEdit}
                       className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
                     >
-                      {busy === f.listingId ? "Opening..." : ACTION_LABEL[f.action]}
+                      {busy === f.listingId ? "Opening..." : f.button}
                       <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </li>
@@ -498,7 +497,7 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
               {head("trend", "Trend", "hidden w-[104px] md:table-cell")}
               {head("tags", "Tags", "hidden w-[72px] md:table-cell")}
               {head("photos", "Photos", "hidden w-[80px] lg:table-cell")}
-              <th scope="col" className="w-[84px] px-4 py-2 sm:px-5">
+              <th scope="col" className="w-[96px] px-3 py-2 sm:w-[108px] sm:px-4">
                 <span className="sr-only">Open</span>
               </th>
             </tr>
@@ -521,12 +520,16 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
                         <Thumb url={l.mainImageUrl} small />
                         <div className="min-w-0">
                           <p className="truncate text-[14px] text-[var(--color-ink)]">{l.title}</p>
-                          <div className="mt-0.5 flex items-center gap-2">
-                            <Sparkline values={l.spark} />
-                            <span className="truncate text-[12px] text-[var(--color-ink-muted)]">
-                              {l.status in STATUS_META ? STATUS_META[l.status as keyof typeof STATUS_META].label : problem?.text ?? ""}
-                            </span>
-                          </div>
+                          {(l.spark.some((x) => x !== null) || l.status in STATUS_META || problem) && (
+                            <div className="mt-0.5 flex items-center gap-2">
+                              {l.spark.some((x) => x !== null) && <Sparkline values={l.spark} />}
+                              {l.status in STATUS_META ? (
+                                <span className="truncate text-[12px] text-[var(--color-ink-muted)]">{STATUS_META[l.status as keyof typeof STATUS_META].label}</span>
+                              ) : (
+                                problem && <span className="truncate text-[12px] text-[var(--color-ink-muted)] md:hidden">{problem.text}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -541,7 +544,7 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
                     </td>
                     <td className={cn("hidden px-2 text-right tabular-nums md:table-cell", l.tagsUsed === 0 ? "font-semibold text-[var(--color-weak)]" : "text-[var(--color-ink)]")}>{l.tagsUsed}/13</td>
                     <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] lg:table-cell">{l.imageCount ?? "–"}</td>
-                    <td className="px-4 text-right sm:px-5">
+                    <td className="px-3 text-right sm:px-4">
                       <button type="button" onClick={() => open(l.listingId, "analytics")} disabled={busy !== null || !canEdit} className={cn(btnQuiet, "min-h-[36px] px-3")}>
                         {busy === l.listingId ? "..." : "Open"}
                       </button>

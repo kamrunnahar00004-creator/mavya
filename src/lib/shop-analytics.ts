@@ -85,7 +85,39 @@ export type ShopListingView = {
   spark: (number | null)[];
 };
 
-export type ShopFix = { listingId: number; title: string; mainImageUrl: string | null; reason: string; action: FixAction };
+export type ShopFix = {
+  listingId: number;
+  title: string;
+  mainImageUrl: string | null;
+  /** What the problem is (short). */
+  reason: string;
+  /** What to do about it, in plain words ("Add tags (0 of 13 used), then add more photos (only 2)."). */
+  todo: string;
+  /** Button label naming the first step ("Add tags", "Add photos", "Fix title"). */
+  button: string;
+  action: FixAction;
+};
+
+/** Plain instruction for one visible problem. */
+export function issueTodo(i: ShopIssue): string {
+  if (i.kind === "tags") {
+    if (i.text === "No tags") return "add tags (0 of 13 used)";
+    const n = Number(i.text.match(/\d+/)?.[0] ?? 0);
+    return `fill ${n} empty tag${n === 1 ? "" : "s"}`;
+  }
+  if (i.kind === "photos") return `add more photos (only ${i.text.match(/\d+/)?.[0] ?? "a few"})`;
+  if (i.text === "No title") return "add a title";
+  if (i.text.startsWith("Title repeats")) return "stop repeating a word in the title";
+  if (i.text === "Title in capitals") return "use normal case in the title";
+  return "write a fuller title (say what it is and who it is for)";
+}
+
+const BUTTON: Record<ShopIssue["kind"], string> = { tags: "Add tags", photos: "Add photos", title: "Fix title" };
+const STATUS_SENTENCE: Partial<Record<ShopStatus, string>> = {
+  falling: "Views are falling.",
+  seen_not_liked: "People look but rarely favorite it.",
+  dead: "Almost no views in 30 days.",
+};
 
 export type ShopChangeResult = {
   listingId: number;
@@ -223,7 +255,9 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
 
     const statusWeight = { falling: 3, seen_not_liked: 2, dead: 1.5, rising: 0, steady: 0, collecting: 0 }[status];
     const issueWeight = issues.reduce((s, i) => s + (i.severity === "high" ? 2 : 1), 0);
-    const importance = 1 + Math.log10(1 + Math.max(0, last30.views || (w.latest.views ?? 0) / 30));
+    // Traffic weighs strongly (square root, not log): the same gap on a listing
+    // many buyers see is worth more than two gaps on one almost nobody sees.
+    const importance = 1 + Math.sqrt(Math.max(0, last30.views || (w.latest.views ?? 0) / 30));
     const score = (statusWeight + issueWeight) * importance;
 
     const totalViews = typeof w.latest.views === "number" && w.latest.views > 0 ? w.latest.views : null;
@@ -281,7 +315,12 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
           : top || titleIssue || tagIssue || l.status === "dead" || l.status === "falling"
           ? "write"
           : "analytics";
-      return { listingId: l.listingId, title: l.title, mainImageUrl: l.mainImageUrl, reason, action };
+      const steps = ranked.slice(0, 2).map(issueTodo);
+      const stepText = steps.length ? `${steps.join(", then ")}.` : "check what changed.";
+      const todo = [STATUS_SENTENCE[l.status], stepText.charAt(0).toUpperCase() + stepText.slice(1)].filter(Boolean).join(" ");
+      const lead = action === "photo" ? photoIssue ?? top : top;
+      const button = lead ? BUTTON[lead.kind] : "Open";
+      return { listingId: l.listingId, title: l.title, mainImageUrl: l.mainImageUrl, reason, todo, button, action };
     });
 
   const changes = shopChanges(work, today);

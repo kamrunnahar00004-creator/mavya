@@ -27,7 +27,7 @@ const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const REPAIR =
-  "\n\nYour previous answer could not be used. Return ONLY the JSON object with exactly 2 titles, exactly 13 tags, and a description.";
+  "\n\nYour previous answer could not be used. Return ONLY the JSON object with exactly 2 titles, exactly 16 tags (best first, each at most 20 characters), and a description.";
 
 /**
  * Write a new title (2 options), 13 tags, and a description for one linked

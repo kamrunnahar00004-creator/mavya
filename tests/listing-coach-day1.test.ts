@@ -252,3 +252,40 @@ describe("shop home has numbers on day 1", () => {
     expect(texts.some((t) => /title/i.test(t))).toBe(false);
   });
 });
+
+describe("Fix these first says what to do", () => {
+  it("an untagged listing with 2 photos is told to add tags, then photos", () => {
+    const TODAY = "2026-09-25";
+    const v = buildShopView(
+      [{ listing_id: 1, snapshot_date: TODAY, views: 900, favorites: 10, image_count: 2, main_image_id: 1, main_image_url: null, title: "PRE-ORDER | Roblox Arg - Brandon Works Keychain - Brandon", tags: [] }],
+      TODAY
+    );
+    expect(v.fixQueue[0]).toMatchObject({ todo: "Add tags (0 of 13 used), then add more photos (only 2).", button: "Add tags", action: "write" });
+  });
+});
+
+describe("Fix these first favors listings buyers actually see", () => {
+  it("a 15,000-view listing with no tags outranks small listings with two gaps", () => {
+    const TODAY = "2026-09-25";
+    const r = (id: number, views: number, photos: number) => ({
+      listing_id: id, snapshot_date: TODAY, views, favorites: 10, image_count: photos, main_image_id: 1, main_image_url: null,
+      title: "PRE-ORDER | Roblox Forsaken Keychain - a readable title", tags: [] as string[],
+    });
+    const v = buildShopView([r(1, 900, 2), r(2, 15075, 15), r(3, 700, 2)], TODAY);
+    expect(v.fixQueue.map((f) => f.listingId)).toEqual([2, 1, 3]);
+  });
+});
+
+describe("writer spare tags", () => {
+  it("still returns exactly 13 tags when crowded or too-long tags are dropped", async () => {
+    const { finalizeWriterOutput } = await import("@/lib/listing-writer");
+    const tags = ["roblox keychain", "forsaken roblox", "this tag is far too long to use", ...Array.from({ length: 13 }, (_, i) => `good tag ${i}`)];
+    const out = finalizeWriterOutput(
+      { titles: ["PRE-ORDER Roblox Forsaken keychain, acrylic charm", "Roblox Forsaken acrylic keychain for fans"], tags, description: "A fun acrylic keychain for Roblox Forsaken fans. Details below." },
+      { current: { title: "t", tags: [], description: "" }, photo: { productSummary: null, category: null }, keywords: [], winnerTags: [], isDigital: false, facts: {},
+        ideas: [{ keyword: "forsaken roblox", label: "quiet", competition: 817, position: null } as never] }
+    );
+    expect(out.tags).toHaveLength(13);
+    expect(out.tags.map((t) => t.tag)).not.toContain("forsaken roblox");
+  });
+});

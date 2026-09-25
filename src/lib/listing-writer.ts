@@ -104,7 +104,8 @@ Hard rules:
 4. Titles: exactly 2 options. Lead with what the product is, using the seller's
    main search phrase. Natural and readable, not a pile of keywords. At most
    140 characters. Use each of % : & + at most once.
-5. Tags: exactly 13. Each at most 20 characters. Letters, numbers, spaces,
+5. Tags: exactly 16, best first (13 to use plus 3 spares in case one is
+   rejected). Each at most 20 characters. Letters, numbers, spaces,
    hyphens, and apostrophes only. Prefer 2 to 3 word phrases buyers would type.
    No duplicates and no near-duplicates. Keep the seller's strong existing tags,
    and fill empty slots with relevant phrases from GOOD PHRASES first, then
