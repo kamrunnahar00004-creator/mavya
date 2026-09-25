@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Check, ChevronRight, Store } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, Store } from "lucide-react";
+import { MetricChart, Sparkline } from "@/components/dashboard/metric-chart";
 import { cn } from "@/lib/utils";
 import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-analytics";
 import type { ShopHomeData } from "@/lib/shop-monitor";
@@ -188,7 +189,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
       ) : (
         <>
           <ShopNumbers v={v} />
-          <ShopViewsChart v={v} />
+          {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
           {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
 
           <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="fix3">
@@ -262,9 +263,9 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
 
 type View = NonNullable<ShopHomeData["view"]>;
 
-function Thumb({ url }: { url: string | null }) {
+function Thumb({ url, small }: { url: string | null; small?: boolean }) {
   return (
-    <span className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
+    <span className={cn("flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]", small ? "h-10 w-10" : "h-12 w-12")}>
       {url && (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={thumb(url) ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
@@ -290,88 +291,6 @@ function ShopNumbers({ v }: { v: View }) {
           <p className="text-[12px] text-[var(--color-ink-muted)]">{c.sub}</p>
         </div>
       ))}
-    </section>
-  );
-}
-
-function ShopViewsChart({ v }: { v: View }) {
-  const [hover, setHover] = useState<number | null>(null);
-  const points = v.daily;
-  const known = points.filter((p) => p.views !== null);
-  const W = 720;
-  const H = 140;
-  const padT = 14;
-  const plotH = H - padT - 2;
-  const max = Math.max(1, ...known.map((p) => p.views as number));
-  const niceMax = max <= 5 ? 5 : Math.ceil(max / 5) * 5;
-  const slot = W / Math.max(points.length, 1);
-  const barW = Math.max(3, Math.min(16, slot - 3));
-  const last7 = known.slice(-7).reduce((s, p) => s + (p.views as number), 0);
-  const hovered = hover !== null ? points[hover] : null;
-  return (
-    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="shop-views">
-      <div className="flex items-baseline justify-between gap-2">
-        <h3 id="shop-views" className={sectionTitle}>
-          Shop views a day
-        </h3>
-        {known.length > 0 && <p className="text-[13px] tabular-nums text-[var(--color-ink-muted)]">{fmt(last7)} in the last {Math.min(7, known.length)} days</p>}
-      </div>
-      {known.length === 0 ? (
-        <div className="mt-4 rounded-[var(--radius-lg)] bg-[var(--color-page)] px-4 py-8 text-center">
-          <p className="text-[15px] font-semibold text-[var(--color-ink)]">Your chart starts tomorrow</p>
-          <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">Etsy only shows total views, so Mavya needs two daily checks to count one day.</p>
-        </div>
-      ) : (
-        <div className="relative mt-4">
-          <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Shop views a day, last ${points.length} days`}>
-            <line x1={0} x2={W} y1={padT + plotH} y2={padT + plotH} stroke="var(--color-border-soft)" strokeWidth={1} />
-            <line x1={0} x2={W} y1={padT} y2={padT} stroke="var(--color-border-soft)" strokeWidth={1} strokeDasharray="4 4" />
-            {points.map((p, i) => {
-              const cx = slot * i + slot / 2;
-              const h = p.views === null ? 0 : Math.max(2, (p.views / niceMax) * plotH);
-              const r = Math.min(4, barW / 2, h);
-              const x = cx - barW / 2;
-              const y = padT + plotH - h;
-              return (
-                <g key={p.date}>
-                  {p.views !== null && (
-                    <path
-                      d={`M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + barW - r} Q${x + barW},${y} ${x + barW},${y + r} V${y + h} Z`}
-                      fill={hover === i ? "var(--color-primary)" : i >= points.length - 7 ? "var(--color-neutral-dark)" : "var(--color-border-strong)"}
-                    />
-                  )}
-                  <rect
-                    x={slot * i}
-                    y={0}
-                    width={slot}
-                    height={H}
-                    fill="transparent"
-                    tabIndex={0}
-                    onMouseEnter={() => setHover(i)}
-                    onMouseLeave={() => setHover(null)}
-                    onFocus={() => setHover(i)}
-                    onBlur={() => setHover(null)}
-                    aria-label={`${shortDate(p.date)}: ${p.views === null ? "no data" : `${fmt(p.views)} views`}`}
-                  />
-                </g>
-              );
-            })}
-          </svg>
-          <span className="pointer-events-none absolute left-0 top-0 -translate-y-1/2 bg-white pr-1.5 text-[11.5px] tabular-nums text-[var(--color-ink-soft)]">{niceMax}</span>
-          <div className="mt-1.5 flex justify-between text-[11.5px] text-[var(--color-ink-soft)]">
-            <span>{shortDate(points[0].date)}</span>
-            <span>{shortDate(points[points.length - 1].date)}</span>
-          </div>
-          {hovered && hover !== null && (
-            <div
-              className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[var(--radius-md)] bg-[var(--color-ink)] px-2.5 py-1.5 text-[12px] text-white"
-              style={{ left: `${((slot * hover + slot / 2) / W) * 100}%` }}
-            >
-              <span className="font-semibold">{shortDate(hovered.date)}</span> · {hovered.views === null ? "no data" : `${fmt(hovered.views)} views`}
-            </div>
-          )}
-        </div>
-      )}
     </section>
   );
 }
@@ -454,68 +373,185 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
   );
 }
 
-/** Full list of tracked listings, with an optional status filter. */
+type SortKey = "total" | "perDay" | "favorites" | "trend" | "tags" | "photos";
+type Row = View["listings"][number];
+
+const SORTS: { key: SortKey; label: string; desc: string }[] = [
+  { key: "total", label: "Total views", desc: "Most viewed first" },
+  { key: "perDay", label: "Views/day", desc: "Most views a day first" },
+  { key: "favorites", label: "Favorites", desc: "Most favorited first" },
+  { key: "trend", label: "Trend", desc: "Rising first" },
+  { key: "tags", label: "Tags", desc: "Fewest tags first" },
+  { key: "photos", label: "Photos", desc: "Fewest photos first" },
+];
+
+/** Views/day for a row: real last-7-days once known, else the all-time average. */
+function perDay(l: Row): { value: number | null; avg: boolean } {
+  if (l.viewsPerDay !== null && l.trendDays >= 3) return { value: l.viewsPerDay, avg: false };
+  return { value: l.avgPerDay, avg: l.avgPerDay !== null };
+}
+
+function sortValue(l: Row, key: SortKey): number {
+  const none = Number.NEGATIVE_INFINITY;
+  switch (key) {
+    case "total":
+      return l.totalViews ?? none;
+    case "perDay":
+      return perDay(l).value ?? none;
+    case "favorites":
+      return l.totalFavorites ?? none;
+    case "trend":
+      return l.trendRatio ?? none;
+    case "tags":
+      return -l.tagsUsed;
+    case "photos":
+      return -(l.imageCount ?? 99);
+  }
+}
+
+function TrendCell({ l }: { l: Row }) {
+  if (l.trendDays < MIN_HISTORY_DAYS) {
+    return <span className="text-[12.5px] text-[var(--color-ink-soft)]">Day {l.trendDays || 1} of {MIN_HISTORY_DAYS}</span>;
+  }
+  if (l.trendRatio === null) return <span className="text-[12.5px] text-[var(--color-ink-soft)]">–</span>;
+  const pct = Math.round((l.trendRatio - 1) * 100);
+  const cls = pct >= 15 ? "text-[var(--color-strong)]" : pct <= -15 ? "text-[var(--color-weak)]" : "text-[var(--color-ink-muted)]";
+  return <span className={cn("text-[13px] font-semibold tabular-nums", cls)}>{pct > 0 ? `+${pct}%` : `${pct}%`}</span>;
+}
+
+/** Full list of tracked listings: sortable columns and an optional status filter. */
 export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; filter: string | null; canEdit: boolean }) {
   const { open, busy, error } = useOpenListing(data.opened);
+  const [sort, setSort] = useState<SortKey>("total");
   const v = data.view;
   if (!data.shop || !v) return <ConnectShop canEdit={canEdit} />;
-  const rows = filter && filter in STATUS_META ? v.listings.filter((l) => l.status === filter) : v.listings;
-  const chips: { key: string | null; label: string }[] = [{ key: null, label: `All ${v.listings.length}` }, ...(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => ({ key: k, label: `${STATUS_META[k].label} ${v.counts[k]}` }))];
+  const filtered = filter && filter in STATUS_META ? v.listings.filter((l) => l.status === filter) : v.listings;
+  const rows = [...filtered].sort((a, b) => sortValue(b, sort) - sortValue(a, sort) || (b.totalViews ?? 0) - (a.totalViews ?? 0));
+  const trendsReady = v.historyDays >= MIN_HISTORY_DAYS;
+  const chips: { key: string | null; label: string }[] = [
+    { key: null, label: `All ${v.listings.length}` },
+    ...(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => ({ key: k, label: `${STATUS_META[k].label} ${trendsReady || k === "dead" ? v.counts[k] : ""}`.trim() })),
+  ];
+  const head = (key: SortKey, label: string, cls: string) => (
+    <th scope="col" aria-sort={sort === key ? "descending" : "none"} className={cn("px-2 py-2 text-right font-medium", cls)}>
+      <button
+        type="button"
+        onClick={() => setSort(key)}
+        className={cn("inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 hover:text-[var(--color-ink)]", sort === key && "text-[var(--color-ink)]")}
+      >
+        {label}
+        <ChevronDown className={cn("h-3.5 w-3.5", sort === key ? "opacity-100" : "opacity-0")} aria-hidden="true" />
+      </button>
+    </th>
+  );
   return (
-    <div className="flex flex-col gap-4">
-      <nav aria-label="Filter" className="flex flex-wrap gap-2">
-        {chips.map((c) => (
-          <Link
-            key={c.label}
-            href={c.key ? `/dashboard/shop?filter=${c.key}` : "/dashboard/shop"}
-            aria-current={(filter ?? null) === c.key ? "page" : undefined}
-            className={cn(
-              "rounded-[var(--radius-md)] border px-3.5 py-1.5 text-[13px] font-semibold",
-              (filter ?? null) === c.key ? "border-[var(--color-neutral-dark)] bg-[var(--color-neutral-dark)] text-white" : "border-[var(--color-border)] bg-white text-[var(--color-ink)]"
-            )}
+    <div className="flex flex-col gap-5">
+      {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <nav aria-label="Filter" className="flex flex-wrap gap-2">
+          {chips.map((c) => (
+            <Link
+              key={c.label}
+              href={c.key ? `/dashboard/shop?filter=${c.key}` : "/dashboard/shop"}
+              aria-current={(filter ?? null) === c.key ? "page" : undefined}
+              className={cn(
+                "rounded-[var(--radius-md)] border px-3 py-1.5 text-[13px] font-semibold",
+                (filter ?? null) === c.key ? "border-[var(--color-neutral-dark)] bg-[var(--color-neutral-dark)] text-white" : "border-[var(--color-border)] bg-white text-[var(--color-ink)]"
+              )}
+            >
+              {c.label}
+            </Link>
+          ))}
+        </nav>
+        <label className="flex items-center gap-2 text-[13px] text-[var(--color-ink-muted)] md:hidden">
+          Sort
+          <select
+            value={sort}
+            onChange={(e) => setSort(e.target.value as SortKey)}
+            className="min-h-[36px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-2 text-[13px] font-semibold text-[var(--color-ink)]"
           >
-            {c.label}
-          </Link>
-        ))}
-      </nav>
-      <section className={cn(card, "px-4 py-2 sm:px-5")}>
-        <div className="flex items-center gap-3 border-b border-[var(--color-border-soft)] py-2 text-[12px] text-[var(--color-ink-soft)]">
-          <span className="min-w-0 flex-1">Listing</span>
-          <span className="w-16 text-right sm:w-20">Views/day</span>
-          <span className="hidden w-16 text-right sm:block">Tags</span>
-          <span className="hidden w-16 text-right sm:block">Photos</span>
-          <span className="w-[72px]" />
-        </div>
-        {rows.length === 0 ? (
-          <p className="py-6 text-center text-[14px] text-[var(--color-ink-muted)]">No listings here right now.</p>
-        ) : (
-          <ul className="divide-y divide-[var(--color-border-soft)]">
-            {rows.map((l) => (
-              <li key={l.listingId} className="flex items-center gap-3 py-2.5">
-                <div className="flex min-w-0 flex-1 items-center gap-3">
-                  <span className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
-                    {l.mainImageUrl && (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={thumb(l.mainImageUrl) ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                    )}
-                  </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-[14px] text-[var(--color-ink)]">{l.title}</span>
-                    <span className="block text-[12px] text-[var(--color-ink-muted)]">
-                      {l.status in STATUS_META ? STATUS_META[l.status as keyof typeof STATUS_META].label : l.issues[0]?.text ?? " "}
-                    </span>
-                  </span>
-                </div>
-                <span className="w-16 text-right text-[14px] tabular-nums text-[var(--color-ink)] sm:w-20">{fmt(l.viewsPerDay)}</span>
-                <span className="hidden w-16 text-right text-[14px] tabular-nums text-[var(--color-ink)] sm:block">{l.tagsUsed}/13</span>
-                <span className="hidden w-16 text-right text-[14px] tabular-nums text-[var(--color-ink)] sm:block">{l.imageCount ?? "–"}</span>
-                <button type="button" onClick={() => open(l.listingId, "analytics")} disabled={busy !== null || !canEdit} className={cn(btnGhost, "w-[72px] border border-[var(--color-border)]")}>
-                  {busy === l.listingId ? "…" : "Open"}
-                </button>
-              </li>
+            {SORTS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.desc}
+              </option>
             ))}
-          </ul>
-        )}
+          </select>
+        </label>
+      </div>
+      {!trendsReady && (
+        <p className="-mt-2 text-[13px] text-[var(--color-ink-muted)]">
+          {`Rising and falling need ${MIN_HISTORY_DAYS} days of daily numbers (day ${v.historyDays} now). `}Views/day marked &quot;avg&quot; is all-time views divided by days live.
+        </p>
+      )}
+
+      <section className={cn(card, "overflow-hidden")}>
+        <table className="w-full table-fixed text-[14px]">
+          <thead className="border-b border-[var(--color-border-soft)] text-[12px] text-[var(--color-ink-soft)]">
+            <tr>
+              <th scope="col" className="px-4 py-2 text-left font-medium sm:px-5">
+                Listing
+              </th>
+              {head("total", "Total views", "hidden w-[108px] md:table-cell")}
+              {head("perDay", "Views/day", "w-[92px] sm:w-[104px]")}
+              {head("favorites", "Favorites", "hidden w-[96px] lg:table-cell")}
+              {head("trend", "Trend", "hidden w-[104px] md:table-cell")}
+              {head("tags", "Tags", "hidden w-[72px] md:table-cell")}
+              {head("photos", "Photos", "hidden w-[80px] lg:table-cell")}
+              <th scope="col" className="w-[84px] px-4 py-2 sm:px-5">
+                <span className="sr-only">Open</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-border-soft)]">
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={8} className="px-5 py-8 text-center text-[14px] text-[var(--color-ink-muted)]">
+                  No listings here right now.
+                </td>
+              </tr>
+            ) : (
+              rows.map((l) => {
+                const pd = perDay(l);
+                const problem = [...l.issues].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "high" ? -1 : 1))[0];
+                return (
+                  <tr key={l.listingId} className="align-middle">
+                    <td className="px-4 py-2.5 sm:px-5">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Thumb url={l.mainImageUrl} small />
+                        <div className="min-w-0">
+                          <p className="truncate text-[14px] text-[var(--color-ink)]">{l.title}</p>
+                          <div className="mt-0.5 flex items-center gap-2">
+                            <Sparkline values={l.spark} />
+                            <span className="truncate text-[12px] text-[var(--color-ink-muted)]">
+                              {l.status in STATUS_META ? STATUS_META[l.status as keyof typeof STATUS_META].label : problem?.text ?? ""}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] md:table-cell">{fmt(l.totalViews)}</td>
+                    <td className="px-2 text-right tabular-nums text-[var(--color-ink)]">
+                      {fmt(pd.value)}
+                      {pd.avg && <span className="ml-1 text-[11px] text-[var(--color-ink-soft)]">avg</span>}
+                    </td>
+                    <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] lg:table-cell">{fmt(l.totalFavorites)}</td>
+                    <td className="hidden px-2 text-right md:table-cell">
+                      <TrendCell l={l} />
+                    </td>
+                    <td className={cn("hidden px-2 text-right tabular-nums md:table-cell", l.tagsUsed === 0 ? "font-semibold text-[var(--color-weak)]" : "text-[var(--color-ink)]")}>{l.tagsUsed}/13</td>
+                    <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] lg:table-cell">{l.imageCount ?? "–"}</td>
+                    <td className="px-4 text-right sm:px-5">
+                      <button type="button" onClick={() => open(l.listingId, "analytics")} disabled={busy !== null || !canEdit} className={cn(btnQuiet, "min-h-[36px] px-3")}>
+                        {busy === l.listingId ? "..." : "Open"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </section>
       {error && (
         <p role="alert" className="text-[13.5px] text-[var(--color-weak)]">

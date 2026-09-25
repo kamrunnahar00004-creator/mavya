@@ -18,7 +18,7 @@ export default async function ShopListingsPage({ searchParams }: { searchParams:
   const [entitlement, data] = await Promise.all([getEntitlement(user.id), loadShopHome(supabase, todayUtc())]);
   if (!entitlement.active && entitlement.reason !== "past_due") redirect("/subscribe");
   return (
-    <main className="mx-auto max-w-[900px] px-4 pb-20 pt-6 sm:px-6">
+    <main className="mx-auto max-w-[1100px] px-4 pb-20 pt-6 sm:px-6">
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-[13.5px] font-semibold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
         <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Shop home
       </Link>

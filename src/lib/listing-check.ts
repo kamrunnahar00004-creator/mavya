@@ -45,10 +45,11 @@ export function checkListing(input: ListingCheckInput): CheckItem[] {
   if (!title) {
     items.push({ area: "title", ok: false, text: "No title found." });
   } else {
-    if (title.length < 70) {
-      items.push({ area: "title", ok: false, text: `Short title (${title.length} of 140 characters). There is room for more words buyers search.` });
+    // Etsy favors short, readable titles: only a thin one (under 40) is a problem.
+    if (title.length < 40) {
+      items.push({ area: "title", ok: false, text: `Short title (${title.length} characters). Say what it is, what it is made of, and who it is for.` });
     } else {
-      items.push({ area: "title", ok: true, text: `Good length (${title.length} of 140 characters).` });
+      items.push({ area: "title", ok: true, text: `Clear length (${title.length} of 140 characters).` });
     }
     if (main) {
       items.push(

@@ -230,8 +230,25 @@ describe("shop home has numbers on day 1", () => {
     ];
     const v = buildShopView(rows, TODAY, [1, 2]);
     expect(v.daily).toEqual([
-      { date: d2, views: 40 },
-      { date: TODAY, views: null },
+      { date: d2, views: 40, favorites: 0 },
+      { date: TODAY, views: null, favorites: null },
     ]);
+  });
+
+  it("gives each listing a real average views a day from day 1 (all-time views / days live)", () => {
+    const v = buildShopView([{ ...row(1, TODAY, 3000, 90), created_on: addDays(TODAY, -100) }, row(2, TODAY, 500, 5)], TODAY);
+    const one = v.listings.find((l) => l.listingId === 1)!;
+    expect(one).toMatchObject({ totalViews: 3000, totalFavorites: 90, avgPerDay: 30, trendDays: 0, trendRatio: null });
+    expect(one.spark).toHaveLength(14);
+    expect(one.spark.every((x) => x === null)).toBe(true);
+    // No creation date (row taken before migration 0035): no average, never a guess.
+    expect(v.listings.find((l) => l.listingId === 2)!.avgPerDay).toBeNull();
+  });
+
+  it("an untagged listing says No tags, and a 40+ character title is not flagged", () => {
+    const v = buildShopView([{ ...row(1, TODAY, 3000, 90), title: "PRE-ORDER | Roblox Forsaken Keychain - Elliot" }], TODAY);
+    const texts = v.listings[0].issues.map((i) => i.text);
+    expect(texts).toContain("No tags");
+    expect(texts.some((t) => /title/i.test(t))).toBe(false);
   });
 });

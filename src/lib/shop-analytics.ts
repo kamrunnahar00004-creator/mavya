@@ -28,6 +28,8 @@ export type ShopSnapshotRow = {
   main_image_url: string | null;
   title: string | null;
   tags: string[] | null;
+  /** Listing creation date (migration 0035); null on older rows. */
+  created_on?: string | null;
 };
 
 export type ShopStatus = "rising" | "falling" | "seen_not_liked" | "dead" | "steady" | "collecting";
@@ -42,8 +44,9 @@ export function titleIssues(title: string | null): ShopIssue[] {
   const t = (title ?? "").trim();
   if (!t) return [{ kind: "title", severity: "high", text: "No title" }];
   const out: ShopIssue[] = [];
+  // Etsy's own advice favors short, readable titles, so only a genuinely
+  // thin title (under 40 characters) is flagged; 40-140 is fine.
   if (t.length < 40) out.push({ kind: "title", severity: "high", text: "Very short title" });
-  else if (t.length < 70) out.push({ kind: "title", severity: "medium", text: "Short title" });
   const counts = new Map<string, number>();
   for (const w of t.toLowerCase().match(/[a-z0-9']+/g) ?? []) {
     if (w.length > 2 && !TITLE_STOP.has(w)) counts.set(w, (counts.get(w) ?? 0) + 1);
@@ -69,6 +72,17 @@ export type ShopListingView = {
   status: ShopStatus;
   issues: ShopIssue[];
   score: number;
+  /** Etsy's all-time counters on the latest check (available from day 1). */
+  totalViews: number | null;
+  totalFavorites: number | null;
+  /** All-time views / days since the listing was created (day-1 average). */
+  avgPerDay: number | null;
+  /** Days of daily data in the last 30 (trends need MIN_HISTORY_DAYS). */
+  trendDays: number;
+  /** Last 7 days vs the 4 weeks before (views/day ratio); null until known. */
+  trendRatio: number | null;
+  /** Views per day for the last 14 days, oldest first; null = unknown day. */
+  spark: (number | null)[];
 };
 
 export type ShopFix = { listingId: number; title: string; mainImageUrl: string | null; reason: string; action: FixAction };
@@ -87,12 +101,14 @@ export type ShopChangeResult = {
 
 export type ShopTopListing = { listingId: number; title: string; mainImageUrl: string | null; views: number; favorites: number | null };
 
+export type ShopDailyPoint = { date: string; views: number | null; favorites: number | null };
+
 export type ShopView = {
   historyDays: number;
   /** All-time totals from Etsy's counters on the latest check (day 1 value). */
   totals: { views: number; favorites: number };
-  /** Shop views per day, last 30 days. Null = not enough listings reported that day. */
-  daily: { date: string; views: number | null }[];
+  /** Shop views and favorites per day, last 30 days. Null = not enough listings reported that day. */
+  daily: ShopDailyPoint[];
   /** Most viewed listings of all time (available from the first check). */
   top: ShopTopListing[];
   listings: ShopListingView[];
@@ -133,6 +149,7 @@ function toSnapshot(r: ShopSnapshotRow): ListingSnapshot {
 
 export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds?: readonly number[]): ShopView {
   const byListing = new Map<number, ListingSnapshot[]>();
+  const createdById = new Map<number, string>();
   const dates = new Set<string>();
   for (const r of rows) {
     const id = Number(r.listing_id);
@@ -140,6 +157,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     list.push(toSnapshot(r));
     byListing.set(id, list);
     dates.add(r.snapshot_date);
+    if (r.created_on) createdById.set(id, r.created_on);
   }
   const historyDays = dates.size;
   const latestDate = [...dates].sort().at(-1);
@@ -198,7 +216,9 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     if (photos !== null && photos <= 3) issues.push({ kind: "photos", severity: "high", text: `Only ${photos} photo${photos === 1 ? "" : "s"}` });
     else if (photos !== null && photos < 6) issues.push({ kind: "photos", severity: "medium", text: `Only ${photos} photos` });
     const emptyTags = 13 - tagsUsed;
-    if (emptyTags >= 7) issues.push({ kind: "tags", severity: "high", text: `${emptyTags} empty tag slots` });
+    // No tags at all is the biggest visible gap: listed first so it leads.
+    if (emptyTags === 13) issues.unshift({ kind: "tags", severity: "high", text: "No tags" });
+    else if (emptyTags >= 7) issues.push({ kind: "tags", severity: "high", text: `${emptyTags} empty tag slots` });
     else if (emptyTags > 0) issues.push({ kind: "tags", severity: "medium", text: `${emptyTags} empty tag slot${emptyTags > 1 ? "s" : ""}` });
 
     const statusWeight = { falling: 3, seen_not_liked: 2, dead: 1.5, rising: 0, steady: 0, collecting: 0 }[status];
@@ -206,7 +226,22 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     const importance = 1 + Math.log10(1 + Math.max(0, last30.views || (w.latest.views ?? 0) / 30));
     const score = (statusWeight + issueWeight) * importance;
 
+    const totalViews = typeof w.latest.views === "number" && w.latest.views > 0 ? w.latest.views : null;
+    const createdOn = createdById.get(id) ?? null;
+    const ageDays = createdOn ? Math.max(1, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${createdOn}T00:00:00Z`)) / 86_400_000)) : null;
+    const spark: (number | null)[] = [];
+    const byDate = new Map(w.series.map((pt) => [pt.date, pt.viewsPerDay]));
+    for (let d = addDays(today, -13); d <= today; d = addDays(d, 1)) spark.push(byDate.get(d) ?? null);
     listings.push({
+      totalViews,
+      totalFavorites: typeof w.latest.favorites === "number" ? w.latest.favorites : null,
+      avgPerDay: totalViews !== null && ageDays !== null ? totalViews / ageDays : null,
+      trendDays: last30.days,
+      trendRatio:
+        last7.days >= 5 && prev.days >= 7 && prev.viewsPerDay !== null && last7.viewsPerDay !== null && prev.viewsPerDay > 0
+          ? last7.viewsPerDay / prev.viewsPerDay
+          : null,
+      spark,
       listingId: id,
       title: w.latest.title ?? `Listing ${id}`,
       mainImageUrl: w.latest.main_image_url,
@@ -256,7 +291,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   let totalViews = 0;
   let totalFavorites = 0;
   const top: ShopTopListing[] = [];
-  const perDate = new Map<string, { sum: number; n: number }>();
+  const perDate = new Map<string, { sum: number; n: number; fav: number; favN: number }>();
   let tracked = 0;
   for (const [id, w] of work) {
     if (!current.has(id)) continue;
@@ -267,9 +302,13 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     top.push({ listingId: id, title: w.latest.title ?? `Listing ${id}`, mainImageUrl: w.latest.main_image_url, views, favorites: w.latest.favorites });
     for (const pt of w.series) {
       if (pt.date < last30From || pt.date > today || pt.viewsPerDay === null) continue;
-      const d = perDate.get(pt.date) ?? { sum: 0, n: 0 };
+      const d = perDate.get(pt.date) ?? { sum: 0, n: 0, fav: 0, favN: 0 };
       d.sum += pt.viewsPerDay;
       d.n += 1;
+      if (pt.favoritesPerDay !== null) {
+        d.fav += pt.favoritesPerDay;
+        d.favN += 1;
+      }
       perDate.set(pt.date, d);
     }
   }
@@ -279,7 +318,8 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   const daily: ShopView["daily"] = [];
   for (let d = last30From; d <= today; d = addDays(d, 1)) {
     const x = perDate.get(d);
-    daily.push({ date: d, views: x && tracked > 0 && x.n >= Math.max(1, Math.ceil(tracked * 0.8)) ? x.sum : null });
+    const complete = x && tracked > 0 && x.n >= Math.max(1, Math.ceil(tracked * 0.8));
+    daily.push({ date: d, views: complete ? x.sum : null, favorites: complete && x.favN === x.n ? x.fav : null });
   }
   while (daily.length && daily[0].views === null) daily.shift();
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { ArrowRight, Check, Clock, ExternalLink, Info, Link2, Pencil, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { MetricChart } from "@/components/dashboard/metric-chart";
 import type { CheckIssue, ChangeKind, Diagnosis, TestVerdict, TopEntry } from "@/lib/listing-analytics";
 import { LABEL_TEXT, type KeywordIdea, type KeywordLabel } from "@/lib/keyword-finder";
 
@@ -394,132 +395,47 @@ function Numbers({ vm }: { vm: AnalyticsViewModel }) {
 // ---------------------------------------------------------------------------
 
 function ViewsChart({ vm }: { vm: AnalyticsViewModel }) {
-  const [hover, setHover] = useState<number | null>(null);
   const points = vm.series;
-  const known = points.filter((p) => p.viewsPerDay !== null);
-  const W = 720;
-  const H = 140;
-  // Axis text is HTML (below), not SVG: SVG text scales down with the chart
-  // and becomes unreadable on phones.
-  const padL = 0;
-  const padB = 2;
-  const padT = 14;
-  const plotW = W;
-  const plotH = H - padB - padT;
-  const max = Math.max(1, ...known.map((p) => p.viewsPerDay as number));
-  const niceMax = max <= 5 ? 5 : Math.ceil(max / 5) * 5;
-  const n = Math.max(points.length, 1);
-  const slot = plotW / n;
-  const barW = Math.max(3, Math.min(14, slot - 3));
   const changeByDate = new Map(vm.changeDates.map((c) => [c.date, c.kinds]));
-  const hovered = hover !== null ? points[hover] : null;
-
+  const markers = new Map(vm.changeDates.map((c) => [c.date, `${c.kinds.map((k) => KIND_LABEL[k]).join(", ")} changed`]));
+  const known = points.filter((p) => p.viewsPerDay !== null);
   return (
-    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="views-title">
-      <div className="flex items-baseline justify-between gap-2">
-        <h2 id="views-title" className={sectionTitle}>
-          Views a day
-        </h2>
-        {vm.changeDates.length > 0 && (
-          <p className="flex items-center gap-1.5 text-[12.5px] text-[var(--color-ink-muted)]">
-            <span className="inline-block h-2 w-2 rounded-full bg-[var(--color-primary)]" aria-hidden="true" /> you changed something
-          </p>
-        )}
-      </div>
-      {known.length === 0 ? (
-        <p className="mt-4 rounded-[var(--radius-lg)] bg-[var(--color-page)] px-4 py-10 text-center text-[14px] text-[var(--color-ink-muted)]">
-          Your chart starts tomorrow.
-        </p>
-      ) : (
-        <div className="relative mt-4">
-          <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Views a day, last ${points.length} days`}>
-            {[0, 1].map((f) => {
-              const y = padT + plotH * (1 - f);
-              return <line key={f} x1={0} x2={W} y1={y} y2={y} stroke="var(--color-border-soft)" strokeWidth={1} />;
-            })}
-            {points.map((p, i) => {
-              const cx = padL + slot * i + slot / 2;
-              const v = p.viewsPerDay;
-              const h = v === null ? 0 : Math.max(2, (v / niceMax) * plotH);
-              return (
-                <g key={p.date}>
-                  {v !== null && (
-                    <path
-                      d={roundedTopBar(cx - barW / 2, padT + plotH - h, barW, h, Math.min(4, barW / 2))}
-                      fill={hover === i ? "var(--color-ink)" : "var(--color-neutral-dark)"}
-                      opacity={hover === null || hover === i ? 1 : 0.55}
-                    />
-                  )}
-                  {changeByDate.has(p.date) && <circle cx={cx} cy={padT - 6} r={4} fill="var(--color-primary)" />}
-                  <rect
-                    x={padL + slot * i}
-                    y={0}
-                    width={slot}
-                    height={padT + plotH}
-                    fill="transparent"
-                    onMouseEnter={() => setHover(i)}
-                    onMouseLeave={() => setHover(null)}
-                    onFocus={() => setHover(i)}
-                    onBlur={() => setHover(null)}
-                    tabIndex={0}
-                    aria-label={`${shortDate(p.date)}: ${v === null ? "no data" : `${fmt(v)} views`}`}
-                  />
-                </g>
-              );
-            })}
-          </svg>
-          <span className="pointer-events-none absolute left-0 top-0 -translate-y-1/2 bg-white pr-1.5 text-[11.5px] tabular-nums text-[var(--color-ink-soft)]">
-            {niceMax}
-          </span>
-          <div className="mt-1.5 flex justify-between text-[11.5px] text-[var(--color-ink-soft)]">
-            <span>{points.length ? shortDate(points[0].date) : ""}</span>
-            <span>{points.length ? shortDate(points[points.length - 1].date) : ""}</span>
-          </div>
-          {hovered && hover !== null && (
-            <div
-              className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[var(--radius-md)] bg-[var(--color-ink)] px-2.5 py-1.5 text-[12px] text-white shadow-[var(--shadow-soft-strong)]"
-              style={{ left: `${((padL + slot * hover + slot / 2) / W) * 100}%` }}
-            >
-              <span className="font-semibold">{shortDate(hovered.date)}</span>
-              {" · "}
-              {hovered.viewsPerDay === null ? "no data" : `${fmt(hovered.viewsPerDay)} views`}
-              {changeByDate.get(hovered.date) ? ` · ${changeByDate.get(hovered.date)!.map((k) => KIND_LABEL[k]).join(", ")} changed` : ""}
-            </div>
-          )}
-          <details className="mt-2 text-[13px] text-[var(--color-ink-muted)]">
-            <summary className="cursor-pointer select-none hover:text-[var(--color-ink)]">See numbers</summary>
-            <div className="mt-2 max-h-56 overflow-auto">
-              <table className="w-full text-left tabular-nums">
-                <thead>
-                  <tr className="text-[var(--color-ink-soft)]">
-                    <th className="py-1 pr-4 font-medium">Day</th>
-                    <th className="py-1 pr-4 font-medium">Views</th>
-                    <th className="py-1 pr-4 font-medium">Favorites</th>
-                    <th className="py-1 font-medium">Changed</th>
+    <div className="flex flex-col gap-2">
+      <MetricChart
+        title="This listing"
+        points={points.map((p) => ({ date: p.date, views: p.viewsPerDay, favorites: p.favoritesPerDay }))}
+        endDate={vm.monitor?.lastCheckedOn ?? vm.today}
+        markers={markers}
+      />
+      {known.length > 0 && (
+        <details className="px-1 text-[13px] text-[var(--color-ink-muted)]">
+          <summary className="cursor-pointer select-none hover:text-[var(--color-ink)]">See numbers</summary>
+          <div className="mt-2 max-h-56 overflow-auto">
+            <table className="w-full text-left tabular-nums">
+              <thead>
+                <tr className="text-[var(--color-ink-soft)]">
+                  <th className="py-1 pr-4 font-medium">Day</th>
+                  <th className="py-1 pr-4 font-medium">Views</th>
+                  <th className="py-1 pr-4 font-medium">Favorites</th>
+                  <th className="py-1 font-medium">Changed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...points].reverse().map((p) => (
+                  <tr key={p.date} className="border-t border-[var(--color-border-soft)]">
+                    <td className="py-1 pr-4">{shortDate(p.date)}</td>
+                    <td className="py-1 pr-4">{fmt(p.viewsPerDay)}</td>
+                    <td className="py-1 pr-4">{fmt(p.favoritesPerDay)}</td>
+                    <td className="py-1">{changeByDate.get(p.date)?.map((k) => KIND_LABEL[k]).join(", ") ?? ""}</td>
                   </tr>
-                </thead>
-                <tbody>
-                  {[...points].reverse().map((p) => (
-                    <tr key={p.date} className="border-t border-[var(--color-border-soft)]">
-                      <td className="py-1 pr-4">{shortDate(p.date)}</td>
-                      <td className="py-1 pr-4">{fmt(p.viewsPerDay)}</td>
-                      <td className="py-1 pr-4">{fmt(p.favoritesPerDay)}</td>
-                      <td className="py-1">{changeByDate.get(p.date)?.map((k) => KIND_LABEL[k]).join(", ") ?? ""}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </details>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
-    </section>
+    </div>
   );
-}
-
-function roundedTopBar(x: number, y: number, w: number, h: number, r: number): string {
-  const rr = Math.min(r, h);
-  return `M${x},${y + h} V${y + rr} Q${x},${y} ${x + rr},${y} H${x + w - rr} Q${x + w},${y} ${x + w},${y + rr} V${y + h} Z`;
 }
 
 // ---------------------------------------------------------------------------
