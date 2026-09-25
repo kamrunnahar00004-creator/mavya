@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildCandidates, labelKeyword, rankIdeas, type KeywordIdea } from "@/lib/keyword-finder";
-import { buildShopView, type ShopSnapshotRow } from "@/lib/shop-analytics";
+import { buildShopView, titleIssues, type ShopSnapshotRow } from "@/lib/shop-analytics";
 import { addDays } from "@/lib/listing-analytics";
 import { parseEtsyShopInput } from "@/lib/etsy";
 import { ALLOWED_LISTING_LIMITS, getPlanPolicy, keywordLimitFor } from "@/lib/plans";
@@ -109,7 +109,7 @@ function history(listingId: number, perDay: (d: number) => number, opts: Partial
       image_count: opts.image_count ?? 8,
       main_image_id: 1,
       main_image_url: null,
-      title: `Listing ${listingId}`,
+      title: opts.title ?? `Listing ${listingId} handmade soy candle gift for her, lavender scented jar candle`,
       tags: opts.tags ?? Array.from({ length: 13 }, (_, i) => `tag ${i}`),
     };
     rows.push(opts.change && dayIndex >= opts.change.day ? { ...base, ...opts.change.patch } : base);
@@ -152,6 +152,31 @@ describe("shop home", () => {
     expect(v.fixQueue.map((f) => f.listingId).sort()).toEqual([1, 2]);
     expect(v.fixQueue.find((f) => f.listingId === 1)).toMatchObject({ action: "write", reason: "12 empty tag slots" });
     expect(v.fixQueue.find((f) => f.listingId === 2)).toMatchObject({ action: "photo", reason: "Only 2 photos" });
+  });
+
+  it("ranks title and photo problems, not only tags", () => {
+    const rows = [
+      ...history(1, () => 20, { title: "Candle" }),
+      ...history(2, () => 20, { image_count: 2, tags: ["a b", "c d"] }),
+      ...history(3, () => 20, { tags: Array.from({ length: 10 }, (_, i) => `tag ${i}`) }),
+    ];
+    const v = buildShopView(rows, TODAY);
+    expect(v.fixQueue.find((f) => f.listingId === 1)).toMatchObject({ action: "write", reason: "Very short title" });
+    // Photo problem is shown first and drives the action; tags come second.
+    expect(v.fixQueue.find((f) => f.listingId === 2)).toMatchObject({ action: "photo", reason: "Only 2 photos · 11 empty tag slots" });
+    // A few empty tag slots alone rank below a missing title or photos.
+    expect(v.fixQueue.map((f) => f.listingId).slice(0, 2).sort()).toEqual([1, 2]);
+  });
+
+  it("flags visible title problems", () => {
+    expect(titleIssues("Candle")[0]).toMatchObject({ kind: "title", severity: "high" });
+    expect(titleIssues("Soy candle soy candle soy candle lavender jar gift for her handmade")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: 'Title repeats "soy"' })])
+    );
+    expect(titleIssues("HANDMADE LAVENDER SOY CANDLE GIFT FOR HER IN AMBER JAR WITH WOOD WICK")).toEqual(
+      expect.arrayContaining([expect.objectContaining({ text: "Title in capitals" })])
+    );
+    expect(titleIssues("Handmade lavender soy candle gift for her, amber jar with a crackling wood wick")).toEqual([]);
   });
 
   it("compares a change with the rest of the shop over the same days", () => {

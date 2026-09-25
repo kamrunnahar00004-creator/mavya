@@ -5,11 +5,17 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { ArrowRight, Check, ChevronRight, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { FixAction, ShopStatus } from "@/lib/shop-analytics";
+import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-analytics";
 import type { ShopHomeData } from "@/lib/shop-monitor";
 
 // Same flat, single-column language as the listing tabs.
 const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
+const sectionTitle = "text-[15px] font-semibold text-[var(--color-ink)]";
+const addDaysUtc = (d: string, n: number) => {
+  const x = new Date(`${d}T00:00:00Z`);
+  x.setUTCDate(x.getUTCDate() + n);
+  return x.toISOString().slice(0, 10);
+};
 const btnPrimary =
   "inline-flex min-h-[44px] items-center justify-center gap-2 rounded-full bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-primary)] disabled:cursor-default disabled:opacity-50";
 const btnGhost =
@@ -156,7 +162,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
   return (
     <div className="flex flex-col gap-5">
       <header className="flex flex-wrap items-end justify-between gap-2">
-        <div>
+        <div className="min-w-0">
           <h2 className="font-display text-[26px] font-bold tracking-[-0.02em] text-[var(--color-ink)]">{data.shop.name}</h2>
           <p className="text-[13.5px] text-[var(--color-ink-muted)]">
             {v ? `${v.listings.length} listings tracked · ` : ""}
@@ -164,7 +170,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
           </p>
           {v && data.shop.activeListings != null && v.listings.length < data.shop.activeListings && (
             <p className="text-[13px] text-[var(--color-ink-muted)]">
-              Tracking {v.listings.length} of {data.shop.activeListings} listings, selected by lifetime views. Shop total as of connection.
+              Tracking your {v.listings.length} most viewed of {data.shop.activeListings} listings.
             </p>
           )}
         </div>
@@ -179,42 +185,24 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
         </p>
       ) : (
         <>
-          {v.historyDays < 14 && (
-            <p className="rounded-[var(--radius-lg)] bg-[var(--color-page-deep)] px-4 py-3 text-[14px] text-[var(--color-ink-muted)]">
-              Collecting your shop&apos;s numbers. Rising and falling listings and your first results show after about 2 weeks.
-            </p>
-          )}
-
-          <section aria-label="This week in your shop" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => (
-              <Link key={k} href={`/dashboard/shop?filter=${k}`} className={cn(card, "block p-4 transition-colors hover:border-[var(--color-border-strong)]")}>
-                <p className={cn("text-[28px] font-bold leading-none tabular-nums", v.counts[k] ? STATUS_META[k].cls : "text-[var(--color-ink-soft)]")}>
-                  {v.historyDays < 14 && k !== "dead" ? "–" : v.counts[k]}
-                </p>
-                <p className="mt-2 text-[14px] font-semibold text-[var(--color-ink)]">{STATUS_META[k].label}</p>
-                <p className="text-[12.5px] text-[var(--color-ink-muted)]">{STATUS_META[k].hint}</p>
-              </Link>
-            ))}
-          </section>
+          <ShopNumbers v={v} />
+          <ShopViewsChart v={v} />
+          {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
 
           <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="fix3">
-            <h3 id="fix3" className="text-[15px] font-semibold text-[var(--color-ink)]">
-              Fix these {Math.min(3, v.fixQueue.length) || ""} today
+            <h3 id="fix3" className={sectionTitle}>
+              {v.fixQueue.length ? `Fix these ${v.fixQueue.length} first` : "Fix first"}
             </h3>
+            <p className="mt-0.5 text-[13px] text-[var(--color-ink-muted)]">Picked from title, photos, and tags, weighted by how many people see each listing.</p>
             {v.fixQueue.length === 0 ? (
-              <p className="mt-2 flex items-center gap-2 text-[14px] text-[var(--color-strong)]">
+              <p className="mt-3 flex items-center gap-2 text-[14px] text-[var(--color-strong)]">
                 <Check className="h-4 w-4" aria-hidden="true" /> Nothing urgent. Check back tomorrow.
               </p>
             ) : (
               <ol className="mt-2 divide-y divide-[var(--color-border-soft)]">
                 {v.fixQueue.map((f) => (
                   <li key={f.listingId} className="flex items-center gap-3 py-3">
-                    <span className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
-                      {f.mainImageUrl && (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={thumb(f.mainImageUrl) ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
-                      )}
-                    </span>
+                    <Thumb url={f.mainImageUrl} />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] text-[var(--color-ink)]">{f.title}</p>
                       <p className="text-[13px] text-[var(--color-ink-muted)]">{f.reason}</p>
@@ -225,7 +213,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                       disabled={busy !== null || !canEdit}
                       className={cn(btnPrimary, "min-h-[40px] px-4")}
                     >
-                      {busy === f.listingId ? "Opening…" : ACTION_LABEL[f.action]}
+                      {busy === f.listingId ? "Opening..." : ACTION_LABEL[f.action]}
                       <ArrowRight className="h-4 w-4" aria-hidden="true" />
                     </button>
                   </li>
@@ -239,6 +227,26 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
             )}
           </section>
 
+          {v.top.length > 0 && (
+            <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="top3">
+              <h3 id="top3" className={sectionTitle}>
+                Most viewed
+              </h3>
+              <ol className="mt-2 divide-y divide-[var(--color-border-soft)]">
+                {v.top.map((t) => (
+                  <li key={t.listingId} className="flex items-center gap-3 py-3">
+                    <Thumb url={t.mainImageUrl} />
+                    <p className="min-w-0 flex-1 truncate text-[15px] text-[var(--color-ink)]">{t.title}</p>
+                    <p className="flex-shrink-0 text-right text-[13px] tabular-nums text-[var(--color-ink-muted)]">
+                      <span className="font-semibold text-[var(--color-ink)]">{fmt(t.views)}</span> views
+                      {t.favorites !== null && <span className="block">{fmt(t.favorites)} favorites</span>}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
+
           {v.changes.length > 0 && <ChangesSummary v={v} />}
 
           <Link href="/dashboard/shop" className="inline-flex items-center gap-1 self-start text-[14px] font-semibold text-[var(--color-ink)] hover:underline">
@@ -247,6 +255,161 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
         </>
       )}
     </div>
+  );
+}
+
+type View = NonNullable<ShopHomeData["view"]>;
+
+function Thumb({ url }: { url: string | null }) {
+  return (
+    <span className="h-12 w-12 flex-shrink-0 overflow-hidden rounded-[var(--radius-md)] bg-[var(--color-page-deep)]">
+      {url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={thumb(url) ?? undefined} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+      )}
+    </span>
+  );
+}
+
+/** Day-1 numbers: Etsy's all-time counters, so a new shop is never empty. */
+function ShopNumbers({ v }: { v: View }) {
+  const rate = v.totals.views >= 30 ? (v.totals.favorites / v.totals.views) * 100 : null;
+  const cells = [
+    { label: "Views", sub: "all time", value: fmt(v.totals.views) },
+    { label: "Favorites", sub: "all time", value: fmt(v.totals.favorites) },
+    { label: "Favorites", sub: "per 100 views", value: rate === null ? "–" : rate.toFixed(1) },
+  ];
+  return (
+    <section aria-label="Shop numbers" className={cn(card, "grid grid-cols-3 divide-x divide-[var(--color-border-soft)]")}>
+      {cells.map((c) => (
+        <div key={c.label + c.sub} className="min-w-0 px-3 py-4 sm:px-5">
+          <p className="text-[22px] font-bold leading-none tabular-nums text-[var(--color-ink)] sm:text-[26px]">{c.value}</p>
+          <p className="mt-2 text-[13px] font-semibold text-[var(--color-ink)]">{c.label}</p>
+          <p className="text-[12px] text-[var(--color-ink-muted)]">{c.sub}</p>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function ShopViewsChart({ v }: { v: View }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const points = v.daily;
+  const known = points.filter((p) => p.views !== null);
+  const W = 720;
+  const H = 140;
+  const padT = 14;
+  const plotH = H - padT - 2;
+  const max = Math.max(1, ...known.map((p) => p.views as number));
+  const niceMax = max <= 5 ? 5 : Math.ceil(max / 5) * 5;
+  const slot = W / Math.max(points.length, 1);
+  const barW = Math.max(3, Math.min(16, slot - 3));
+  const last7 = known.slice(-7).reduce((s, p) => s + (p.views as number), 0);
+  const hovered = hover !== null ? points[hover] : null;
+  return (
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="shop-views">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 id="shop-views" className={sectionTitle}>
+          Shop views a day
+        </h3>
+        {known.length > 0 && <p className="text-[13px] tabular-nums text-[var(--color-ink-muted)]">{fmt(last7)} in the last {Math.min(7, known.length)} days</p>}
+      </div>
+      {known.length === 0 ? (
+        <div className="mt-4 rounded-[var(--radius-lg)] bg-[var(--color-page)] px-4 py-8 text-center">
+          <p className="text-[15px] font-semibold text-[var(--color-ink)]">Your chart starts tomorrow</p>
+          <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">Etsy only shows total views, so Mavya needs two daily checks to count one day.</p>
+        </div>
+      ) : (
+        <div className="relative mt-4">
+          <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label={`Shop views a day, last ${points.length} days`}>
+            <line x1={0} x2={W} y1={padT + plotH} y2={padT + plotH} stroke="var(--color-border-soft)" strokeWidth={1} />
+            <line x1={0} x2={W} y1={padT} y2={padT} stroke="var(--color-border-soft)" strokeWidth={1} strokeDasharray="4 4" />
+            {points.map((p, i) => {
+              const cx = slot * i + slot / 2;
+              const h = p.views === null ? 0 : Math.max(2, (p.views / niceMax) * plotH);
+              const r = Math.min(4, barW / 2, h);
+              const x = cx - barW / 2;
+              const y = padT + plotH - h;
+              return (
+                <g key={p.date}>
+                  {p.views !== null && (
+                    <path
+                      d={`M${x},${y + h} V${y + r} Q${x},${y} ${x + r},${y} H${x + barW - r} Q${x + barW},${y} ${x + barW},${y + r} V${y + h} Z`}
+                      fill={hover === i ? "var(--color-primary)" : "var(--color-neutral-dark)"}
+                      opacity={hover === null || hover === i ? 1 : 0.5}
+                    />
+                  )}
+                  <rect
+                    x={slot * i}
+                    y={0}
+                    width={slot}
+                    height={H}
+                    fill="transparent"
+                    tabIndex={0}
+                    onMouseEnter={() => setHover(i)}
+                    onMouseLeave={() => setHover(null)}
+                    onFocus={() => setHover(i)}
+                    onBlur={() => setHover(null)}
+                    aria-label={`${shortDate(p.date)}: ${p.views === null ? "no data" : `${fmt(p.views)} views`}`}
+                  />
+                </g>
+              );
+            })}
+          </svg>
+          <span className="pointer-events-none absolute left-0 top-0 -translate-y-1/2 bg-white pr-1.5 text-[11.5px] tabular-nums text-[var(--color-ink-soft)]">{niceMax}</span>
+          <div className="mt-1.5 flex justify-between text-[11.5px] text-[var(--color-ink-soft)]">
+            <span>{shortDate(points[0].date)}</span>
+            <span>{shortDate(points[points.length - 1].date)}</span>
+          </div>
+          {hovered && hover !== null && (
+            <div
+              className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 -translate-y-full whitespace-nowrap rounded-[var(--radius-md)] bg-[var(--color-ink)] px-2.5 py-1.5 text-[12px] text-white"
+              style={{ left: `${((slot * hover + slot / 2) / W) * 100}%` }}
+            >
+              <span className="font-semibold">{shortDate(hovered.date)}</span> · {hovered.views === null ? "no data" : `${fmt(hovered.views)} views`}
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** Before 14 days: say exactly when trends arrive instead of showing dashes. */
+function TrendsProgress({ days, lastChecked }: { days: number; lastChecked: string | null }) {
+  const left = Math.max(0, MIN_HISTORY_DAYS - days);
+  const ready = lastChecked ? shortDate(addDaysUtc(lastChecked, left)) : null;
+  return (
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="trends">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 id="trends" className={sectionTitle}>
+          Trends
+        </h3>
+        <p className="text-[13px] tabular-nums text-[var(--color-ink-muted)]">
+          Day {days} of {MIN_HISTORY_DAYS}
+        </p>
+      </div>
+      <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--color-page-deep)]" role="progressbar" aria-valuemin={0} aria-valuemax={MIN_HISTORY_DAYS} aria-valuenow={days}>
+        <div className="h-full rounded-full bg-[var(--color-primary)]" style={{ width: `${Math.min(100, (days / MIN_HISTORY_DAYS) * 100)}%` }} />
+      </div>
+      <p className="mt-3 text-[14px] text-[var(--color-ink-muted)]">
+        {ready ? `On ${ready}` : "In about two weeks"} Mavya shows which listings are rising, falling, or seen but not liked. Two weeks of daily numbers keep one busy day from fooling it.
+      </p>
+    </section>
+  );
+}
+
+function StatusTiles({ v }: { v: View }) {
+  return (
+    <section aria-label="This week in your shop" className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => (
+        <Link key={k} href={`/dashboard/shop?filter=${k}`} className={cn(card, "block p-4 transition-colors hover:border-[var(--color-border-strong)]")}>
+          <p className={cn("text-[26px] font-bold leading-none tabular-nums", v.counts[k] ? STATUS_META[k].cls : "text-[var(--color-ink-soft)]")}>{v.counts[k]}</p>
+          <p className="mt-2 text-[14px] font-semibold text-[var(--color-ink)]">{STATUS_META[k].label}</p>
+          <p className="text-[12.5px] text-[var(--color-ink-muted)]">{STATUS_META[k].hint}</p>
+        </Link>
+      ))}
+    </section>
   );
 }
 

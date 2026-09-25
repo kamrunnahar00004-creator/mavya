@@ -33,7 +33,29 @@ export type ShopSnapshotRow = {
 export type ShopStatus = "rising" | "falling" | "seen_not_liked" | "dead" | "steady" | "collecting";
 export type FixAction = "write" | "photo" | "analytics";
 
-export type ShopIssue = { kind: "tags" | "photos"; severity: "high" | "medium"; text: string };
+export type ShopIssue = { kind: "title" | "photos" | "tags"; severity: "high" | "medium"; text: string };
+
+const TITLE_STOP = new Set(["and", "for", "the", "with", "a", "an", "of", "in", "to", "or", "on", "your", "my", "by"]);
+
+/** Visible title problems (no AI): short, one word repeated, or shouting. */
+export function titleIssues(title: string | null): ShopIssue[] {
+  const t = (title ?? "").trim();
+  if (!t) return [{ kind: "title", severity: "high", text: "No title" }];
+  const out: ShopIssue[] = [];
+  if (t.length < 40) out.push({ kind: "title", severity: "high", text: "Very short title" });
+  else if (t.length < 70) out.push({ kind: "title", severity: "medium", text: "Short title" });
+  const counts = new Map<string, number>();
+  for (const w of t.toLowerCase().match(/[a-z0-9']+/g) ?? []) {
+    if (w.length > 2 && !TITLE_STOP.has(w)) counts.set(w, (counts.get(w) ?? 0) + 1);
+  }
+  const repeated = [...counts].find(([, n]) => n >= 3);
+  if (repeated) out.push({ kind: "title", severity: "medium", text: `Title repeats "${repeated[0]}"` });
+  const letters = t.replace(/[^a-z]/gi, "");
+  if (letters.length > 10 && letters.replace(/[^A-Z]/g, "").length / letters.length > 0.6) {
+    out.push({ kind: "title", severity: "medium", text: "Title in capitals" });
+  }
+  return out;
+}
 
 export type ShopListingView = {
   listingId: number;
@@ -63,8 +85,16 @@ export type ShopChangeResult = {
   verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
 };
 
+export type ShopTopListing = { listingId: number; title: string; mainImageUrl: string | null; views: number; favorites: number | null };
+
 export type ShopView = {
   historyDays: number;
+  /** All-time totals from Etsy's counters on the latest check (day 1 value). */
+  totals: { views: number; favorites: number };
+  /** Shop views per day, last 30 days. Null = not enough listings reported that day. */
+  daily: { date: string; views: number | null }[];
+  /** Most viewed listings of all time (available from the first check). */
+  top: ShopTopListing[];
   listings: ShopListingView[];
   counts: Record<"rising" | "falling" | "seen_not_liked" | "dead", number>;
   fixQueue: ShopFix[];
@@ -159,13 +189,17 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     }
 
     const tagsUsed = w.latest.tags.length;
+    // One problem per area at most (title, photos, tags), so a listing is
+    // never ranked on tags alone twice over. Order = what a buyer sees first.
     const issues: ShopIssue[] = [];
-    const emptyTags = 13 - tagsUsed;
-    if (emptyTags >= 4) issues.push({ kind: "tags", severity: "high", text: `${emptyTags} empty tag slots` });
-    else if (emptyTags > 0) issues.push({ kind: "tags", severity: "medium", text: `${emptyTags} empty tag slot${emptyTags > 1 ? "s" : ""}` });
+    const title = titleIssues(w.latest.title);
+    if (title.length) issues.push(title.find((i) => i.severity === "high") ?? title[0]);
     const photos = w.latest.image_count;
     if (photos !== null && photos <= 3) issues.push({ kind: "photos", severity: "high", text: `Only ${photos} photo${photos === 1 ? "" : "s"}` });
     else if (photos !== null && photos < 6) issues.push({ kind: "photos", severity: "medium", text: `Only ${photos} photos` });
+    const emptyTags = 13 - tagsUsed;
+    if (emptyTags >= 7) issues.push({ kind: "tags", severity: "high", text: `${emptyTags} empty tag slots` });
+    else if (emptyTags > 0) issues.push({ kind: "tags", severity: "medium", text: `${emptyTags} empty tag slot${emptyTags > 1 ? "s" : ""}` });
 
     const statusWeight = { falling: 3, seen_not_liked: 2, dead: 1.5, rising: 0, steady: 0, collecting: 0 }[status];
     const issueWeight = issues.reduce((s, i) => s + (i.severity === "high" ? 2 : 1), 0);
@@ -197,18 +231,63 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     .map((l) => {
       const tagIssue = l.issues.find((i) => i.kind === "tags");
       const photoIssue = l.issues.find((i) => i.kind === "photos");
+      const titleIssue = l.issues.find((i) => i.kind === "title");
       const statusText =
         l.status === "falling" ? "Views falling" : l.status === "seen_not_liked" ? "Seen, but few favorites" : l.status === "dead" ? "Almost no views in 30 days" : null;
-      const reason = [statusText, tagIssue?.text, photoIssue?.text].filter(Boolean).slice(0, 2).join(" · ");
+      // Worst problems first, whatever the area: high before medium.
+      const ranked = [...l.issues].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "high" ? -1 : 1));
+      const reason = [statusText, ...ranked.map((i) => i.text)].filter(Boolean).slice(0, 2).join(" · ");
+      const top = ranked[0];
       const action: FixAction =
-        l.status === "seen_not_liked" && photoIssue ? "photo" : tagIssue || l.status === "dead" || l.status === "falling" ? "write" : photoIssue ? "photo" : "analytics";
+        l.status === "seen_not_liked" && photoIssue
+          ? "photo"
+          : top?.kind === "photos"
+          ? "photo"
+          : top || titleIssue || tagIssue || l.status === "dead" || l.status === "falling"
+          ? "write"
+          : "analytics";
       return { listingId: l.listingId, title: l.title, mainImageUrl: l.mainImageUrl, reason, action };
     });
 
   const changes = shopChanges(work, today);
   const measured = changes.filter((c) => c.verdict === "better" || c.verdict === "worse" || c.verdict === "no_change");
+
+  // Day-1 numbers: Etsy's all-time counters on each listing's latest check.
+  let totalViews = 0;
+  let totalFavorites = 0;
+  const top: ShopTopListing[] = [];
+  const perDate = new Map<string, { sum: number; n: number }>();
+  let tracked = 0;
+  for (const [id, w] of work) {
+    if (!current.has(id)) continue;
+    tracked += 1;
+    const views = typeof w.latest.views === "number" && w.latest.views > 0 ? w.latest.views : 0;
+    totalViews += views;
+    totalFavorites += typeof w.latest.favorites === "number" ? w.latest.favorites : 0;
+    top.push({ listingId: id, title: w.latest.title ?? `Listing ${id}`, mainImageUrl: w.latest.main_image_url, views, favorites: w.latest.favorites });
+    for (const pt of w.series) {
+      if (pt.date < last30From || pt.date > today || pt.viewsPerDay === null) continue;
+      const d = perDate.get(pt.date) ?? { sum: 0, n: 0 };
+      d.sum += pt.viewsPerDay;
+      d.n += 1;
+      perDate.set(pt.date, d);
+    }
+  }
+  top.sort((a, b) => b.views - a.views);
+  // A day counts only when most tracked listings reported it, so a partial
+  // Etsy tabulation never shows up as a fake dip.
+  const daily: ShopView["daily"] = [];
+  for (let d = last30From; d <= today; d = addDays(d, 1)) {
+    const x = perDate.get(d);
+    daily.push({ date: d, views: x && tracked > 0 && x.n >= Math.max(1, Math.ceil(tracked * 0.8)) ? x.sum : null });
+  }
+  while (daily.length && daily[0].views === null) daily.shift();
+
   return {
     historyDays,
+    totals: { views: totalViews, favorites: totalFavorites },
+    daily,
+    top: top.slice(0, 3),
     listings,
     counts,
     fixQueue,

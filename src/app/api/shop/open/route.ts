@@ -12,6 +12,7 @@ import { persistPhotoAndQueueRating, kickRatingWorker } from "@/lib/photo-persis
 import { runListingMonitor } from "@/lib/listing-monitor";
 import { suggestKeywords } from "@/lib/listing-analytics";
 import { keywordsRemaining } from "@/lib/keyword-quota";
+import { importEtsySupportingPhotos } from "@/lib/etsy-photo-import";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +23,9 @@ export const maxDuration = 90;
  * already a Mavya product, return it. Otherwise: import its Etsy MAIN photo
  * through the normal upload + rating pipeline (one AI score, same as an
  * upload), create the product, and link the Etsy listing for daily tracking.
- * Supporting photos are not imported automatically (each would cost an AI
- * score); the seller can add them on the Photo tab.
+ * Supporting photos are imported too but NOT scored: each shows a Score
+ * button, so the seller only spends a photo check on the ones they choose.
+ * An already-opened listing with no supporting photos gets them backfilled.
  *
  * Only listings in the seller's own connected shop can be opened here.
  */
@@ -70,7 +72,10 @@ export async function POST(req: NextRequest) {
     .eq("etsy_listing_id", listingId)
     .limit(1)
     .maybeSingle();
-  if (existing) return NextResponse.json({ ok: true, productId: existing.product_id, created: false });
+  if (existing) {
+    await backfillSupporting(user.id, existing.product_id, listingId);
+    return NextResponse.json({ ok: true, productId: existing.product_id, created: false });
+  }
 
   if (aiDisabled()) return apiError("ai_disabled", "Photo checks are paused right now. Try again later.");
   if (!isEtsyConfigured()) return apiError("etsy_unavailable", "Etsy connection is not set up yet.");
@@ -118,6 +123,9 @@ export async function POST(req: NextRequest) {
     return apiError(result.code as Parameters<typeof apiError>[0], result.message);
   }
   after(() => kickRatingWorker(result.jobId));
+  // Supporting photos: stored unscored, in the background so opening stays fast.
+  const importImages = listing.images;
+  after(() => importEtsySupportingPhotos(createSupabaseAdminClient(), user.id, result.productId, importImages).then(() => undefined));
 
   // Link the Etsy listing to the new product for daily tracking.
   const admin = createSupabaseAdminClient();
@@ -155,4 +163,22 @@ export async function POST(req: NextRequest) {
     }
   }
   return NextResponse.json({ ok: true, productId: result.productId, created: true });
+}
+
+/** Listings opened before supporting import existed: add their Etsy photos
+ *  (unscored) when the product has none. Best effort, never blocks opening. */
+async function backfillSupporting(userId: string, productId: string, listingId: number) {
+  if (!isEtsyConfigured()) return;
+  const admin = createSupabaseAdminClient();
+  const { count, error } = await admin.from("photos").select("id", { count: "exact", head: true })
+    .eq("product_id", productId).eq("role", "supporting");
+  if (error || (count ?? 0) > 0) return;
+  try {
+    const listing = (await fetchListingsBatch([listingId], Date.now() + 10_000)).get(listingId);
+    if (listing && listing.images.length > 1) {
+      await importEtsySupportingPhotos(admin, userId, productId, listing.images);
+    }
+  } catch {
+    logEvent("shop.backfill_supporting_failed", { userId });
+  }
 }

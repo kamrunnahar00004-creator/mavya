@@ -20,6 +20,8 @@ import {
   type CoverageState,
 } from "@/lib/buyer-question-coverage";
 
+import { isUnscoredEtsyImport } from "@/lib/etsy-photo-import";
+
 export const dynamic = "force-dynamic";
 
 type AuditRow = { id: string; rubric: RubricJson; rubric_version: string | null; created_at: string };
@@ -242,8 +244,24 @@ export default async function ProductPage({
   // Server-authoritative buyer-question coverage (slice 2). Pure function
   // over data already fetched above -- no new query. The client never
   // recomputes this; it's passed down as a prop.
+  // Supporting photos imported from Etsy and never scored: the seller
+  // decides whether to spend a photo check on them, so they are not "pending"
+  // and stay out of buyer-question coverage until scored.
+  const unscoredIds = new Set(
+    rows
+      .filter((row) =>
+        isUnscoredEtsyImport({
+          role: row.role,
+          storage_path: row.storage_path,
+          hasAudit: Boolean(row.current_audit_id),
+          hasRatingJob: ratingByPhoto.has(row.id),
+        })
+      )
+      .map((row) => row.id)
+  );
+
   const coverageState: CoverageState = computeBuyerQuestionCoverage(
-    rows.map(
+    rows.filter((row) => !unscoredIds.has(row.id)).map(
       (row): CoveragePhotoInput => ({
         id: row.id,
         role: row.role,
@@ -363,6 +381,7 @@ export default async function ProductPage({
         imageSrc,
         storagePath: row.storage_path,
         rubric: null,
+        unscored: unscoredIds.has(row.id),
         ratingJob: rating
           ? { id: rating.id, status: rating.status, errorMessage: rating.error_message }
           : null,

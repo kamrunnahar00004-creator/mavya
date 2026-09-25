@@ -6,7 +6,7 @@ import { AuditWorkspace } from "@/components/audit-workspace";
 import { AnalyzingState } from "@/components/analyzing-state";
 import { FeedbackNudge } from "@/components/feedback-nudge";
 import { StylePickerModal } from "@/components/style-picker-modal";
-import type { SlotView } from "@/components/photo-slot-strip";
+import { PhotoSlotStrip, type SlotView } from "@/components/photo-slot-strip";
 import {
   availableGenerationStyles,
   isInformationalSupportingRole,
@@ -100,6 +100,8 @@ export type InitialPhoto = {
   storagePath: string;
   /** null when the photo has no audit yet (rating running or failed). */
   rubric: RubricJson | null;
+  /** Imported from Etsy and never scored: shows a Score button, no polling. */
+  unscored?: boolean;
   /** Latest rating job for a rubric-less photo (resume polling / show error). */
   ratingJob?: { id: string; status: string; errorMessage: string | null } | null;
   lastJob: InitialJob | null;
@@ -135,7 +137,7 @@ type Photo = {
   imageSrc: string;
   storagePath: string;
   audit: DemoState;
-  status: "analyzing" | "graded" | "delayed" | "failed";
+  status: "analyzing" | "graded" | "delayed" | "failed" | "unscored";
   /** Visible reason when status is "failed" (rating failed/invalid upload). */
   failedMsg?: string;
   /** Durable rating job to resume polling after refresh (analyzing photos). */
@@ -307,6 +309,14 @@ function makePhoto(p: InitialPhoto): Photo {
     // consistency grace period and then surfaces a retryable delayed state
     // instead of either lying about failure or spinning forever.
     const ratingTerminalFailed = jobStatus === "failed" || jobStatus === "cancelled";
+    if (p.unscored) {
+      return {
+        ...analyzingPhoto(p.id, p.imageSrc),
+        kind: p.role,
+        storagePath: p.storagePath,
+        status: "unscored",
+      };
+    }
     return {
       ...analyzingPhoto(p.id, p.imageSrc),
       kind: p.role,
@@ -1085,6 +1095,7 @@ export function ProductWorkspace({
       }
       if (
         !p.rubric &&
+        !p.unscored &&
         p.ratingJob?.status !== "failed" &&
         p.ratingJob?.status !== "cancelled"
       ) {
@@ -1169,6 +1180,7 @@ export function ProductWorkspace({
       }
       if (
         !p.rubric &&
+        !p.unscored &&
         p.ratingJob?.status !== "failed" &&
         p.ratingJob?.status !== "cancelled"
       ) {
@@ -1501,6 +1513,41 @@ export function ProductWorkspace({
     delete ratingPollAnomalies.current[photo.id];
     pollRating(photo.id, photo.ratingJobId);
   }, [activeId, patch, pollRating]);
+
+  // Score an imported (unscored) photo on the seller's click: queue its
+  // rating job, then reuse the normal rating poll, which grades in place and
+  // unlocks one-click fix and AI edit exactly like an uploaded photo.
+  const [scoreBusy, setScoreBusy] = useState(false);
+  const handleScoreUnscored = useCallback(async () => {
+    const photo = photosRef.current.find((p) => p.id === activeId);
+    if (!photo || photo.status !== "unscored" || scoreBusy) return;
+    setScoreBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/photos/score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photoId: photo.id }),
+      });
+      const body = (await res.json().catch(() => null)) as
+        | { jobId?: string; code?: string; message?: string; error?: string }
+        | null;
+      if (!res.ok || !body?.jobId) {
+        setNotice(
+          body?.code === "subscription_required" || body?.code === "subscription_past_due"
+            ? "An active plan is needed to rate photos. Check Settings to update billing."
+            : body?.message ?? body?.error ?? "Scoring could not start. Try again."
+        );
+        return;
+      }
+      patch(photo.id, { status: "analyzing", ratingJobId: body.jobId });
+      pollRating(photo.id, body.jobId);
+    } catch {
+      setNotice("Scoring could not start. Try again.");
+    } finally {
+      setScoreBusy(false);
+    }
+  }, [activeId, patch, pollRating, scoreBusy]);
 
   const handleAddPhoto = useCallback(() => extraInputRef.current?.click(), []);
 
@@ -2025,6 +2072,49 @@ export function ProductWorkspace({
           </button>
         </div>
       )}
+      {active.status === "unscored" ? (
+        <main className="mx-auto max-w-[1200px] px-6 py-8">
+          <PhotoSlotStrip slots={slotViews} onSelect={handleSelectSlot} onAdd={handleAddPhoto} />
+          <div className="mx-auto mt-8 flex max-w-[640px] flex-col items-center gap-5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={active.imageSrc}
+              alt=""
+              className="max-h-[380px] rounded-[var(--radius-xl)] object-contain shadow-[var(--shadow-soft)]"
+            />
+            <div className="text-center">
+              <p className="text-[17px] font-semibold text-[var(--color-ink)]">
+                From your Etsy listing. Not scored yet.
+              </p>
+              <p className="mt-1 text-[14.5px] text-[var(--color-ink-muted)]">
+                Scoring uses 1 photo check. Then you can fix it in one click or edit it with AI.
+              </p>
+            </div>
+            {notice && (
+              <p role="alert" className="text-[14px] text-[var(--color-weak)]">
+                {notice}
+              </p>
+            )}
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => void handleScoreUnscored()}
+                disabled={scoreBusy}
+                className="inline-flex items-center justify-center rounded-full bg-[var(--color-primary)] px-6 py-2.5 text-[15px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-70"
+              >
+                {scoreBusy ? "Starting..." : "Score this photo"}
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleRemovePhoto()}
+                className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-white px-5 py-2.5 text-[14px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </main>
+      ) : (
       <AuditWorkspace
         key={active.id}
         state={
@@ -2075,6 +2165,7 @@ export function ProductWorkspace({
         animate
         requestEditOpen={editRequestToken}
       />
+      )}
       {/* Version strip hidden: seller sees one current improved preview, not 1/2/3 picker. */}
       {/* Generation history preserved in database for analytics and debugging. */}
       {workflowSettled && feedbackWorkflowId && (

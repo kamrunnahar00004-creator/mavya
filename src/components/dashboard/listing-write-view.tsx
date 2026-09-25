@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState, useSyncExternalStore, type FormEvent } from "react";
-import { Check, ChevronDown, Copy, Link2, PenLine, RotateCcw } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
+import { AlertCircle, Check, CheckCircle2, ChevronDown, Copy, Link2, RotateCcw, Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
+import type { CheckArea as Area, CheckItem } from "@/lib/listing-check";
 
 // Same flat, single-column language as the Analytics tab.
 const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border-soft)] bg-white";
@@ -44,13 +45,15 @@ export function ListingWriteView({
   listingRevision,
   linked,
   current,
+  checks,
   looksDigital,
   canWrite,
 }: {
   productId: string;
   listingRevision: string;
   linked: boolean;
-  current: { title: string; tagCount: number } | null;
+  current: { title: string; tags: string[]; description: string } | null;
+  checks: CheckItem[];
   looksDigital: boolean;
   canWrite: boolean;
 }) {
@@ -108,6 +111,18 @@ export function ListingWriteView({
     }
   }
 
+  // First visit for this listing version: start the rewrite automatically so
+  // the seller sees suggestions without hunting for a button. Once per
+  // revision per browser (the saved draft then satisfies later visits).
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (autoStarted.current || !linked || !current || !canWrite || saved || fresh) return;
+    autoStarted.current = true;
+    const t = setTimeout(() => void write(), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linked, current, canWrite, saved, fresh]);
+
   if (!linked || !current) {
     return (
       <main className="mx-auto w-full max-w-[760px] px-4 pb-20 pt-6 sm:px-6">
@@ -147,26 +162,62 @@ export function ListingWriteView({
     </div>
   );
 
+  const toFix = checks.filter((c) => !c.ok).length;
+
   return (
     <main className="mx-auto flex w-full min-w-0 max-w-[760px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
-      <h1 className="sr-only">Write your listing</h1>
+      <h1 className="sr-only">Improve your listing</h1>
 
-      <form onSubmit={write} className={cn(card, "p-6 sm:p-7")}>
-        <p className="flex items-center gap-1.5 text-[13px] font-semibold text-[var(--color-primary)]">
-          <PenLine className="h-4 w-4" aria-hidden="true" /> Write
+      <section className={card} aria-labelledby="check-h">
+        <div className="border-b border-[var(--color-border-soft)] px-5 py-5 sm:px-6">
+          <p className="text-[13px] font-medium text-[var(--color-ink-soft)]">Listing check</p>
+          <h2 id="check-h" className="mt-1 text-[22px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
+            {toFix === 0 ? "Your listing looks solid" : `${toFix} thing${toFix === 1 ? "" : "s"} to improve`}
+          </h2>
+          <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">Read from your live Etsy listing.</p>
+        </div>
+        <CheckGroup area="title" label="Title" checks={checks}>
+          <p className="text-[15px] leading-snug text-[var(--color-ink)]">{current.title || "No title"}</p>
+        </CheckGroup>
+        <CheckGroup area="description" label="Description" checks={checks}>
+          <Collapsible text={current.description} />
+        </CheckGroup>
+        <CheckGroup area="tags" label={`Tags ${current.tags.length}/13`} checks={checks}>
+          {current.tags.length ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {current.tags.map((t) => (
+                <li key={t} className="rounded-full bg-[var(--color-page-deep)] px-2.5 py-1 text-[13px] text-[var(--color-ink)]">
+                  {t}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-[14px] text-[var(--color-ink-muted)]">No tags</p>
+          )}
+        </CheckGroup>
+        <CheckGroup area="photos" label="Photos" checks={checks} last>
+          <Link href={`/dashboard/product/${productId}`} className="text-[14px] font-semibold text-[var(--color-primary)] hover:underline">
+            Open the Photo tab
+          </Link>
+        </CheckGroup>
+      </section>
+
+      <form onSubmit={write} className={cn(card, "p-5 sm:p-6")} aria-labelledby="rewrite-h">
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-ink-soft)]">
+          <Sparkles className="h-4 w-4 text-[var(--color-primary)]" aria-hidden="true" /> Suggested rewrite
         </p>
-        <h2 className="mt-2 text-[22px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
-          {result ? "Your new listing is ready" : "Write a stronger title, tags, and description"}
+        <h2 id="rewrite-h" className="mt-1 text-[20px] font-bold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
+          {result ? "New title, tags, and description" : busy ? "Writing your suggestions" : "Get a stronger title, tags, and description"}
         </h2>
-        <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
-          Built from your listing and the tags top listings use. You now use {current.tagCount} of 13 tags.
+        <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
+          Built from your listing, your keywords, and what top listings for them use.
         </p>
 
         <button
           type="button"
           onClick={() => setShowFacts((v) => !v)}
           aria-expanded={showFacts}
-          className={cn(btnGhost, "-ml-3 mt-3")}
+          className={cn(btnGhost, "-ml-3 mt-2")}
         >
           <ChevronDown className={cn("h-4 w-4 transition-transform", showFacts && "rotate-180")} aria-hidden="true" />
           Add details (optional)
@@ -181,14 +232,14 @@ export function ListingWriteView({
           </div>
         )}
 
-        <div className="mt-5 flex flex-wrap items-center gap-2">
-          <button type="submit" className={btnPrimary} disabled={busy || !canWrite}>
-            {busy ? "Checking keywords and writing… up to a minute" : result ? (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button type="submit" className={result ? cn(btnGhost, "border border-[var(--color-border)]") : btnPrimary} disabled={busy || !canWrite}>
+            {busy ? "Writing... up to a minute" : result ? (
               <>
                 <RotateCcw className="h-4 w-4" aria-hidden="true" /> Write again
               </>
             ) : (
-              "Write my listing"
+              "Write suggestions"
             )}
           </button>
           {!canWrite && <span className="text-[13px] text-[var(--color-weak)]">Update your billing to write listings.</span>}
@@ -211,14 +262,79 @@ export function ListingWriteView({
       {result && (
         <div className={cn("flex flex-col gap-6", busy && "opacity-60")}>
           <Titles result={result} />
-          <Tags result={result} />
           <Description result={result} />
+          <Tags result={result} />
           <p className="px-1 text-[12.5px] leading-relaxed text-[var(--color-ink-soft)]">
             Review everything before pasting into Etsy. Mavya checks your listing daily and shows what happened after you change it.
           </p>
         </div>
       )}
     </main>
+  );
+}
+
+function CheckGroup({
+  area,
+  label,
+  checks,
+  last,
+  children,
+}: {
+  area: Area;
+  label: string;
+  checks: CheckItem[];
+  last?: boolean;
+  children: ReactNode;
+}) {
+  const mine = checks.filter((c) => c.area === area);
+  const bad = mine.filter((c) => !c.ok).length;
+  return (
+    <div className={cn("px-5 py-4 sm:px-6", !last && "border-b border-[var(--color-border-soft)]")}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-[15px] font-semibold text-[var(--color-ink)]">{label}</h3>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-0.5 text-[12px] font-semibold",
+            bad ? "bg-[var(--color-mid-soft)] text-[#7a4f0f]" : "bg-[var(--color-strong-soft)] text-[var(--color-strong)]"
+          )}
+        >
+          {bad ? `${bad} to fix` : "Good"}
+        </span>
+      </div>
+      <div className="mt-2">{children}</div>
+      {mine.length > 0 && (
+        <ul className="mt-3 flex flex-col gap-1.5">
+          {mine.map((c) => (
+            <li key={c.text} className="flex items-start gap-2 text-[14px] leading-snug">
+              {c.ok ? (
+                <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-strong)]" aria-label="Good" />
+              ) : (
+                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[#b7791f]" aria-label="To fix" />
+              )}
+              <span className={c.ok ? "text-[var(--color-ink-muted)]" : "text-[var(--color-ink)]"}>{c.text}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+function Collapsible({ text }: { text: string }) {
+  const [open, setOpen] = useState(false);
+  if (!text.trim()) return <p className="text-[14px] text-[var(--color-ink-muted)]">No description</p>;
+  const long = text.length > 220;
+  return (
+    <div>
+      <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-[var(--color-ink-muted)]">
+        {open || !long ? text : `${text.slice(0, 220).trimEnd()}...`}
+      </p>
+      {long && (
+        <button type="button" onClick={() => setOpen((v) => !v)} className="mt-1 text-[13px] font-semibold text-[var(--color-ink)] hover:underline">
+          {open ? "Show less" : "Show all"}
+        </button>
+      )}
+    </div>
   );
 }
 

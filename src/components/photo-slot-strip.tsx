@@ -8,7 +8,7 @@ export type SlotView = {
   id: string;
   label: string;
   thumbnailUrl: string;
-  status: "analyzing" | "graded" | "improving" | "error";
+  status: "analyzing" | "graded" | "improving" | "error" | "unscored";
   score?: number;
   active: boolean;
 };
@@ -55,6 +55,8 @@ function SlotTile({
   const caption =
     slot.status === "improving"
       ? `${shortLabel(slot.label)} · generating`
+      : slot.status === "unscored"
+      ? `${shortLabel(slot.label)} · not scored`
       : slot.status === "graded" && typeof slot.score === "number"
       ? `${shortLabel(slot.label)} · ${slot.score.toFixed(1)}`
       : shortLabel(slot.label);

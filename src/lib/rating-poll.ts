@@ -32,7 +32,7 @@ export function isExpectedPendingRatingStatus(status: unknown): boolean {
  * refreshed server snapshot.
  */
 export function shouldHydrateCompletedRating(
-  currentStatus: "analyzing" | "graded" | "delayed" | "failed",
+  currentStatus: "analyzing" | "graded" | "delayed" | "failed" | "unscored",
   incomingHasRubric: boolean
 ): boolean {
   return incomingHasRubric && currentStatus !== "graded";
