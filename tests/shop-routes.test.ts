@@ -5,13 +5,13 @@ import sharp from "sharp";
 const m = vi.hoisted(() => ({
   user: vi.fn(), entitlement: vi.fn(), limit: vi.fn(), server: vi.fn(), admin: vi.fn(),
   findShop: vi.fn(), runShop: vi.fn(), batch: vi.fn(), image: vi.fn(), persist: vi.fn(), kick: vi.fn(),
-  runListing: vi.fn(), ideas: vi.fn(), disabled: vi.fn(), after: vi.fn(),
+  runListing: vi.fn(), ideas: vi.fn(), disabled: vi.fn(), after: vi.fn(), wlimit: vi.fn(),
 }));
 vi.mock("next/server", async (orig) => ({ ...(await orig<typeof import("next/server")>()), after: m.after }));
 vi.mock("@/lib/supabase/server", () => ({ getSessionUser: m.user, createSupabaseServerClient: m.server }));
 vi.mock("@/lib/supabase/admin", () => ({ createSupabaseAdminClient: m.admin }));
 vi.mock("@/lib/entitlements", () => ({ getEntitlement: m.entitlement }));
-vi.mock("@/lib/rate-limit", () => ({ rateLimit: m.limit }));
+vi.mock("@/lib/rate-limit", () => ({ rateLimit: m.limit, weightedRateLimit: m.wlimit }));
 vi.mock("@/lib/usage", () => ({ aiDisabled: m.disabled }));
 vi.mock("@/lib/shop-monitor", () => ({ runShopMonitor: m.runShop }));
 vi.mock("@/lib/photo-persistence", () => ({ persistPhotoAndQueueRating: m.persist, kickRatingWorker: m.kick }));
@@ -53,19 +53,43 @@ beforeEach(() => {
   m.user.mockResolvedValue({ id: "u" });
   m.entitlement.mockResolvedValue({ active: true, activeListingLimit: 100 });
   m.limit.mockResolvedValue({ ok: true });
+  m.wlimit.mockResolvedValue({ ok: true });
   m.disabled.mockReturnValue(false);
   m.server.mockResolvedValue(db({}));
   m.admin.mockReturnValue(db({}));
 });
 
 describe("POST /api/shop/connect", () => {
-  it("requires login and a paid plan before touching Etsy", async () => {
+  it("requires login, and a past-due account must fix billing first", async () => {
     m.user.mockResolvedValue(null);
     expect((await connect(req("http://x/api/shop/connect", { shop: "Abc" }))).status).toBe(401);
     m.user.mockResolvedValue({ id: "u" });
-    m.entitlement.mockResolvedValue({ active: false, reason: "no_subscription" });
+    m.entitlement.mockResolvedValue({ active: false, reason: "past_due" });
     expect((await connect(req("http://x/api/shop/connect", { shop: "Abc" }))).status).toBe(402);
     expect(m.findShop).not.toHaveBeenCalled();
+  });
+  it("free Shop check: once per 7 days, before any Etsy call", async () => {
+    m.entitlement.mockResolvedValue({ active: false, reason: "no_subscription" });
+    m.admin.mockReturnValue(db({ shop_monitors: { last_checked_on: "2026-09-22" } }));
+    const res = await connect(req("http://x/api/shop/connect", { shop: "Abc" }));
+    expect(res.status).toBe(429);
+    expect((await res.json()).error).toContain("refreshes on 2026-09-29");
+    expect(m.findShop).not.toHaveBeenCalled();
+  });
+  it("free Shop check: its own Etsy budget can be full without touching Etsy", async () => {
+    m.entitlement.mockResolvedValue({ active: false, reason: "no_subscription" });
+    m.wlimit.mockResolvedValue({ ok: false });
+    expect((await connect(req("http://x/api/shop/connect", { shop: "Abc" }))).status).toBe(429);
+    expect(m.wlimit).toHaveBeenCalledWith("etsy:free:day", 7, 1000, 86_400_000);
+    expect(m.findShop).not.toHaveBeenCalled();
+  });
+  it("free Shop check reads the top 100 of at most 5 pages", async () => {
+    m.entitlement.mockResolvedValue({ active: false, reason: "no_subscription" });
+    m.findShop.mockResolvedValue({ shopId: 7, shopName: "Abc", activeListings: 900 });
+    m.runShop.mockResolvedValue({ listings: 100 });
+    const res = await connect(req("http://x/api/shop/connect", { shop: "Abc" }));
+    expect(await res.json()).toMatchObject({ ok: true, free: true });
+    expect(m.runShop).toHaveBeenCalledWith(expect.anything(), expect.anything(), 100, "2026-09-25", expect.any(Number), 5);
   });
   it("rejects input that is not a shop name or shop link", async () => {
     expect((await connect(req("http://x/api/shop/connect", { shop: "https://evil.com/shop/Abc" }))).status).toBe(400);

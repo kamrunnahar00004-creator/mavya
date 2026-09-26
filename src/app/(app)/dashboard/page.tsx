@@ -47,7 +47,25 @@ export default async function DashboardPage() {
     ),
   ]);
   const pastDue = entitlement.reason === "past_due";
-  if (!entitlement.active && !pastDue) redirect("/subscribe");
+  // No plan: the free Shop check (founder decision 2026-09-26). Public data
+  // only; every paid action inside it links to the plans page.
+  if (!entitlement.active && !pastDue) {
+    return (
+      <main className="mx-auto max-w-[760px] px-4 pt-8 pb-20 sm:px-6">
+        <h1 className="sr-only">Your shop</h1>
+        <ShopHome data={shopHome} canEdit={false} free />
+        {rows.length > 0 && (
+          <p className="mt-8 text-center text-[14px] text-[var(--color-ink-muted)]">
+            Your {rows.length} saved listing{rows.length === 1 ? " is" : "s are"} kept.{" "}
+            <Link href="/subscribe" className="font-semibold text-[var(--color-ink)] underline">
+              Choose a plan
+            </Link>{" "}
+            to work on {rows.length === 1 ? "it" : "them"} again.
+          </p>
+        )}
+      </main>
+    );
+  }
 
   // ONE compact round trip: dashboard_overview() (SECURITY INVOKER, RLS
   // enforced) returns exactly one deterministic row per product — main photo,

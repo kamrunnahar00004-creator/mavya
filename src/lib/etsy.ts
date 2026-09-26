@@ -294,10 +294,13 @@ export async function fetchShopByName(name: string, deadlineAt = Date.now() + 20
 export async function fetchShopActiveListings(
   shopId: number,
   max: number,
-  deadlineAt = Date.now() + 60_000
+  deadlineAt = Date.now() + 60_000,
+  /** Stop after this many pages (free checks read at most 500 listings). */
+  maxPages = 50
 ): Promise<EtsyListing[]> {
   const all: EtsyListing[] = [];
   for (let offset = 0; offset < 5000; offset += 100) {
+    if (offset / 100 >= maxPages) break;
     const body = await etsyGet(`/shops/${shopId}/listings/active`, { limit: 100, offset }, deadlineAt);
     const page = resultsOf(body);
     all.push(...page);

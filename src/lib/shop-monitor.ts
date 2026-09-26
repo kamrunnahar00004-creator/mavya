@@ -18,10 +18,11 @@ export async function runShopMonitor(
   shop: ShopMonitorRow,
   listingLimit: number,
   today: string,
-  deadlineAt = Date.now() + 60_000
+  deadlineAt = Date.now() + 60_000,
+  maxPages?: number
 ): Promise<{ listings: number }> {
   try {
-    const listings = await fetchShopActiveListings(Number(shop.etsy_shop_id), listingLimit, deadlineAt);
+    const listings = await fetchShopActiveListings(Number(shop.etsy_shop_id), listingLimit, deadlineAt, maxPages);
     const rows = listings.map((l) => {
       const main = l.images[0] ?? null;
       return {

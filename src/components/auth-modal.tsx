@@ -35,7 +35,9 @@ async function postAuthDestination(): Promise<string> {
     const body = (await res.json()) as { active?: boolean; reason?: string };
     if (body.active) return hasPendingPhoto ? "/" : "/dashboard";
     if (body.reason === "past_due") return "/dashboard";
-    return "/subscribe";
+    // No plan: a picked landing photo is paid work, so checkout; otherwise the
+    // free Shop check on the dashboard (founder decision 2026-09-26).
+    return hasPendingPhoto ? "/subscribe" : "/dashboard";
   } catch {
     // Preserve the same retry destination when fetch/JSON parsing throws.
     return hasPendingPhoto ? "/" : "/dashboard";

@@ -22,8 +22,11 @@ each slot is a listing Mavya is actively watching and improving.
 
 ## 2. Product rules (non-negotiable)
 
-1. **Nothing is free.** Monitoring is a paid feature, same as photo fixes. No free
-   tier, no free trial listing.
+1. **Nothing is free, except the free Shop check** (founder decision 2026-09-26).
+   A signed-in seller without a plan may check their shop once every 7 days:
+   public numbers, Fix-first, the shop-wide card, and the listing table, with no
+   AI, no daily tracking, and no keywords, on its own Etsy budget (1,000 calls a
+   day). Monitoring, keywords, rewrites, and photo work stay paid.
 2. **No shop connection.** The seller pastes a public Etsy listing link. Mavya never
    asks for Etsy login in this phase. We only read public data.
 3. **Daily cadence.** Etsy updates view counts once a day, so Mavya checks once a day.

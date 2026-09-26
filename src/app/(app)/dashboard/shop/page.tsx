@@ -16,7 +16,8 @@ export default async function ShopListingsPage({ searchParams }: { searchParams:
   const { filter } = await searchParams;
   const supabase = await createSupabaseServerClient();
   const [entitlement, data] = await Promise.all([getEntitlement(user.id), loadShopHome(supabase, todayUtc())]);
-  if (!entitlement.active && entitlement.reason !== "past_due") redirect("/subscribe");
+  // Free accounts see their free Shop check here too; paid actions are locked.
+  const free = !entitlement.active && entitlement.reason !== "past_due";
   return (
     <main className="mx-auto max-w-[1100px] px-4 pb-20 pt-6 sm:px-6">
       <Link href="/dashboard" className="inline-flex items-center gap-1 text-[13.5px] font-semibold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
@@ -26,7 +27,7 @@ export default async function ShopListingsPage({ searchParams }: { searchParams:
         {data.shop ? `All listings in ${data.shop.name}` : "Your listings"}
       </h1>
       <div className="mt-5">
-        <ShopListings data={data} filter={filter ?? null} canEdit={entitlement.active} />
+        <ShopListings data={data} filter={filter ?? null} canEdit={entitlement.active} free={free} />
       </div>
     </main>
   );

@@ -139,6 +139,22 @@ export default function Page() {
     void clearPendingPhotos();
   }, []);
 
+  // Free Shop check entry (founder decision 2026-09-26): signed in -> the
+  // dashboard's free check; signed out -> sign up first (the callback then
+  // lands on the dashboard because no photo is pending).
+  const openShopCheck = useCallback(async () => {
+    try {
+      const { data: { session } } = await createSupabaseBrowserClient().auth.getSession();
+      if (session?.user) {
+        router.push("/dashboard");
+        return;
+      }
+    } catch {
+      // Fall through to sign up.
+    }
+    setAuthOpen(true);
+  }, [router]);
+
   const reset = useCallback(() => {
     setMode("upload");
   }, []);
@@ -154,6 +170,23 @@ export default function Page() {
             resumeSelection={resumeSelection}
             onResumed={handleResumed}
           />
+          <section aria-labelledby="free-check" className="border-y border-[var(--color-border-soft)] bg-white">
+            <div className="mx-auto flex max-w-[1100px] flex-col items-start gap-3 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 id="free-check" className="font-display text-[20px] text-[var(--color-ink)]">Free Etsy shop check</h2>
+                <p className="mt-0.5 text-[14.5px] text-[var(--color-ink-muted)]">
+                  Type your shop name. See which listings to fix first, and why. No Etsy login, no card.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void openShopCheck()}
+                className="inline-flex min-h-[44px] flex-shrink-0 items-center justify-center rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-5 text-[14.5px] font-semibold text-[var(--color-ink)] transition-colors hover:bg-[var(--color-page-deep)]"
+              >
+                Check my shop free
+              </button>
+            </div>
+          </section>
           <ProductProofSection />
         </>
       )}

@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronRight, Store } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, Lock, Store } from "lucide-react";
 import { MetricChart, Sparkline } from "@/components/dashboard/metric-chart";
 import { cn } from "@/lib/utils";
 import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-analytics";
 import type { ShopHomeData } from "@/lib/shop-monitor";
+import { FREE_CHECK_EVERY_DAYS } from "@/lib/plans";
 
 // Same flat, single-column language as the listing tabs.
 const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
@@ -98,7 +99,7 @@ function useListingPref() {
 const linkBtn =
   "text-[12.5px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline disabled:opacity-50";
 
-function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCancel?: () => void; current?: string }) {
+function ConnectShop({ canEdit, onCancel, current, free }: { canEdit: boolean; onCancel?: () => void; current?: string; free?: boolean }) {
   const router = useRouter();
   const [shop, setShop] = useState("");
   const [busy, setBusy] = useState(false);
@@ -133,10 +134,12 @@ function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCance
         <Store className="h-5 w-5" aria-hidden="true" />
       </span>
       <h2 className="font-display mt-4 text-[22px] font-semibold tracking-[-0.01em] text-[var(--color-ink)]">
-        {current ? "Switch shop" : "Connect your Etsy shop"}
+        {current ? "Switch shop" : free ? "Free shop check" : "Connect your Etsy shop"}
       </h2>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
-        Mavya checks every listing daily and tells you which ones to fix first. No Etsy login needed.
+        {free
+          ? "Type your shop name. Mavya reads your public listings and shows what to fix first. No Etsy login, no card."
+          : "Mavya checks every listing daily and tells you which ones to fix first. No Etsy login needed."}
       </p>
       <form onSubmit={submit} className="mt-5 flex flex-col gap-3 sm:flex-row">
         <label htmlFor="shop-name" className="sr-only">
@@ -152,7 +155,7 @@ function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCance
           disabled={busy || !canEdit}
         />
         <button type="submit" className={cn(btnPrimary, "flex-shrink-0")} disabled={busy || !canEdit || !shop.trim()}>
-          {busy ? "Reading your shop…" : "Connect shop"}
+          {busy ? "Reading your shop…" : free ? "Check my shop" : "Connect shop"}
         </button>
       </form>
       {error && (
@@ -169,7 +172,39 @@ function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCance
   );
 }
 
-export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit: boolean }) {
+/** A paid action shown to a free account: same words, leads to the plans page. */
+function Unlock({ label, primary }: { label: string; primary?: boolean }) {
+  return (
+    <Link href="/subscribe" className={primary ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}>
+      <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+      {label}
+    </Link>
+  );
+}
+
+/** Free accounts see this where daily tracking would be. */
+function UpgradeCard({ lastChecked }: { lastChecked: string | null }) {
+  const next = lastChecked ? shortDate(addDaysUtc(lastChecked, FREE_CHECK_EVERY_DAYS)) : null;
+  return (
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="upgrade">
+      <h3 id="upgrade" className={sectionTitle}>
+        See what happens after you fix it
+      </h3>
+      <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
+        Paid plans check your shop every day: a views chart that fills in, which listings are rising or falling, and whether each change you make was followed by more views. Plus AI rewrites and photo fixes.
+      </p>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Link href="/subscribe" className={btnPrimary}>
+          Start tracking daily
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+        {next && <span className="text-[13px] text-[var(--color-ink-muted)]">Your free check refreshes on {next}.</span>}
+      </div>
+    </section>
+  );
+}
+
+export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData | null; canEdit: boolean; free?: boolean }) {
   const [switching, setSwitching] = useState(false);
   const { open, busy, error } = useOpenListing(data?.opened ?? {});
   const { setPref, pending } = useListingPref();
@@ -180,8 +215,8 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
       </p>
     );
   }
-  if (!data.shop) return <ConnectShop canEdit={canEdit} />;
-  if (switching) return <ConnectShop canEdit={canEdit} current={data.shop.name} onCancel={() => setSwitching(false)} />;
+  if (!data.shop) return <ConnectShop canEdit={canEdit || free} free={free} />;
+  if (switching) return <ConnectShop canEdit={canEdit || free} free={free} current={data.shop.name} onCancel={() => setSwitching(false)} />;
 
   const v = data.view;
   const checked = data.shop.lastCheckedOn ? `Checked ${shortDate(data.shop.lastCheckedOn)}` : "First check pending";
@@ -200,7 +235,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
             </p>
           )}
         </div>
-        <button type="button" onClick={() => setSwitching(true)} className={btnGhost} disabled={!canEdit}>
+        <button type="button" onClick={() => setSwitching(true)} className={btnGhost} disabled={!canEdit && !free}>
           Switch shop
         </button>
       </header>
@@ -212,7 +247,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
       ) : (
         <>
           <ShopNumbers v={v} />
-          {v.historyDays >= MIN_HISTORY_DAYS && <ThisWeek v={v} />}
+          {!free && v.historyDays >= MIN_HISTORY_DAYS && <ThisWeek v={v} />}
 
           {v.shopWide && (
             <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="shopwide">
@@ -229,15 +264,19 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                   <li key={f.listingId} className="flex items-center gap-3 py-3">
                     <Thumb url={f.mainImageUrl} />
                     <p className="min-w-0 flex-1 truncate text-[15px] text-[var(--color-ink)]">{f.title}</p>
-                    <button
-                      type="button"
-                      onClick={() => open(f.listingId, "write")}
-                      disabled={busy !== null || !canEdit}
-                      className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
-                    >
-                      {busy === f.listingId ? "Opening..." : "Add tags"}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                    {free ? (
+                      <Unlock label="Add tags" primary={i === 0} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => open(f.listingId, "write")}
+                        disabled={busy !== null || !canEdit}
+                        className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
+                      >
+                        {busy === f.listingId ? "Opening..." : "Add tags"}
+                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ol>
@@ -272,15 +311,19 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                         </p>
                       )}
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => open(f.listingId, f.action)}
-                      disabled={busy !== null || !canEdit}
-                      className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
-                    >
-                      {busy === f.listingId ? "Opening..." : f.button}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </button>
+                    {free ? (
+                      <Unlock label={f.button} primary={i === 0} />
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => open(f.listingId, f.action)}
+                        disabled={busy !== null || !canEdit}
+                        className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
+                      >
+                        {busy === f.listingId ? "Opening..." : f.button}
+                        <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                      </button>
+                    )}
                   </li>
                 ))}
               </ol>
@@ -292,8 +335,14 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
             )}
           </section>
 
-          {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
-          {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
+          {free ? (
+            <UpgradeCard lastChecked={data.shop.lastCheckedOn} />
+          ) : (
+            <>
+              {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
+              {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
+            </>
+          )}
 
           {v.top.length > 0 && (
             <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="top3">
@@ -315,7 +364,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
             </section>
           )}
 
-          {v.changes.length > 0 && <ChangesSummary v={v} />}
+          {!free && v.changes.length > 0 && <ChangesSummary v={v} />}
 
           <Link href="/dashboard/shop" className="inline-flex items-center gap-1 self-start text-[14px] font-semibold text-[var(--color-ink)] hover:underline">
             See all {v.listings.length} listings <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -528,12 +577,12 @@ function TrendCell({ l }: { l: Row }) {
 }
 
 /** Full list of tracked listings: sortable columns and an optional status filter. */
-export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; filter: string | null; canEdit: boolean }) {
+export function ShopListings({ data, filter, canEdit, free = false }: { data: ShopHomeData; filter: string | null; canEdit: boolean; free?: boolean }) {
   const { open, busy, error } = useOpenListing(data.opened);
   const { setPref, pending } = useListingPref();
   const [sort, setSort] = useState<SortKey>("total");
   const v = data.view;
-  if (!data.shop || !v) return <ConnectShop canEdit={canEdit} />;
+  if (!data.shop || !v) return <ConnectShop canEdit={canEdit || free} free={free} />;
   const filtered = filter && filter in STATUS_META ? v.listings.filter((l) => l.status === filter) : v.listings;
   const rows = [...filtered].sort((a, b) => sortValue(b, sort) - sortValue(a, sort) || (b.totalViews ?? 0) - (a.totalViews ?? 0));
   const trendsReady = v.historyDays >= MIN_HISTORY_DAYS;
@@ -555,7 +604,11 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
   );
   return (
     <div className="flex flex-col gap-5">
-      {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
+      {free ? (
+        <UpgradeCard lastChecked={data.shop.lastCheckedOn} />
+      ) : (
+        data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />
+      )}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Filter" className="flex flex-wrap gap-2">
@@ -665,9 +718,16 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
                     <td className={cn("hidden px-2 text-right tabular-nums md:table-cell", l.tagsUsed === 0 ? "font-semibold text-[var(--color-weak)]" : "text-[var(--color-ink)]")}>{l.tagsUsed}/13</td>
                     <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] lg:table-cell">{l.imageCount ?? "–"}</td>
                     <td className="px-3 text-right sm:px-4">
-                      <button type="button" onClick={() => open(l.listingId, "analytics")} disabled={busy !== null || !canEdit} className={cn(btnQuiet, "min-h-[36px] px-3")}>
-                        {busy === l.listingId ? "..." : "Open"}
-                      </button>
+                      {free ? (
+                        <Link href="/subscribe" aria-label="Open (paid plans)" className={cn(btnQuiet, "min-h-[36px] px-3")}>
+                          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
+                          Open
+                        </Link>
+                      ) : (
+                        <button type="button" onClick={() => open(l.listingId, "analytics")} disabled={busy !== null || !canEdit} className={cn(btnQuiet, "min-h-[36px] px-3")}>
+                          {busy === l.listingId ? "..." : "Open"}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 );

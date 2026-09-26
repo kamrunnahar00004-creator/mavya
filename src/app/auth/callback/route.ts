@@ -63,7 +63,9 @@ export async function GET(request: NextRequest) {
       if (entitlement.reason === "past_due") {
         return NextResponse.redirect(`${origin}/dashboard`);
       }
-      return NextResponse.redirect(`${origin}/subscribe`);
+      // No plan: a pending landing photo (next=/) is paid work, so checkout;
+      // otherwise the free Shop check on the dashboard.
+      return NextResponse.redirect(`${origin}${next === "/" ? "/subscribe" : "/dashboard"}`);
     }
   }
 
