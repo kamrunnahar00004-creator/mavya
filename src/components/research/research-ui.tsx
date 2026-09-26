@@ -4,7 +4,7 @@ import {
   ArrowRight,
   Calendar,
   ChevronDown,
-  ChevronsUpDown,
+
   Database,
   ExternalLink,
   Heart,
@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 import { PageBar } from "@/components/page-bar";
 import { SaveButton } from "@/components/research/save-button";
 import type { ResearchListing } from "@/lib/keyword-research";
-import type { KeywordRow, ShopRow } from "@/lib/research-store";
+import type { ShopRow } from "@/lib/research-store";
 import {
   FREE_RESEARCH_SEARCHES,
   RESEARCH_BASE,
@@ -41,7 +41,7 @@ import {
  */
 
 export const btn =
-  "inline-flex h-9 items-center justify-center gap-1.5 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-3 text-[13.5px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-page)]";
+  "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-4 text-[15px] font-semibold text-[var(--color-ink)] transition-colors hover:border-[var(--color-border-strong)] hover:bg-[var(--color-page)]";
 export const btnPrimary =
   "inline-flex h-10 items-center justify-center gap-2 rounded-[var(--radius-md)] bg-[var(--color-primary)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--color-primary-hover)]";
 const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
@@ -281,6 +281,54 @@ export function AgeFilter({ kind, age, params, noun }: { kind: ResearchKind; age
   );
 }
 
+export type FilterDef = { key: string; label: string; op: string; options: readonly number[] };
+
+/** Alura-style Filter button (menu of filters) plus one segmented chip per active filter. */
+export function FilterMenu({
+  kind,
+  defs,
+  values,
+  params,
+}: {
+  kind: ResearchKind;
+  defs: readonly FilterDef[];
+  values: Record<string, number | null>;
+  params: Record<string, string | number | null>;
+}) {
+  return (
+    <>
+      <Menu label="Filter" Icon={ListFilter}>
+        {defs.map((d) => (
+          <div key={d.key} className="pb-1">
+            <p className="px-3 pb-1 pt-2 text-[12px] font-medium text-[var(--color-ink-soft)]">
+              {d.label} {d.op}
+            </p>
+            {d.options.map((o) => (
+              <MenuLink key={o} href={researchHref(kind, { ...params, [d.key]: o, page: null })} active={values[d.key] === o}>
+                {o.toLocaleString("en-US")}
+              </MenuLink>
+            ))}
+          </div>
+        ))}
+      </Menu>
+      {defs
+        .filter((d) => values[d.key] !== null && values[d.key] !== undefined)
+        .map((d) => (
+          <span key={d.key} className="inline-flex h-10 items-stretch overflow-hidden rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white text-[14px]">
+            <span className="flex items-center border-r border-[var(--color-border-soft)] px-3 font-semibold text-[var(--color-ink)]">{d.label}</span>
+            <span className="hidden items-center border-r border-[var(--color-border-soft)] px-3 text-[var(--color-ink-muted)] sm:flex">{d.op}</span>
+            <span className="flex items-center border-r border-[var(--color-border-soft)] px-3 font-semibold tabular-nums text-[var(--color-ink)]">
+              {(values[d.key] as number).toLocaleString("en-US")}
+            </span>
+            <Link href={researchHref(kind, { ...params, [d.key]: null, page: null })} aria-label={`Remove ${d.label} filter`} className="flex items-center px-2.5 text-[var(--color-ink-muted)] hover:bg-[var(--color-page)] hover:text-[var(--color-ink)]">
+              <X className="h-4 w-4" aria-hidden="true" />
+            </Link>
+          </span>
+        ))}
+    </>
+  );
+}
+
 /** "1-25 of N results" plus Previous / Next. */
 export function Pager({ kind, page, total, params, locked }: { kind: ResearchKind; page: number; total: number; params: Record<string, string | number | null>; locked?: boolean }) {
   const from = total === 0 ? 0 : (page - 1) * RESEARCH_PAGE_SIZE + 1;
@@ -288,15 +336,15 @@ export function Pager({ kind, page, total, params, locked }: { kind: ResearchKin
   const hasNext = to < total && page < 40;
   const off = "pointer-events-none opacity-40";
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-4 sm:px-8">
-      <p className="text-[14px] text-[var(--color-ink-muted)]">
+    <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] bg-white px-4 py-4 sm:px-7">
+      <p className="text-[16px] text-[var(--color-ink)]">
         {from}-{to} of {total.toLocaleString("en-US")} results
       </p>
       <div className="flex items-center gap-2">
-        <Link href={researchHref(kind, { ...params, page: page - 1 > 1 ? page - 1 : null })} aria-disabled={page <= 1} className={cn(btn, page <= 1 && off)}>
+        <Link href={researchHref(kind, { ...params, page: page - 1 > 1 ? page - 1 : null })} aria-disabled={page <= 1} className={cn(btn, "h-11 px-5 text-[16px]", page <= 1 && off)}>
           Previous
         </Link>
-        <Link href={researchHref(kind, { ...params, page: page + 1 })} aria-disabled={!hasNext} className={cn(btn, !hasNext && off)}>
+        <Link href={researchHref(kind, { ...params, page: page + 1 })} aria-disabled={!hasNext} className={cn(btn, "h-11 px-5 text-[16px]", !hasNext && off)}>
           {locked && <Lock className="h-3.5 w-3.5" aria-hidden="true" />}
           Next
         </Link>
@@ -481,98 +529,6 @@ export function ShopRows({ rows, saved }: { rows: ShopRow[]; saved: Set<string> 
         </li>
       ))}
     </ul>
-  );
-}
-
-function competitionTone(n: number) {
-  if (n < 5_000) return { color: "var(--color-strong)", width: 0.2 };
-  if (n < 50_000) return { color: "var(--color-mid)", width: 0.5 };
-  return { color: "var(--color-weak)", width: Math.min(1, 0.6 + Math.log10(n / 50_000) * 0.2) };
-}
-
-function roomTone(share: number) {
-  if (share >= 0.3) return "bg-[var(--color-strong-soft)] text-[var(--color-strong)]";
-  if (share >= 0.1) return "bg-[var(--color-mid-soft)] text-[var(--color-mid)]";
-  return "bg-[var(--color-weak-soft)] text-[var(--color-weak)]";
-}
-
-/** Keyword table: keyword, competition bar, top views a day, new listings chip, price, checked. */
-export function KeywordTable({ rows, saved, sortHref, sort }: { rows: KeywordRow[]; saved: Set<string>; sortHref?: (key: string) => string; sort?: SortDef }) {
-  const head = (label: string, k?: string, right = true) => (
-    <th key={label} scope="col" className={cn("whitespace-nowrap px-4 py-3 font-medium", right ? "text-right" : "text-left")}>
-      {k && sortHref ? (
-        <Link href={sortHref(k)} className={cn("inline-flex items-center gap-1 hover:text-[var(--color-ink)]", sort?.key === k && "text-[var(--color-ink)]")}>
-          {label}
-          <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden="true" />
-        </Link>
-      ) : (
-        label
-      )}
-    </th>
-  );
-  return (
-    <div className="overflow-x-auto bg-white">
-      <table className="w-full min-w-[820px] text-[14.5px]">
-        <thead className="border-b border-[var(--color-border)] text-[13px] text-[var(--color-ink-muted)]">
-          <tr>
-            <th scope="col" className="w-10 py-3 pl-4 sm:pl-8">
-              <span className="sr-only">Save</span>
-            </th>
-            {head("Keyword", undefined, false)}
-            {head("Competition", "competition")}
-            {head("Top views/day", "views")}
-            {head("New in top 25", "new")}
-            {head("Typical price", "price")}
-            <th scope="col" className="whitespace-nowrap py-3 pl-4 pr-4 text-right font-medium sm:pr-8">
-              {sortHref ? (
-                <Link href={sortHref("recent")} className={cn("inline-flex items-center gap-1 hover:text-[var(--color-ink)]", sort?.key === "recent" && "text-[var(--color-ink)]")}>
-                  Checked <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden="true" />
-                </Link>
-              ) : (
-                "Checked"
-              )}
-            </th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-[var(--color-border-soft)]">
-          {rows.map((r) => {
-            const tone = competitionTone(r.competition);
-            return (
-              <tr key={r.keyword} className="transition-colors hover:bg-[var(--color-page)]">
-                <td className="py-2.5 pl-4 sm:pl-8">
-                  <SaveButton kind="keyword" refId={r.keyword} label={r.keyword} initial={saved.has(r.keyword)} small />
-                </td>
-                <td className="px-4 py-4">
-                  <Link href={researchHref("keyword", { q: r.keyword })} className="font-semibold text-[var(--color-ink)] hover:underline">
-                    {r.keyword}
-                  </Link>
-                </td>
-                <td className="px-4 py-4">
-                  <div className="flex items-center justify-end gap-3">
-                    <span className="tabular-nums text-[var(--color-ink)]">{r.competition.toLocaleString("en-US")}</span>
-                    <span className="h-1.5 w-12 overflow-hidden rounded-full bg-[var(--color-page-deep)]" aria-hidden="true">
-                      <span className="block h-full rounded-full" style={{ width: `${tone.width * 100}%`, background: tone.color }} />
-                    </span>
-                  </div>
-                </td>
-                <td className="px-4 py-4 text-right tabular-nums text-[var(--color-ink)]">{compact(r.topViewsPerDay)}</td>
-                <td className="px-4 py-4 text-right">
-                  {r.newShare === null ? (
-                    <span className="text-[var(--color-ink-soft)]">–</span>
-                  ) : (
-                    <span className={cn("inline-flex min-w-[46px] justify-center rounded-[var(--radius-md)] px-2 py-0.5 text-[13px] font-semibold tabular-nums", roomTone(r.newShare))}>
-                      {Math.round(r.newShare * 100)}%
-                    </span>
-                  )}
-                </td>
-                <td className="px-4 py-4 text-right tabular-nums text-[var(--color-ink)]">{money(r.medianPriceCents, r.currency)}</td>
-                <td className="py-4 pl-4 pr-4 text-right tabular-nums text-[var(--color-ink-muted)] sm:pr-8">{r.checkedOn.slice(5).replace("-", "/")}</td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
   );
 }
 

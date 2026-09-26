@@ -132,3 +132,37 @@ describe("normalizeShop", () => {
     expect(normalizeShop(null)).toBeNull();
   });
 });
+
+import { keywordDayMetrics, keywordDifficulty, keywordScore, keywordTrend } from "@/lib/research";
+
+describe("keyword explore columns", () => {
+  const day = (id: number, views: number, created = 1_700_000_000) => ({ listingId: id, views, createdAt: created });
+  it("counts views the top 25 really gained since the previous day", () => {
+    const prev = Array.from({ length: 25 }, (_, i) => day(i + 1, 100));
+    const today = Array.from({ length: 25 }, (_, i) => day(i + 1, 104));
+    expect(keywordDayMetrics(today, "2026-09-26", { date: "2026-09-25", results: prev }).viewsGained).toBe(100);
+    expect(keywordDayMetrics(today, "2026-09-26", { date: "2026-09-24", results: prev }).viewsGained).toBe(50);
+  });
+  it("gives no gained number without a comparable previous day", () => {
+    const today = Array.from({ length: 25 }, (_, i) => day(i + 1, 10));
+    expect(keywordDayMetrics(today, "2026-09-26", null).viewsGained).toBeNull();
+    const other = Array.from({ length: 25 }, (_, i) => day(i + 100, 5));
+    expect(keywordDayMetrics(today, "2026-09-26", { date: "2026-09-25", results: other }).viewsGained).toBeNull();
+    expect(keywordDayMetrics(today, "2026-09-26", { date: "2026-09-10", results: today }).viewsGained).toBeNull();
+  });
+  it("needs listing dates for the since-listed average", () => {
+    const noDates = Array.from({ length: 25 }, (_, i) => ({ listingId: i, views: 10 }));
+    expect(keywordDayMetrics(noDates, "2026-09-26", null).viewsAvg).toBeNull();
+  });
+  it("draws the trend from real gained views once two exist", () => {
+    const d = (date: string, avg: number | null, gained: number | null) => ({ checked_on: date, competition: 100, views_avg: avg, views_gained: gained });
+    expect(keywordTrend([d("2026-09-24", 50, null), d("2026-09-25", 51, 40), d("2026-09-26", 52, 60)], "2026-09-26")).toEqual({ points: [40, 60], change: 50, latest: 60 });
+    expect(keywordTrend([d("2026-09-25", null, null), d("2026-09-26", 52, 40)], "2026-09-26")).toEqual({ points: [52], change: null, latest: 52 });
+  });
+  it("scores difficulty and opportunity 0 to 100", () => {
+    expect(keywordDifficulty(40)).toBe(0);
+    expect(keywordDifficulty(972_993)).toBe(86);
+    expect(keywordScore(13, 747)).toBeGreaterThan(keywordScore(972_993, 945));
+    expect(keywordScore(10, null)).toBe(40);
+  });
+});

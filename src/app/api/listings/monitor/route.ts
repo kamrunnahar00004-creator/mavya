@@ -6,7 +6,7 @@ import { timingSafeEqualString } from "@/lib/secret-compare";
 import { isEtsyConfigured } from "@/lib/etsy";
 import { runListingMonitor, todayUtc, type MonitorRow } from "@/lib/listing-monitor";
 import { runShopMonitor, type ShopMonitorRow } from "@/lib/shop-monitor";
-import { runSavedShopChecks } from "@/lib/research-cron";
+import { runKeywordResearchDaily, runSavedShopChecks } from "@/lib/research-cron";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -158,8 +158,21 @@ async function handle(req: NextRequest) {
     }
   }
 
-  logEvent("listing_monitor.run", { ...totals, shops, savedShops });
-  return NextResponse.json({ ok: true, ...totals, shops, savedShops });
+  // Saved keywords, then keyword history for Explore's trend lines.
+  let keywordResearch = { searched: 0, history: 0, errors: 0 };
+  if (Date.now() - started < TIME_BUDGET_MS - 10_000) {
+    try {
+      keywordResearch = await runKeywordResearchDaily(admin, today, started + TIME_BUDGET_MS, async (userId) => {
+        if (!activeByUser.has(userId)) activeByUser.set(userId, (await getEntitlement(userId)).active);
+        return activeByUser.get(userId) as boolean;
+      });
+    } catch {
+      keywordResearch.errors += 1;
+    }
+  }
+
+  logEvent("listing_monitor.run", { ...totals, shops, savedShops, keywordResearch });
+  return NextResponse.json({ ok: true, ...totals, shops, savedShops, keywordResearch });
 }
 
 export const GET = handle;

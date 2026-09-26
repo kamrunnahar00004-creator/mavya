@@ -15,6 +15,12 @@ import {
   type ResearchKind,
   type ShopDay,
   type SortDef,
+  type KeywordDay,
+  type SearchRow,
+  keywordDayMetrics,
+  keywordDifficulty,
+  keywordScore,
+  keywordTrend,
 } from "@/lib/research";
 
 /**
@@ -33,8 +39,18 @@ export type KeywordRow = {
   newShare: number | null;
   medianPriceCents: number | null;
   currency: string | null;
-  checkedOn: string;
+  checkedOn: string | null;
+  /** Top 25 listings' views a day: real gained views when two days exist, else since-listed average. */
+  viewsPerDay: number | null;
+  /** Change of that number over the stored history (up to 90 days), percent. */
+  changePct: number | null;
+  difficulty: number | null;
+  score: number | null;
+  /** Oldest first, for the trend line. */
+  trend: number[];
 };
+
+export type KeywordFilters = { minScore: number | null; maxDifficulty: number | null; maxCompetition: number | null; minViews: number | null; find: string | null };
 
 export type ShopRow = EtsyShopPublic & { ageDays: number | null; sales: { perDay: number; overDays: number } | null };
 
@@ -81,6 +97,118 @@ async function recordKeyword(r: KeywordResearch, today: string) {
   });
   if (error) logEvent("research.keyword_write_failed", { code: error.code ?? "" });
   await recordProducts(r.top, today);
+  try {
+    await syncKeywordHistory(today, { keywords: [r.keyword.toLowerCase()], limit: 10, deadlineAt: Date.now() + 5_000 });
+  } catch {
+    logEvent("research.keyword_history_failed", {});
+  }
+}
+
+type CacheKey = { keyword: string; search_date: string };
+
+/**
+ * Turn the shared daily Etsy search cache into keyword history: one
+ * research_keyword_days row per keyword per stored day, then refresh each
+ * touched keyword's Explore columns (views a day, change, difficulty, score).
+ * Idempotent; the daily cron runs it for everything, a keyword search runs
+ * it for that keyword. Keywords sellers track are included (public Etsy
+ * data, no user ids), which is what fills Explore from day one.
+ */
+export async function syncKeywordHistory(
+  today: string,
+  opts: { keywords?: string[]; limit: number; deadlineAt: number }
+): Promise<{ added: number; keywords: number }> {
+  const admin = createSupabaseAdminClient();
+  const since = new Date(Date.parse(`${today}T00:00:00Z`) - 90 * 86_400_000).toISOString().slice(0, 10);
+  let cq = admin.from("etsy_search_cache").select("keyword, search_date").eq("ready", true).gte("search_date", since);
+  if (opts.keywords) cq = cq.in("keyword", opts.keywords);
+  const { data: cacheKeys, error } = await cq.order("search_date", { ascending: true }).limit(20_000);
+  if (error) throw new Error("keyword_history_scan_failed");
+  let dq = admin.from("research_keyword_days").select("keyword, checked_on").gte("checked_on", since);
+  if (opts.keywords) dq = dq.in("keyword", opts.keywords);
+  const { data: have } = await dq.limit(50_000);
+  const done = new Set(((have as { keyword: string; checked_on: string }[] | null) ?? []).map((d) => `${d.keyword}|${d.checked_on}`));
+  const missing = ((cacheKeys as CacheKey[] | null) ?? []).filter(
+    (k) => k.keyword.length >= 2 && k.keyword.length <= 80 && !done.has(`${k.keyword}|${k.search_date}`)
+  );
+
+  const touched = new Set<string>();
+  let added = 0;
+  for (const k of missing.slice(0, opts.limit)) {
+    if (Date.now() >= opts.deadlineAt) break;
+    const [{ data: row }, { data: prev }] = await Promise.all([
+      admin.from("etsy_search_cache").select("result_count, results").eq("keyword", k.keyword).eq("search_date", k.search_date).maybeSingle(),
+      admin
+        .from("etsy_search_cache")
+        .select("search_date, results")
+        .eq("keyword", k.keyword)
+        .eq("ready", true)
+        .lt("search_date", k.search_date)
+        .order("search_date", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    const cur = row as { result_count: number; results: SearchRow[] } | null;
+    if (!cur || !Array.isArray(cur.results)) continue;
+    const before = prev as { search_date: string; results: SearchRow[] } | null;
+    const m = keywordDayMetrics(cur.results, k.search_date, before && Array.isArray(before.results) ? { date: before.search_date, results: before.results } : null);
+    const { error: writeError } = await admin.from("research_keyword_days").upsert({
+      keyword: k.keyword,
+      checked_on: k.search_date,
+      competition: cur.result_count,
+      views_avg: m.viewsAvg,
+      views_gained: m.viewsGained,
+    });
+    if (writeError) continue;
+    added += 1;
+    touched.add(k.keyword);
+  }
+  if (opts.keywords) for (const kw of opts.keywords) touched.add(kw);
+  await refreshKeywordColumns([...touched], today);
+  return { added, keywords: touched.size };
+}
+
+async function keywordDays(keywords: string[]): Promise<Map<string, KeywordDay[]>> {
+  const out = new Map<string, KeywordDay[]>();
+  if (!keywords.length) return out;
+  const { data } = await createSupabaseAdminClient()
+    .from("research_keyword_days")
+    .select("keyword, checked_on, competition, views_avg, views_gained")
+    .in("keyword", keywords)
+    .order("checked_on", { ascending: false })
+    .limit(keywords.length * 91);
+  for (const d of (data as (KeywordDay & { keyword: string })[] | null) ?? []) {
+    out.set(d.keyword, [...(out.get(d.keyword) ?? []), d]);
+  }
+  return out;
+}
+
+async function refreshKeywordColumns(keywords: string[], today: string) {
+  const admin = createSupabaseAdminClient();
+  for (let i = 0; i < keywords.length; i += 100) {
+    const chunk = keywords.slice(i, i + 100);
+    const days = await keywordDays(chunk);
+    const rows = [];
+    for (const kw of chunk) {
+      const list = days.get(kw) ?? [];
+      if (!list.length) continue;
+      const latest = [...list].sort((a, b) => b.checked_on.localeCompare(a.checked_on))[0];
+      const t = keywordTrend(list, today);
+      rows.push({
+        keyword: kw,
+        competition: latest.competition,
+        views_per_day: t.latest,
+        change_pct: t.change,
+        difficulty: keywordDifficulty(latest.competition),
+        score: keywordScore(latest.competition, t.latest),
+        checked_on: latest.checked_on,
+        updated_at: new Date().toISOString(),
+      });
+    }
+    if (!rows.length) continue;
+    const { error } = await admin.from("research_keywords").upsert(rows);
+    if (error) logEvent("research.keyword_columns_failed", { code: error.code ?? "" });
+  }
 }
 
 export async function recordProducts(rows: ResearchListing[], today: string) {
@@ -134,12 +262,33 @@ export async function recordShops(shops: EtsyShopPublic[], today: string, snapsh
   if (dayError) logEvent("research.shop_day_write_failed", { code: dayError.code ?? "" });
 }
 
-type KeywordDb = { keyword: string; competition: number; top_views_per_day: number | null; new_share: number | null; median_price_cents: number | null; currency: string | null; checked_on: string };
+type KeywordDb = {
+  keyword: string;
+  competition: number;
+  top_views_per_day: number | null;
+  new_share: number | null;
+  median_price_cents: number | null;
+  currency: string | null;
+  checked_on: string | null;
+  views_per_day: number | null;
+  change_pct: number | null;
+  difficulty: number | null;
+  score: number | null;
+};
+const KEYWORD_COLUMNS =
+  "keyword, competition, top_views_per_day, new_share, median_price_cents, currency, checked_on, views_per_day, change_pct, difficulty, score";
 type ProductDb = { listing_id: number; shop_id: number | null; title: string; url: string | null; image_url: string | null; price_cents: number | null; currency: string | null; views: number | null; favorites: number | null; created_on: string | null; views_per_day: number | null };
 type ShopDb = { shop_id: number; shop_name: string; title: string | null; icon_url: string | null; country: string | null; sold_count: number | null; review_count: number | null; review_average: number | null; favorers: number | null; active_listings: number | null; created_on: string | null };
 
-const keywordRow = (k: KeywordDb): KeywordRow => ({
+const toNum = (v: number | string | null) => (v === null || v === undefined ? null : Number(v));
+
+const keywordRow = (k: KeywordDb, trend: number[] = []): KeywordRow => ({
   keyword: k.keyword,
+  viewsPerDay: toNum(k.views_per_day),
+  changePct: toNum(k.change_pct),
+  difficulty: k.difficulty ?? keywordDifficulty(k.competition),
+  score: k.score ?? keywordScore(k.competition, toNum(k.views_per_day)),
+  trend,
   competition: k.competition,
   topViewsPerDay: k.top_views_per_day === null ? null : Number(k.top_views_per_day),
   newShare: k.new_share === null ? null : Number(k.new_share),
@@ -206,17 +355,26 @@ export async function withShopSales(shops: EtsyShopPublic[], today: string): Pro
 
 export type ExplorePage<T> = { rows: T[]; total: number; failed: boolean };
 
-/** Explore tables: everything Mavya searches collect, newest data first within the chosen sort. */
-export async function exploreKeywords(sort: SortDef, page: number): Promise<ExplorePage<KeywordRow>> {
+/** Explore tables: everything Mavya searches collect, sorted and filtered. */
+export async function exploreKeywords(sort: SortDef, page: number, f: KeywordFilters, today: string): Promise<ExplorePage<KeywordRow>> {
   const from = (page - 1) * RESEARCH_PAGE_SIZE;
-  const { data, count, error } = await createSupabaseAdminClient()
-    .from("research_keywords")
-    .select("keyword, competition, top_views_per_day, new_share, median_price_cents, currency, checked_on", { count: "exact" })
+  let query = createSupabaseAdminClient().from("research_keywords").select(KEYWORD_COLUMNS, { count: "exact" });
+  if (f.minScore !== null) query = query.gte("score", f.minScore);
+  if (f.maxDifficulty !== null) query = query.lte("difficulty", f.maxDifficulty);
+  if (f.maxCompetition !== null) query = query.lte("competition", f.maxCompetition);
+  if (f.minViews !== null) query = query.gte("views_per_day", f.minViews);
+  if (f.find) query = query.ilike("keyword", `%${f.find.replace(/[%_\\]/g, "")}%`);
+  const { data, count, error } = await query
     .order(sort.column, { ascending: sort.ascending, nullsFirst: false })
     .order("keyword", { ascending: true })
     .range(from, from + RESEARCH_PAGE_SIZE - 1);
   if (error) return { rows: [], total: 0, failed: true };
-  return { rows: ((data as KeywordDb[] | null) ?? []).map(keywordRow), total: count ?? 0, failed: false };
+  return { rows: await withTrends((data as KeywordDb[] | null) ?? [], today), total: count ?? 0, failed: false };
+}
+
+async function withTrends(rows: KeywordDb[], today: string): Promise<KeywordRow[]> {
+  const days = await keywordDays(rows.map((r) => r.keyword));
+  return rows.map((r) => keywordRow(r, keywordTrend(days.get(r.keyword) ?? [], today).points));
 }
 
 export async function exploreProducts(sort: SortDef, page: number, maxAgeDays: number | null, today: string): Promise<ExplorePage<ResearchListing>> {
@@ -285,7 +443,7 @@ export async function savedDetails(userId: string, today: string) {
   const refs = (k: ResearchKind) => saved.filter((s) => s.kind === k).map((s) => s.ref);
   const [kw, pr, sh] = await Promise.all([
     refs("keyword").length
-      ? admin.from("research_keywords").select("keyword, competition, top_views_per_day, new_share, median_price_cents, currency, checked_on").in("keyword", refs("keyword"))
+      ? admin.from("research_keywords").select(KEYWORD_COLUMNS).in("keyword", refs("keyword"))
       : Promise.resolve({ data: [] }),
     refs("product").length
       ? admin.from("research_products").select("listing_id, shop_id, title, url, image_url, price_cents, currency, views, favorites, created_on, views_per_day").in("listing_id", refs("product"))
@@ -298,7 +456,7 @@ export async function savedDetails(userId: string, today: string) {
   const kwOrder = order("keyword");
   const prOrder = order("product");
   const shOrder = order("shop");
-  const keywords = ((kw.data as KeywordDb[] | null) ?? []).map(keywordRow).sort((a, b) => (kwOrder.get(a.keyword) ?? 0) - (kwOrder.get(b.keyword) ?? 0));
+  const keywords = (await withTrends((kw.data as KeywordDb[] | null) ?? [], today)).sort((a, b) => (kwOrder.get(a.keyword) ?? 0) - (kwOrder.get(b.keyword) ?? 0));
   const products = ((pr.data as ProductDb[] | null) ?? [])
     .sort((a, b) => (prOrder.get(String(a.listing_id)) ?? 0) - (prOrder.get(String(b.listing_id)) ?? 0))
     .map((p, i) => productRow(p, i, today));
@@ -307,4 +465,9 @@ export async function savedDetails(userId: string, today: string) {
     today
   );
   return { keywords, products, shops, counts: { keyword: refs("keyword").length, product: refs("product").length, shop: refs("shop").length } };
+}
+
+/** A short history sync for page loads (a few keywords, about 4 seconds at most). */
+export async function syncKeywordHistoryBriefly(today: string) {
+  return syncKeywordHistory(today, { limit: 30, deadlineAt: Date.now() + 4_000 });
 }

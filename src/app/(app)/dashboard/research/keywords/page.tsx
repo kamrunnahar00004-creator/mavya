@@ -1,20 +1,19 @@
 import Link from "next/link";
-import { BarChart3, Clock, Database, DollarSign, Heart, Search, Sparkles, TrendingUp, Zap } from "lucide-react";
+import { BarChart3, Clock, Database, Heart, Target, TrendingUp, Zap } from "lucide-react";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import { normalizeResearchQuery } from "@/lib/keyword-research";
 import { researchContext, guardedSearch } from "@/lib/research-context";
-import { exploreKeywords, runKeywordResearch, savedDetails, savedRefs } from "@/lib/research-store";
-import { SORTS, parsePage, parseSort, parseTab, researchHref } from "@/lib/research";
+import { exploreKeywords, runKeywordResearch, savedDetails, savedRefs, syncKeywordHistoryBriefly } from "@/lib/research-store";
+import { KEYWORD_FILTERS, SORTS, parsePage, parseSort, parseTab, parseWhole, researchHref } from "@/lib/research";
+import { KeywordExplore } from "@/components/research/keyword-explore";
 import { KeywordDetail } from "@/components/research/keyword-detail";
 import {
   EmptyState,
   ErrorNote,
-  KeywordTable,
+  FilterMenu,
   Pager,
   ResearchBar,
   SearchHero,
-  SortMenu,
-  Toolbar,
   UpgradeModal,
   btn,
 } from "@/components/research/research-ui";
@@ -22,7 +21,7 @@ import {
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-type Params = { tab?: string; q?: string; sort?: string; page?: string; valid?: string };
+type Params = { tab?: string; q?: string; sort?: string; page?: string; valid?: string; minScore?: string; maxKd?: string; maxComp?: string; minViews?: string; find?: string };
 
 /**
  * Keyword Research: Search (any phrase, live Etsy numbers), Explore (every
@@ -37,50 +36,77 @@ export default async function KeywordResearchPage({ searchParams }: { searchPara
     const sort = parseSort("keyword", sp.sort);
     const page = parsePage(sp.page);
     const locked = !ctx.paid && page > 1;
-    const [data, saved] = await Promise.all([exploreKeywords(sort, locked ? 1 : page), savedRefs(ctx.userId, "keyword")]);
-    const params = { tab: "explore", sort: sort.key === SORTS.keyword[0].key ? null : sort.key };
+    const filters = {
+      minScore: parseWhole(sp.minScore, 100),
+      maxDifficulty: parseWhole(sp.maxKd, 100),
+      maxCompetition: parseWhole(sp.maxComp, 100_000_000),
+      minViews: parseWhole(sp.minViews, 100_000_000),
+      find: normalizeResearchQuery(sp.find)?.toLowerCase() ?? null,
+    };
+    // Fill Explore from searches Mavya already stored (a few keywords per visit; the daily cron does the rest).
+    try {
+      await syncKeywordHistoryBriefly(ctx.today);
+    } catch {
+      // Best effort; Explore still shows what is stored.
+    }
+    const [data, saved] = await Promise.all([exploreKeywords(sort, locked ? 1 : page, filters, ctx.today), savedRefs(ctx.userId, "keyword")]);
+    const filterValues = { minScore: filters.minScore, maxKd: filters.maxDifficulty, maxComp: filters.maxCompetition, minViews: filters.minViews };
+    const params = { tab: "explore", sort: sort.key === SORTS.keyword[0].key ? null : sort.key, ...filterValues, find: filters.find };
+    const sortHrefs = Object.fromEntries(SORTS.keyword.map((s) => [s.key, researchHref("keyword", { ...params, sort: s.key === SORTS.keyword[0].key ? null : s.key, page: null })]));
+    const findHidden = Object.fromEntries(
+      Object.entries({ ...params, find: null }).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => [k, String(v)])
+    );
     return (
-      <>
+      <div className="min-h-[calc(100dvh-57px)] bg-white">
         <ResearchBar kind="keyword" tab="explore" />
-        <Toolbar
-          left={<p className="text-[14px] text-[var(--color-ink-muted)]">Every keyword researched on Mavya, with live Etsy numbers from the day it was checked.</p>}
-          right={
-            <>
-              <Link href={researchHref("keyword", {})} aria-label="Search keywords" className={`${btn} w-9 px-0`}>
-                <Search className="h-4 w-4" aria-hidden="true" />
-              </Link>
-              <SortMenu kind="keyword" sorts={SORTS.keyword} sort={sort} params={params} />
-            </>
-          }
-        />
         {data.failed ? (
           <ErrorNote>Explore is not ready yet. Try again shortly.</ErrorNote>
-        ) : data.rows.length === 0 ? (
-          <EmptyState Icon={Database} title="Nothing to explore yet" body="Explore fills up as keywords are researched. Search one to add it." action={<Link href={researchHref("keyword", {})} className={btn}>Search a keyword</Link>} />
         ) : (
-          <>
-            <KeywordTable rows={data.rows} saved={new Set(saved.map((s) => s.ref))} sort={sort} sortHref={(k) => researchHref("keyword", { ...params, sort: k === SORTS.keyword[0].key ? null : k })} />
-            <Pager kind="keyword" page={locked ? 1 : page} total={data.total} params={params} locked={!ctx.paid} />
-          </>
+          <KeywordExplore
+            rows={data.rows}
+            savedRefs={saved.map((s) => s.ref)}
+            sortKey={sort.key}
+            sortHrefs={sortHrefs}
+            keywordHref={Object.fromEntries(data.rows.map((r) => [r.keyword, researchHref("keyword", { q: r.keyword })]))}
+            filterSlot={<FilterMenu kind="keyword" defs={KEYWORD_FILTERS} values={filterValues} params={params} />}
+            findAction={researchHref("keyword", {})}
+            findHidden={findHidden}
+            find={filters.find}
+            footer={
+              data.rows.length === 0 ? (
+                <EmptyState
+                  Icon={Database}
+                  title={filters.find || Object.values(filterValues).some((v) => v !== null) ? "No keywords match" : "Nothing to explore yet"}
+                  body={filters.find || Object.values(filterValues).some((v) => v !== null) ? "Try fewer filters." : "Explore fills up as keywords are researched. Search one to add it."}
+                  action={<Link href={researchHref("keyword", {})} className={btn}>Search a keyword</Link>}
+                />
+              ) : (
+                <Pager kind="keyword" page={locked ? 1 : page} total={data.total} params={params} locked={!ctx.paid} />
+              )
+            }
+          />
         )}
         {locked && <UpgradeModal reason="explore" closeHref={researchHref("keyword", params)} />}
-      </>
+      </div>
     );
   }
 
   if (tab === "saved") {
     const saved = await savedDetails(ctx.userId, ctx.today);
     return (
-      <>
+      <div className="min-h-[calc(100dvh-57px)] bg-white">
         <ResearchBar kind="keyword" tab="saved" />
         {saved.keywords.length === 0 ? (
-          <EmptyState Icon={Heart} title="No saved keywords yet" body="Tap the heart on any keyword to keep it here." action={<Link href={researchHref("keyword", { tab: "explore" })} className={btn}>Explore keywords</Link>} />
+          <EmptyState Icon={Heart} title="No saved keywords yet" body="Tick keywords in Explore and press Save to keep them here." action={<Link href={researchHref("keyword", { tab: "explore" })} className={btn}>Explore keywords</Link>} />
         ) : (
-          <div className="pt-2">
-            <KeywordTable rows={saved.keywords} saved={new Set(saved.keywords.map((k) => k.keyword))} />
-          </div>
+          <KeywordExplore
+            mode="saved"
+            rows={saved.keywords}
+            savedRefs={saved.keywords.map((k) => k.keyword)}
+            keywordHref={Object.fromEntries(saved.keywords.map((r) => [r.keyword, researchHref("keyword", { q: r.keyword })]))}
+          />
         )}
-      </>
+      </div>
     );
   }
 
@@ -96,10 +122,10 @@ export default async function KeywordResearchPage({ searchParams }: { searchPara
           kind="keyword"
           placeholder="Search for keywords or niches"
           chips={[
-            { label: "Busiest keywords", href: researchHref("keyword", { tab: "explore" }), Icon: TrendingUp },
-            { label: "Low competition", href: researchHref("keyword", { tab: "explore", sort: "competition" }), Icon: Zap },
-            { label: "Room for new listings", href: researchHref("keyword", { tab: "explore", sort: "new" }), Icon: Sparkles },
-            { label: "Higher price", href: researchHref("keyword", { tab: "explore", sort: "price" }), Icon: DollarSign },
+            { label: "Trending keywords", href: researchHref("keyword", { tab: "explore", sort: "change" }), Icon: TrendingUp },
+            { label: "Most viewed keywords", href: researchHref("keyword", { tab: "explore", sort: "views" }), Icon: BarChart3 },
+            { label: "Low competition gems", href: researchHref("keyword", { tab: "explore", sort: "kd" }), Icon: Zap },
+            { label: "Best opportunities", href: researchHref("keyword", { tab: "explore" }), Icon: Target },
             { label: "Recently checked", href: researchHref("keyword", { tab: "explore", sort: "recent" }), Icon: Clock },
           ]}
           mine={mine.map((k) => ({ label: k, href: researchHref("keyword", { q: k }), Icon: BarChart3 }))}

@@ -50,10 +50,12 @@ export type SortDef = { key: string; label: string; column: string; ascending: b
 /** Explore sort options per kind. The first one is the default. */
 export const SORTS: Record<ResearchKind, SortDef[]> = {
   keyword: [
-    { key: "views", label: "Top views a day", column: "top_views_per_day", ascending: false },
+    { key: "score", label: "Score", column: "score", ascending: false },
+    { key: "views", label: "Views a day", column: "views_per_day", ascending: false },
+    { key: "change", label: "Change", column: "change_pct", ascending: false },
     { key: "competition", label: "Lowest competition", column: "competition", ascending: true },
-    { key: "new", label: "Most new listings", column: "new_share", ascending: false },
-    { key: "price", label: "Highest price", column: "median_price_cents", ascending: false },
+    { key: "kd", label: "Easiest (KD)", column: "difficulty", ascending: true },
+    { key: "keyword", label: "Keyword A to Z", column: "keyword", ascending: true },
     { key: "recent", label: "Recently checked", column: "checked_on", ascending: false },
   ],
   product: [
@@ -71,6 +73,21 @@ export const SORTS: Record<ResearchKind, SortDef[]> = {
     { key: "listings", label: "Most listings", column: "active_listings", ascending: false },
   ],
 };
+
+/** Keyword Explore filters (Filter menu). Each is a whole number or absent. */
+export const KEYWORD_FILTERS = [
+  { key: "minScore", label: "Score", op: "at least", options: [30, 45, 60] },
+  { key: "maxKd", label: "KD", op: "at most", options: [20, 40, 60] },
+  { key: "maxComp", label: "Competition", op: "at most", options: [1000, 10000, 50000] },
+  { key: "minViews", label: "Views a day", op: "at least", options: [10, 100, 1000] },
+] as const;
+
+export type KeywordFilterKey = (typeof KEYWORD_FILTERS)[number]["key"];
+
+export function parseWhole(raw: string | undefined, max: number): number | null {
+  if (!raw || !/^\d{1,9}$/.test(raw)) return null;
+  return Math.min(Number(raw), max);
+}
 
 export function parseSort(kind: ResearchKind, raw: string | undefined): SortDef {
   return SORTS[kind].find((s) => s.key === raw) ?? SORTS[kind][0];
@@ -154,4 +171,88 @@ export function normalizeSavedRef(kind: ResearchKind, ref: unknown): string | nu
   const s = String(ref).replace(/\s+/g, " ").trim();
   if (kind === "keyword") return s.length >= 2 && s.length <= 80 ? s.toLowerCase() : null;
   return /^[1-9]\d{0,18}$/.test(s) ? s : null;
+}
+
+// ---------------------------------------------------------------------------
+// Keyword Explore columns (2026-09-26, laid out like Alura's keyword table).
+// Every number comes from Etsy search results Mavya stored that day. Etsy has
+// no search volume, so the volume column is the views the top 25 listings get
+// a day (real). Difficulty and Score are Mavya formulas over those real
+// numbers, and the UI says so.
+// ---------------------------------------------------------------------------
+
+export type SearchRow = { listingId: number; views: number | null; createdAt?: number | null };
+
+export const KEYWORD_TOP = 25;
+
+/**
+ * One day's keyword numbers from that day's stored search (and the previous
+ * stored day, if any): the top 25 listings' average views a day since listed,
+ * and the views they actually gained since the previous day (null without a
+ * previous day within a week, or when fewer than 10 of today's top 25 can be
+ * compared).
+ */
+export function keywordDayMetrics(
+  today: SearchRow[],
+  date: string,
+  prev: { date: string; results: SearchRow[] } | null
+): { viewsAvg: number | null; viewsGained: number | null } {
+  const top = today.slice(0, KEYWORD_TOP);
+  const now = Date.parse(`${date}T00:00:00Z`) / 1000;
+  let avg = 0;
+  let aged = 0;
+  for (const r of top) {
+    if (typeof r.views !== "number" || typeof r.createdAt !== "number" || r.createdAt <= 0) continue;
+    avg += r.views / Math.max(1, (now - r.createdAt) / 86_400);
+    aged += 1;
+  }
+  let gained: number | null = null;
+  if (prev) {
+    const gap = Math.round((Date.parse(`${date}T00:00:00Z`) - Date.parse(`${prev.date}T00:00:00Z`)) / 86_400_000);
+    const before = new Map(prev.results.map((r) => [r.listingId, r.views]));
+    let sum = 0;
+    let matched = 0;
+    for (const r of top) {
+      const b = before.get(r.listingId);
+      if (typeof r.views !== "number" || typeof b !== "number") continue;
+      sum += Math.max(0, r.views - b);
+      matched += 1;
+    }
+    if (gap >= 1 && gap <= 7 && matched >= 10) gained = Math.round((sum / gap) * (top.length / matched) * 10) / 10;
+  }
+  return { viewsAvg: aged >= 5 ? Math.round(avg * (top.length / aged) * 10) / 10 : null, viewsGained: gained };
+}
+
+export type KeywordDay = { checked_on: string; competition: number; views_avg: number | null; views_gained: number | null };
+
+/**
+ * Trend for the sparkline and the change column: views gained a day when at
+ * least two such days exist (the real daily number), otherwise the
+ * since-listed average. Oldest first, last 90 days.
+ */
+export function keywordTrend(days: KeywordDay[], today: string): { points: number[]; change: number | null; latest: number | null } {
+  const cutoff = Date.parse(`${today}T00:00:00Z`) - 90 * 86_400_000;
+  const recent = days.filter((d) => Date.parse(`${d.checked_on}T00:00:00Z`) >= cutoff).sort((a, b) => a.checked_on.localeCompare(b.checked_on));
+  const gained = recent.filter((d) => d.views_gained !== null && d.views_gained !== undefined).map((d) => Number(d.views_gained));
+  const points = gained.length >= 2 ? gained : recent.filter((d) => d.views_avg !== null && d.views_avg !== undefined).map((d) => Number(d.views_avg));
+  const latest = points.length ? points[points.length - 1] : null;
+  const change = points.length >= 2 && points[0] > 0 ? Math.round(((points[points.length - 1] - points[0]) / points[0]) * 1000) / 10 : null;
+  return { points, change, latest };
+}
+
+const clamp100 = (n: number) => Math.min(100, Math.max(0, Math.round(n)));
+
+/** Keyword difficulty 0-100 from the number of competing listings (log scale). */
+export function keywordDifficulty(competition: number): number {
+  return competition <= 50 ? 0 : clamp100(20 * Math.log10(competition / 50));
+}
+
+/** Demand 0-100 from the top 25 listings' views a day (log scale). */
+export function keywordDemand(viewsPerDay: number | null): number {
+  return viewsPerDay === null || viewsPerDay <= 0 ? 0 : clamp100(30 * Math.log10(1 + viewsPerDay));
+}
+
+/** Opportunity score 0-100: busy top listings, few competitors. */
+export function keywordScore(competition: number, viewsPerDay: number | null): number {
+  return clamp100(0.6 * keywordDemand(viewsPerDay) + 0.4 * (100 - keywordDifficulty(competition)));
 }

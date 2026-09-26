@@ -4,7 +4,8 @@ import { researchContext } from "@/lib/research-context";
 import { savedDetails } from "@/lib/research-store";
 import { MAX_SAVED_SHOPS, researchHref } from "@/lib/research";
 import { PageBar } from "@/components/page-bar";
-import { EmptyState, KeywordTable, ProductRows, ShopRows, btn } from "@/components/research/research-ui";
+import { EmptyState, ProductRows, ShopRows, btn } from "@/components/research/research-ui";
+import { KeywordExplore } from "@/components/research/keyword-explore";
 import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
@@ -52,9 +53,12 @@ export default async function SavedResearchPage({ searchParams }: { searchParams
       />
       {kind === "keywords" &&
         (saved.keywords.length ? (
-          <div className="pt-2">
-            <KeywordTable rows={saved.keywords} saved={new Set(saved.keywords.map((k) => k.keyword))} />
-          </div>
+          <KeywordExplore
+            mode="saved"
+            rows={saved.keywords}
+            savedRefs={saved.keywords.map((k) => k.keyword)}
+            keywordHref={Object.fromEntries(saved.keywords.map((r) => [r.keyword, researchHref("keyword", { q: r.keyword })]))}
+          />
         ) : (
           <EmptyState Icon={Heart} title="No saved keywords yet" body="Tap the heart on any keyword to keep it here." action={<Link href={researchHref("keyword", {})} className={btn}>Keyword Research</Link>} />
         ))}
