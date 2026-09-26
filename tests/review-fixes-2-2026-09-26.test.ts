@@ -86,3 +86,18 @@ describe("natural bounce", () => {
     expect(wasFallingBefore(series, addDays(START, 29), 9)).toBe(false);
   });
 });
+
+describe("keyword interest is views per day since listed", () => {
+  it("an old listing's big lifetime total does not inflate interest", async () => {
+    const { viewsPerDayMedian } = await import("@/lib/keyword-finder");
+    const day = 86_400;
+    const now = Date.parse("2026-09-26T00:00:00Z") / 1000;
+    // 3 listings: 3,650 views over 10 years (1/day), 300 over 100 days (3/day), 50 over 10 days (5/day).
+    expect(viewsPerDayMedian([
+      { views: 3650, createdAt: now - 3650 * day },
+      { views: 300, createdAt: now - 100 * day },
+      { views: 50, createdAt: now - 10 * day },
+    ], "2026-09-26")).toBe(3);
+    expect(viewsPerDayMedian([{ views: 100, createdAt: null }], "2026-09-26")).toBeNull();
+  });
+});

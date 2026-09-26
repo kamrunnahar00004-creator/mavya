@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSearchCached } from "@/lib/search-cache";
 import { suggestKeywords } from "@/lib/listing-analytics";
-import { buildCandidates, labelKeyword, medianOf, rankIdeas, type KeywordIdea } from "@/lib/keyword-finder";
+import { buildCandidates, labelKeyword, rankIdeas, viewsPerDayMedian, type KeywordIdea } from "@/lib/keyword-finder";
 
 /**
  * Run the keyword finder for one listing. SERVER ONLY (service-role client for
@@ -34,7 +34,7 @@ export async function findKeywordIdeas(
       const idx = r.results.findIndex((l) => l.listingId === listing.listingId);
       const stats = {
         competition: r.count,
-        interest: medianOf(r.results.slice(0, 10).map((l) => l.views)),
+        interest: viewsPerDayMedian(r.results.slice(0, 10), today),
         position: idx >= 0 ? idx + 1 : null,
         inTags: own.has(keyword),
       };

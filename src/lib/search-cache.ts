@@ -14,12 +14,12 @@ import { searchActiveListingsWithCount, type EtsyListing } from "@/lib/etsy";
 
 export type CachedSearch = { count: number; results: EtsyListing[]; cached: boolean };
 
-type StoredListing = Pick<EtsyListing, "listingId" | "shopId" | "title" | "tags" | "views" | "favorites" | "url">;
+type StoredListing = Pick<EtsyListing, "listingId" | "shopId" | "title" | "tags" | "views" | "favorites" | "url"> & { createdAt?: number | null };
 
 const keyOf = (keyword: string) => keyword.trim().toLowerCase().replace(/\s+/g, " ").slice(0, 80);
 
 function toStored(l: EtsyListing): StoredListing {
-  return { listingId: l.listingId, shopId: l.shopId, title: l.title.slice(0, 200), tags: l.tags.slice(0, 13), views: l.views, favorites: l.favorites, url: l.url };
+  return { listingId: l.listingId, shopId: l.shopId, title: l.title.slice(0, 200), tags: l.tags.slice(0, 13), views: l.views, favorites: l.favorites, url: l.url, createdAt: l.createdAt };
 }
 
 function fromStored(s: StoredListing): EtsyListing {
@@ -35,7 +35,7 @@ function fromStored(s: StoredListing): EtsyListing {
     priceCents: null,
     currency: null,
     url: s.url ?? null,
-    createdAt: null,
+    createdAt: s.createdAt ?? null,
     images: [],
   };
 }

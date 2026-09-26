@@ -164,10 +164,10 @@ export function buildWriterMessage(ctx: WriterContext): string {
     "TOP LISTING TAGS (tags other top listings use)",
     ...(winners.length ? winners : ["(none)"]),
     "",
-    "GOOD PHRASES (lower competition and higher lifetime listing views; not measured search demand)",
+    "GOOD PHRASES (top listings for them get steady views a day; not measured search demand)",
     ...(good.length ? good : ["(none checked)"]),
     "",
-    "BROAD PHRASES (many competing listings or few views on top listings; use only if they describe this product exactly)",
+    "BROAD PHRASES (50,000+ competing listings, or top listings average under 1 view a day; use only if they describe this product exactly)",
     ...(broad.length ? broad : ["(none)"]),
   ].join("\n");
 }

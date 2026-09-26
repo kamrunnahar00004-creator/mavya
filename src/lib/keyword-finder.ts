@@ -3,8 +3,9 @@
  *
  * Signals available from Etsy's public search (verified 2026-09-24):
  *  - competition: total number of matching listings (search `count`)
- *  - interest:    median lifetime views of the top 10 results (a proxy for
- *                 "buyers look at this search"; NOT search volume)
+ *  - interest:    median views PER DAY SINCE LISTED of the top 10 results (a
+ *                 proxy for "buyers look at this search"; NOT search volume).
+ *                 Per day, not lifetime, so old listings do not inflate it.
  *  - position:    where the seller's listing lands in the checked results
  *
  * Labels are deliberately plain and honest. Nothing here claims search volume.
@@ -17,7 +18,7 @@ export type KeywordIdea = {
   label: KeywordLabel;
   /** Matching listings on Etsy (competition). */
   competition: number;
-  /** Median lifetime views of the top 10 results (interest proxy). */
+  /** Median views per day since listed of the top 10 results (interest proxy). */
   interest: number | null;
   /** Seller's approximate position in the checked results, null = not found. */
   position: number | null;
@@ -26,7 +27,8 @@ export type KeywordIdea = {
 };
 
 export const CROWDED_AT = 50_000;
-export const QUIET_BELOW = 100;
+/** Top listings averaging under 1 view a day: few buyers look here. */
+export const QUIET_BELOW = 1;
 export const WINNING_TOP = 10;
 export const MAX_CANDIDATES = 12;
 
@@ -91,6 +93,19 @@ export function rankIdeas(ideas: KeywordIdea[]): KeywordIdea[] {
   return [...ideas].sort(
     (a, b) => ORDER[a.label] - ORDER[b.label] || (b.interest ?? 0) - (a.interest ?? 0) || a.competition - b.competition
   );
+}
+
+/** Median of (all-time views / days since listed) for results with a creation date. */
+export function viewsPerDayMedian(results: { views: number | null; createdAt: number | null }[], today: string): number | null {
+  const now = Date.parse(`${today}T00:00:00Z`) / 1000;
+  const rates = results
+    .filter((l) => typeof l.views === "number" && typeof l.createdAt === "number" && l.createdAt > 0)
+    .map((l) => (l.views as number) / Math.max(1, (now - (l.createdAt as number)) / 86_400))
+    .sort((a, b) => a - b);
+  if (!rates.length) return null;
+  const m = Math.floor(rates.length / 2);
+  const v = rates.length % 2 ? rates[m] : (rates[m - 1] + rates[m]) / 2;
+  return Math.round(v * 10) / 10;
 }
 
 export function medianOf(values: (number | null)[]): number | null {

@@ -777,7 +777,7 @@ function KeywordIdeas({ vm }: { vm: AnalyticsViewModel }) {
                     <p className="truncate text-[15px] text-[var(--color-ink)]">&ldquo;{i.keyword}&rdquo;</p>
                     <p className="text-[12.5px] tabular-nums text-[var(--color-ink-muted)]">
                       {compact.format(i.competition)} listings
-                      {i.interest !== null && ` · top listings ${compact.format(i.interest)} views`}
+                      {i.interest !== null && ` · top listings ~${i.interest >= 10 ? Math.round(i.interest) : i.interest} views a day`}
                       {i.position !== null ? ` · you about #${i.position}` : " · you not in first 100"}
                     </p>
                   </div>

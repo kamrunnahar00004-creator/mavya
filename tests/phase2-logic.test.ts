@@ -6,14 +6,16 @@ import { parseEtsyShopInput } from "@/lib/etsy";
 import { ALLOWED_LISTING_LIMITS, getPlanPolicy, keywordLimitFor } from "@/lib/plans";
 import { finalizeWriterOutput, tagReasons, type WriterContext } from "@/lib/listing-writer";
 
+// Interest is views per day since listed (was all-time views until 2026-09-26):
+// the real 2026-09-24 Coraline numbers divided by about a year live.
 describe("keyword labels (real 2026-09-24 Coraline numbers)", () => {
   const cases: [string, Parameters<typeof labelKeyword>[0], string][] = [
-    ["coraline doll crochet pattern", { competition: 134, interest: 9989, position: 1, inTags: false }, "winning"],
-    ["coraline doll", { competition: 1119, interest: 2451, position: 68, inTags: false }, "add"],
-    ["coraline", { competition: 5773, interest: 447, position: null, inTags: true }, "keep"],
-    ["amigurumi", { competition: 585215, interest: 3268, position: null, inTags: true }, "crowded"],
-    ["crochet pattern", { competition: 963522, interest: 7573, position: null, inTags: true }, "crowded"],
-    ["amigurumi fan art (pdf)", { competition: 401, interest: 81, position: 1, inTags: false }, "quiet"],
+    ["coraline doll crochet pattern", { competition: 134, interest: 27.4, position: 1, inTags: false }, "winning"],
+    ["coraline doll", { competition: 1119, interest: 6.7, position: 68, inTags: false }, "add"],
+    ["coraline", { competition: 5773, interest: 1.2, position: null, inTags: true }, "keep"],
+    ["amigurumi", { competition: 585215, interest: 9, position: null, inTags: true }, "crowded"],
+    ["crochet pattern", { competition: 963522, interest: 20.7, position: null, inTags: true }, "crowded"],
+    ["amigurumi fan art (pdf)", { competition: 401, interest: 0.2, position: 1, inTags: false }, "quiet"],
   ];
   it.each(cases)("%s", (_k, stats, label) => expect(labelKeyword(stats)).toBe(label));
 
