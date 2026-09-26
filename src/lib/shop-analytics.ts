@@ -9,6 +9,7 @@
  * comparison, so a seasonal shop-wide rise cannot pass for a win.
  */
 
+import { checkListing, scoreChecks, type CheckItem, type ListingScore } from "@/lib/listing-check";
 import {
   addDays,
   dailyRatioTest,
@@ -34,6 +35,10 @@ export type ShopSnapshotRow = {
   tags: string[] | null;
   /** Listing creation date (migration 0035); null on older rows. */
   created_on?: string | null;
+  /** Description facts (migration 0039); null on older rows. */
+  description_len?: number | null;
+  description_has_size?: boolean | null;
+  description_has_file_info?: boolean | null;
 };
 
 export type ShopStatus = "rising" | "falling" | "seen_not_liked" | "dead" | "steady" | "collecting";
@@ -91,6 +96,11 @@ export type ShopListingView = {
   spark: (number | null)[];
   /** Seller marked it as working: never suggested for changes. */
   protected: boolean;
+  /** Listing check on the latest snapshot (title, tags, description facts, photo count). */
+  check: ListingScore;
+  checks: CheckItem[];
+  /** Listing creation date, when known. */
+  createdOn: string | null;
 };
 
 export type ShopFix = {
@@ -224,9 +234,14 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   const hiddenUntil = prefs.dismissed ?? {};
   const byListing = new Map<number, ListingSnapshot[]>();
   const createdById = new Map<number, string>();
+  // Latest description facts per listing (not part of the analytics snapshot type).
+  const descById = new Map<number, { date: string; length: number; hasSize: boolean; hasFileInfo: boolean }>();
   const dates = new Set<string>();
   for (const r of rows) {
     const id = Number(r.listing_id);
+    if (typeof r.description_len === "number" && (descById.get(id)?.date ?? "") <= r.snapshot_date) {
+      descById.set(id, { date: r.snapshot_date, length: r.description_len, hasSize: Boolean(r.description_has_size), hasFileInfo: Boolean(r.description_has_file_info) });
+    }
     const list = byListing.get(id) ?? [];
     list.push(toSnapshot(r));
     byListing.set(id, list);
@@ -335,7 +350,20 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     const spark: (number | null)[] = [];
     const byDate = new Map(w.series.map((pt) => [pt.date, pt.viewsPerDay]));
     for (let d = addDays(today, -13); d <= today; d = addDays(d, 1)) spark.push(byDate.get(d) ?? null);
+    const checks = checkListing({
+      title: w.latest.title ?? "",
+      tags: w.latest.tags ?? [],
+      description: null,
+      descriptionFacts: descById.get(id) ?? null,
+      keywords: [],
+      winnerTags: [],
+      isDigital: null,
+      photos: { imageCount: photos },
+    });
     listings.push({
+      check: scoreChecks(checks),
+      checks,
+      createdOn,
       totalViews,
       totalFavorites: typeof w.latest.favorites === "number" ? w.latest.favorites : null,
       avgPerDay: totalViews !== null && ageDays !== null ? totalViews / ageDays : null,

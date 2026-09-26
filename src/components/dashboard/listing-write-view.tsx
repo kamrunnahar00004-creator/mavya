@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
-import { AlertCircle, Check, CheckCircle2, ChevronDown, Copy, Link2, RotateCcw, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type FormEvent } from "react";
+import { Check, CheckCircle2, ChevronDown, ChevronRight, Clock, Copy, ExternalLink, Link2, RotateCcw, Sparkles, X, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CheckArea as Area, CheckItem } from "@/lib/listing-check";
+import { scoreChecks, type CheckArea as Area, type CheckItem } from "@/lib/listing-check";
+import { CountChip, ScoreCircle } from "@/components/dashboard/shop-home";
 
 // Same flat, single-column language as the Analytics tab.
 const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
@@ -46,6 +47,9 @@ export function ListingWriteView({
   linked,
   current,
   checks,
+  mainImageUrl = null,
+  lastChecked = null,
+  scoreChange = null,
   looksDigital,
   canWrite,
 }: {
@@ -54,6 +58,9 @@ export function ListingWriteView({
   linked: boolean;
   current: { title: string; tags: string[]; description: string } | null;
   checks: CheckItem[];
+  mainImageUrl?: string | null;
+  lastChecked?: string | null;
+  scoreChange?: { from: number; to: number; date: string } | null;
   looksDigital: boolean;
   canWrite: boolean;
 }) {
@@ -162,58 +169,42 @@ export function ListingWriteView({
     </div>
   );
 
-  const toFix = checks.filter((c) => !c.ok).length;
-  const passing = checks.length - toFix;
-  const share = checks.length ? passing / checks.length : 1;
-  const grade = share >= 0.8 ? { word: "Good", color: "var(--color-strong)" } : share >= 0.5 ? { word: "Needs work", color: "var(--color-mid)" } : { word: "Weak", color: "var(--color-weak)" };
+  const score = scoreChecks(checks);
+  const checkedOn = lastChecked
+    ? new Date(`${lastChecked}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", day: "2-digit", year: "numeric", timeZone: "UTC" })
+    : null;
 
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-[880px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
+    <main className="mx-auto flex w-full min-w-0 max-w-[960px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
       <h1 className="sr-only">Improve your listing</h1>
+      {scoreChange && <ScoreChangePopup productId={productId} change={scoreChange} />}
 
-      <section className={card} aria-labelledby="check-h">
-        <div className="flex items-center gap-5 border-b border-[var(--color-border-soft)] px-5 py-5 sm:px-6">
-          <div className="flex flex-shrink-0 items-stretch gap-3">
-            <span className="w-1 rounded-full" style={{ background: grade.color }} aria-hidden="true" />
-            <p className="text-[40px] font-semibold leading-none tabular-nums tracking-[-0.02em]" style={{ color: grade.color }}>
-              {passing}
-              <span className="text-[20px] text-[var(--color-ink-soft)]">/{checks.length}</span>
-            </p>
-          </div>
-          <div className="min-w-0">
-            <p className="text-[13px] font-semibold" style={{ color: grade.color }}>
-              Listing check: {grade.word}
-            </p>
-            <h2 id="check-h" className="mt-0.5 text-[18px] font-semibold leading-snug text-[var(--color-ink)]">
-              {toFix === 0 ? "Every check passes" : `${passing} of ${checks.length} checks pass, ${toFix} to improve`}
-            </h2>
-            <p className="mt-0.5 text-[13.5px] text-[var(--color-ink-muted)]">Read from your live Etsy listing.</p>
-          </div>
+      <section aria-labelledby="details-h">
+        <h2 id="details-h" className="mb-3 text-[17px] font-semibold text-[var(--color-ink)]">
+          Listing details
+        </h2>
+        <ListingDetails current={current} score={score} mainImageUrl={mainImageUrl} checkedOn={checkedOn} productId={productId} />
+      </section>
+
+      <section aria-labelledby="recs-h">
+        <h2 id="recs-h" className="text-[17px] font-semibold text-[var(--color-ink)]">
+          Recommendations
+        </h2>
+        <p className="mb-3 mt-1 text-[14px] text-[var(--color-ink-muted)]">
+          Plain checks from Etsy&apos;s seller guidance and what top listings do. Each one you pass raises this listing&apos;s score. The score measures the checklist, not sales.
+        </p>
+        <div className="flex flex-col gap-2.5">
+          {(
+            [
+              ["title", "Title"],
+              ["photos", "Photos"],
+              ["description", "Description"],
+              ["tags", "Tags"],
+            ] as [Area, string][]
+          ).map(([area, label]) => (
+            <AreaRow key={area} area={area} label={label} checks={checks} productId={productId} />
+          ))}
         </div>
-        <CheckGroup area="title" label="Title" checks={checks}>
-          <p className="text-[15px] leading-snug text-[var(--color-ink)]">{current.title || "No title"}</p>
-        </CheckGroup>
-        <CheckGroup area="description" label="Description" checks={checks}>
-          <Collapsible text={current.description} />
-        </CheckGroup>
-        <CheckGroup area="tags" label={`Tags ${current.tags.length}/13`} checks={checks}>
-          {current.tags.length ? (
-            <ul className="flex flex-wrap gap-1.5">
-              {current.tags.map((t) => (
-                <li key={t} className="rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-2.5 py-1 text-[13px] text-[var(--color-ink)]">
-                  {t}
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-[14px] text-[var(--color-ink-muted)]">No tags</p>
-          )}
-        </CheckGroup>
-        <CheckGroup area="photos" label="Photos" checks={checks} last>
-          <Link href={`/dashboard/product/${productId}`} className="text-[14px] font-semibold text-[var(--color-primary)] hover:underline">
-            Open the Photo tab
-          </Link>
-        </CheckGroup>
       </section>
 
       <form onSubmit={write} className={cn(card, "p-5 sm:p-6")} aria-labelledby="rewrite-h">
@@ -287,49 +278,199 @@ export function ListingWriteView({
   );
 }
 
-function CheckGroup({
-  area,
-  label,
-  checks,
-  last,
-  children,
+const HANDBOOK = "https://www.etsy.com/seller-handbook";
+
+function ListingDetails({
+  current,
+  score,
+  mainImageUrl,
+  checkedOn,
+  productId,
 }: {
-  area: Area;
-  label: string;
-  checks: CheckItem[];
-  last?: boolean;
-  children: ReactNode;
+  current: { title: string; tags: string[]; description: string };
+  score: ReturnType<typeof scoreChecks>;
+  mainImageUrl: string | null;
+  checkedOn: string | null;
+  productId: string;
 }) {
-  const mine = checks.filter((c) => c.area === area);
-  const bad = mine.filter((c) => !c.ok).length;
+  const [open, setOpen] = useState(false);
   return (
-    <div className={cn("px-5 py-4 sm:px-6", !last && "border-b border-[var(--color-border-soft)]")}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-[15px] font-semibold text-[var(--color-ink)]">{label}</h3>
-        <span
-          className={cn(
-            "rounded-[var(--radius-md)] px-2.5 py-0.5 text-[12px] font-semibold",
-            bad ? "bg-[var(--color-mid-soft)] text-[#8A5A12]" : "bg-[var(--color-strong-soft)] text-[var(--color-strong)]"
+    <div className={card}>
+      <div className="flex items-center gap-4 p-4 sm:p-5">
+        <span className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-page-deep)]">
+          {mainImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={mainImageUrl} alt="" className="h-full w-full object-cover" />
           )}
-        >
-          {bad ? `${bad} to fix` : "Good"}
         </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[16px] text-[var(--color-ink)]">{current.title || "No title"}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2">
+            <CountChip>{score.recommendations} Recommendations</CountChip>
+            <CountChip>{score.suggestions} Suggestions</CountChip>
+            {checkedOn && (
+              <span className="inline-flex items-center gap-1 text-[12.5px] text-[var(--color-ink-soft)]">
+                <Clock className="h-3.5 w-3.5" aria-hidden="true" /> Last checked: {checkedOn}
+              </span>
+            )}
+          </div>
+        </div>
+        <ScoreCircle score={score.score} size={56} />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          aria-label={open ? "Hide listing text" : "Show listing text"}
+          className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-ink-muted)] hover:bg-[var(--color-page)] hover:text-[var(--color-ink)]"
+        >
+          <ChevronDown className={cn("h-5 w-5 transition-transform", open && "rotate-180")} aria-hidden="true" />
+        </button>
       </div>
-      <div className="mt-2">{children}</div>
-      {mine.length > 0 && (
-        <ul className="mt-3 flex flex-col gap-1.5">
+      {open && (
+        <div className="flex flex-col gap-4 border-t border-[var(--color-border-soft)] p-4 sm:p-5">
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">Title</p>
+            <p className="mt-1 text-[15px] text-[var(--color-ink)]">{current.title || "No title"}</p>
+          </div>
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">Tags {current.tags.length}/13</p>
+            {current.tags.length ? (
+              <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                {current.tags.map((t) => (
+                  <li key={t} className="rounded-[var(--radius-md)] bg-[var(--color-page-deep)] px-2.5 py-1 text-[13px] text-[var(--color-ink)]">
+                    {t}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">No tags</p>
+            )}
+          </div>
+          <div>
+            <p className="text-[12px] font-semibold uppercase tracking-[0.06em] text-[var(--color-ink-soft)]">Description</p>
+            <div className="mt-1">
+              <Collapsible text={current.description} />
+            </div>
+          </div>
+          <Link href={`/dashboard/product/${productId}`} className="text-[14px] font-semibold text-[var(--color-primary)] hover:underline">
+            Open the Photo tab
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AreaRow({ area, label, checks, productId }: { area: Area; label: string; checks: CheckItem[]; productId: string }) {
+  const mine = checks.filter((c) => c.area === area);
+  const passed = mine.filter((c) => c.ok).length;
+  const allOk = passed === mine.length;
+  const [open, setOpen] = useState(false);
+  if (!mine.length) return null;
+  return (
+    <div className={card}>
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} className="flex w-full items-center gap-3 px-5 py-4 text-left">
+        <span className="flex-1 text-[15px] font-semibold text-[var(--color-ink)]">{label}</span>
+        <span className="text-[14px] tabular-nums text-[var(--color-ink-soft)]">
+          {passed}/{mine.length}
+        </span>
+        <span
+          className="flex h-7 w-7 items-center justify-center rounded-full"
+          style={{ background: allOk ? "var(--color-strong-soft)" : "var(--color-weak-soft)", color: allOk ? "var(--color-strong)" : "var(--color-weak)" }}
+          aria-label={allOk ? "All checks pass" : "Some checks fail"}
+        >
+          {allOk ? <Check className="h-4 w-4" aria-hidden="true" /> : <X className="h-4 w-4" aria-hidden="true" />}
+        </span>
+        <ChevronDown className={cn("h-5 w-5 text-[var(--color-ink-soft)] transition-transform", open && "rotate-180")} aria-hidden="true" />
+      </button>
+      {open && (
+        <ul className="flex flex-col gap-6 border-t border-[var(--color-border-soft)] px-5 py-5 sm:px-8">
           {mine.map((c) => (
-            <li key={c.text} className="flex items-start gap-2 text-[14px] leading-snug">
-              {c.ok ? (
-                <CheckCircle2 className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-strong)]" aria-label="Good" />
-              ) : (
-                <AlertCircle className="mt-0.5 h-4 w-4 flex-shrink-0 text-[var(--color-mid)]" aria-label="To fix" />
+            <li key={c.name}>
+              <div className="flex items-center justify-between gap-3 border-b border-[var(--color-border-soft)] pb-3">
+                <p className="text-[15px] font-semibold text-[var(--color-ink)]">{c.name}</p>
+                <span className="flex items-center gap-2 text-[14px] text-[var(--color-ink-soft)]">
+                  {c.value}
+                  {c.ok ? (
+                    <CheckCircle2 className="h-5 w-5 text-[var(--color-strong)]" aria-label="Passes" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-[var(--color-weak)]" aria-label={c.level === "fix" ? "Recommendation" : "Suggestion"} />
+                  )}
+                </span>
+              </div>
+              {!c.ok && c.advice && (
+                <div className="mt-3 rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-[var(--color-page)] p-4">
+                  <p className="text-[14px] font-semibold text-[var(--color-ink)]">{c.level === "fix" ? "Recommendation" : "Suggestion"}</p>
+                  <p className="mt-1 text-[14.5px] leading-relaxed text-[var(--color-ink)]">{c.advice}</p>
+                </div>
               )}
-              <span className={c.ok ? "text-[var(--color-ink-muted)]" : "text-[var(--color-ink)]"}>{c.text}</span>
+              <p className="mt-3 text-[14px] leading-relaxed text-[var(--color-ink-muted)]">{c.why}</p>
+              {!c.ok && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {area === "photos" ? (
+                    <Link href={`/dashboard/product/${productId}`} className={cn(btnGhost, "border border-[var(--color-border)]")}>
+                      Open the Photo tab <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    </Link>
+                  ) : (
+                    <a href="#rewrite-h" className={cn(btnGhost, "border border-[var(--color-border)]")}>
+                      Write a fix with Mavya <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
+                    </a>
+                  )}
+                  <a href={HANDBOOK} target="_blank" rel="noopener noreferrer" className={cn(btnGhost, "border border-[var(--color-border)]")}>
+                    Etsy Seller Handbook <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+                  </a>
+                </div>
+              )}
             </li>
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** Shown once per change: the seller edited the listing on Etsy and its score went up. */
+function ScoreChangePopup({ productId, change }: { productId: string; change: { from: number; to: number; date: string } }) {
+  const key = `mavya:score-change:${productId}:${change.date}:${change.to}`;
+  const seen = useSyncExternalStore(noSubscribe, () => readSaved(key) !== null, () => true);
+  const [closed, setClosed] = useState(false);
+  if (seen || closed) return null;
+  const close = () => {
+    try {
+      localStorage.setItem(key, "1");
+    } catch {
+      /* ignore */
+    }
+    setClosed(true);
+  };
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[rgba(24,24,27,0.45)] px-4" onClick={close}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="score-change-h"
+        onClick={(e) => e.stopPropagation()}
+        className="relative w-full max-w-[400px] rounded-[var(--radius-2xl)] bg-white px-6 pb-7 pt-6 text-center shadow-[var(--shadow-soft-strong)]"
+      >
+        <button type="button" onClick={close} aria-label="Close" className="absolute right-4 top-4 rounded-[var(--radius-md)] p-1.5 text-[var(--color-ink)] hover:bg-[var(--color-page)]">
+          <X className="h-5 w-5" aria-hidden="true" />
+        </button>
+        <h2 id="score-change-h" className="text-[18px] font-semibold text-[var(--color-ink)]">
+          Listing changes
+        </h2>
+        <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">Your listing score went up after your changes.</p>
+        <div className="mt-5 flex items-center justify-center gap-5">
+          <div className="flex flex-col items-center gap-1.5">
+            <ScoreCircle score={change.from} size={56} />
+            <span className="text-[12px] text-[var(--color-ink-muted)]">Before</span>
+          </div>
+          <ChevronRight className="h-5 w-5 text-[var(--color-ink-soft)]" aria-hidden="true" />
+          <div className="flex flex-col items-center gap-1.5">
+            <ScoreCircle score={change.to} size={56} />
+            <span className="text-[12px] text-[var(--color-ink-muted)]">Now</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

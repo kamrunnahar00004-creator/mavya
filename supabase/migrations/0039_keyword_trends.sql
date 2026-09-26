@@ -30,3 +30,11 @@ alter table public.research_keywords alter column checked_on drop not null;
 
 create index if not exists research_keywords_score_idx on public.research_keywords (score desc nulls last);
 create index if not exists research_keywords_vpd_idx on public.research_keywords (views_per_day desc nulls last);
+
+-- Listing Helper score on All listings (2026-09-26): the daily shop snapshot
+-- keeps a few description facts (not the text) so every listing can be
+-- scored. Null on rows taken before this migration.
+alter table public.shop_listing_snapshots
+  add column if not exists description_len integer,
+  add column if not exists description_has_size boolean,
+  add column if not exists description_has_file_info boolean;

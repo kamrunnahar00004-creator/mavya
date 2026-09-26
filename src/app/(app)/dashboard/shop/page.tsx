@@ -21,7 +21,6 @@ export default async function ShopListingsPage({ searchParams }: { searchParams:
     <>
       <PageBar crumbs={[{ label: "Overview", href: "/dashboard" }, { label: data.shop ? `All listings in ${data.shop.name}` : "All listings" }]} />
       <main className="mx-auto max-w-[1280px] px-4 pb-20 pt-6 sm:px-8">
-        <h1 className="sr-only">{data.shop ? `All listings in ${data.shop.name}` : "Your listings"}</h1>
         <ShopListings data={data} filter={filter ?? null} canEdit={entitlement.active} free={free} />
       </main>
     </>

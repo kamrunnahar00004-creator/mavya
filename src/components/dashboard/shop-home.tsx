@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronRight, Eye, Heart, LayoutList, Lock, Percent, RefreshCw, Store } from "lucide-react";
-import { MetricChart, Sparkline } from "@/components/dashboard/metric-chart";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, ChevronsUpDown, Clock, Eye, Heart, LayoutList, Lock, Percent, RefreshCw, Search, SlidersHorizontal, Store } from "lucide-react";
+import { MetricChart } from "@/components/dashboard/metric-chart";
 import { cn } from "@/lib/utils";
 import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-analytics";
 import type { ShopHomeData } from "@/lib/shop-monitor";
@@ -579,17 +579,16 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
   );
 }
 
-type SortKey = "total" | "perDay" | "favorites" | "trend" | "tags" | "photos";
+type SortKey = "score" | "recs" | "sugs" | "total" | "perDay" | "favorites" | "trend";
 type Row = View["listings"][number];
-
-const SORTS: { key: SortKey; label: string; desc: string }[] = [
-  { key: "total", label: "Total views", desc: "Most viewed first" },
-  { key: "perDay", label: "Views/day", desc: "Most views a day first" },
-  { key: "favorites", label: "Favorites", desc: "Most favorited first" },
-  { key: "trend", label: "Trend", desc: "Rising first" },
-  { key: "tags", label: "Tags", desc: "Fewest tags first" },
-  { key: "photos", label: "Photos", desc: "Fewest photos first" },
+type ExtraCol = "total" | "perDay" | "favorites" | "trend";
+const EXTRA_COLS: { key: ExtraCol; label: string }[] = [
+  { key: "total", label: "Total views" },
+  { key: "perDay", label: "Views/day" },
+  { key: "favorites", label: "Favorites" },
+  { key: "trend", label: "Trend" },
 ];
+const COLS_KEY = "mavya.listings.cols";
 
 /** Views/day for a row: real last-7-days once known, else the all-time average. */
 function perDay(l: Row): { value: number | null; avg: boolean } {
@@ -597,9 +596,16 @@ function perDay(l: Row): { value: number | null; avg: boolean } {
   return { value: l.avgPerDay, avg: l.avgPerDay !== null };
 }
 
+/** Higher = listed first. Score and counts put the listings needing work first. */
 function sortValue(l: Row, key: SortKey): number {
   const none = Number.NEGATIVE_INFINITY;
   switch (key) {
+    case "score":
+      return -l.check.score;
+    case "recs":
+      return l.check.recommendations;
+    case "sugs":
+      return l.check.suggestions;
     case "total":
       return l.totalViews ?? none;
     case "perDay":
@@ -608,10 +614,6 @@ function sortValue(l: Row, key: SortKey): number {
       return l.totalFavorites ?? none;
     case "trend":
       return l.trendRatio ?? none;
-    case "tags":
-      return -l.tagsUsed;
-    case "photos":
-      return -(l.imageCount ?? 99);
   }
 }
 
@@ -625,166 +627,336 @@ function TrendCell({ l }: { l: Row }) {
   return <span className={cn("text-[13px] font-semibold tabular-nums", cls)}>{pct > 0 ? `+${pct}%` : `${pct}%`}</span>;
 }
 
-/** Full list of tracked listings: sortable columns and an optional status filter. */
+/** Score colors: under 50 needs work, 50-79 okay, 80+ good. */
+export function scoreTone(score: number) {
+  return score >= 80
+    ? { fg: "var(--color-strong)", bg: "var(--color-strong-soft)" }
+    : score >= 50
+      ? { fg: "var(--color-mid)", bg: "var(--color-mid-soft)" }
+      : { fg: "var(--color-weak)", bg: "var(--color-weak-soft)" };
+}
+
+export function ScoreChip({ score }: { score: number }) {
+  const t = scoreTone(score);
+  return (
+    <span className="inline-flex h-[30px] min-w-[44px] items-center justify-center rounded-[var(--radius-md)] px-2 text-[14px] font-semibold tabular-nums" style={{ color: t.fg, background: t.bg }}>
+      {score}
+    </span>
+  );
+}
+
+export function ScoreCircle({ score, size = 64 }: { score: number; size?: number }) {
+  const t = scoreTone(score);
+  return (
+    <span
+      className="flex flex-shrink-0 items-center justify-center rounded-full font-semibold tabular-nums"
+      style={{ width: size, height: size, color: t.fg, background: t.bg, fontSize: size * 0.34 }}
+      aria-label={`Listing check score ${score} of 100`}
+    >
+      {score}
+    </span>
+  );
+}
+
+export function CountChip({ children }: { children: ReactNode }) {
+  return <span className="rounded-[var(--radius-sm)] bg-[var(--color-page-deep)] px-2 py-1 text-[12px] font-semibold text-[var(--color-ink-muted)]">{children}</span>;
+}
+
+const longDate = (d: string | null) =>
+  d ? new Date(`${d}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }) : null;
+
+type Band = "all" | "weak" | "okay" | "good";
+const BANDS: { key: Band; label: string }[] = [
+  { key: "all", label: "All listings" },
+  { key: "weak", label: "Needs work (under 50)" },
+  { key: "okay", label: "Okay (50 to 79)" },
+  { key: "good", label: "Good (80 and up)" },
+];
+
+/**
+ * All listings, laid out like a listing helper (2026-09-26): the shop's
+ * overall checklist score up top, then every listing with its
+ * recommendations, suggestions, and score. Views columns can be added back
+ * from Display. The score measures Mavya's listing checklist, not sales.
+ */
 export function ShopListings({ data, filter, canEdit, free = false }: { data: ShopHomeData; filter: string | null; canEdit: boolean; free?: boolean }) {
   const { open, busy, error } = useOpenListing(data.opened);
   const { setPref, pending, error: prefError } = useListingPref();
-  const [sort, setSort] = useState<SortKey>("total");
+  const [sort, setSort] = useState<SortKey>("score");
+  const [query, setQuery] = useState("");
+  const [band, setBand] = useState<Band>("all");
+  const [menu, setMenu] = useState<"filter" | "display" | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [extra, setExtra] = useState<Set<ExtraCol>>(new Set());
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(COLS_KEY);
+      // Restoring a per-viewer preference after hydration.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      if (raw) setExtra(new Set((JSON.parse(raw) as string[]).filter((c): c is ExtraCol => EXTRA_COLS.some((x) => x.key === c))));
+    } catch {
+      // Preference only.
+    }
+  }, []);
+  useEffect(() => {
+    if (!menu) return;
+    const close = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenu(null);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [menu]);
+
   const v = data.view;
   if (!data.shop || !v) return <ConnectShop canEdit={canEdit || free} free={free} />;
-  const filtered = filter && filter in STATUS_META ? v.listings.filter((l) => l.status === filter) : v.listings;
-  const rows = [...filtered].sort((a, b) => sortValue(b, sort) - sortValue(a, sort) || (b.totalViews ?? 0) - (a.totalViews ?? 0));
+
+  const toggleExtra = (c: ExtraCol) => {
+    const next = new Set(extra);
+    if (next.has(c)) next.delete(c);
+    else next.add(c);
+    setExtra(next);
+    try {
+      window.localStorage.setItem(COLS_KEY, JSON.stringify([...next]));
+    } catch {
+      // Preference only.
+    }
+  };
+
+  const q = query.trim().toLowerCase();
+  const rows = v.listings
+    .filter((l) => !filter || !(filter in STATUS_META) || l.status === filter)
+    .filter((l) => band === "all" || (band === "weak" ? l.check.score < 50 : band === "okay" ? l.check.score >= 50 && l.check.score < 80 : l.check.score >= 80))
+    .filter((l) => !q || l.title.toLowerCase().includes(q))
+    .sort((a, b) => sortValue(b, sort) - sortValue(a, sort) || (b.totalViews ?? 0) - (a.totalViews ?? 0));
+
+  const shopScore = v.listings.length ? Math.round(v.listings.reduce((s, l) => s + l.check.score, 0) / v.listings.length) : 0;
+  const recs = v.listings.reduce((s, l) => s + l.check.recommendations, 0);
+  const sugs = v.listings.reduce((s, l) => s + l.check.suggestions, 0);
+  const worst = [...v.listings].filter((l) => !l.protected).sort((a, b) => a.check.score - b.check.score)[0];
   const trendsReady = v.historyDays >= MIN_HISTORY_DAYS;
-  const chips: { key: string | null; label: string }[] = [
-    { key: null, label: `All ${v.listings.length}` },
-    ...(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => ({ key: k, label: `${STATUS_META[k].label} ${trendsReady || k === "dead" ? v.counts[k] : ""}`.trim() })),
-  ];
-  const head = (key: SortKey, label: string, cls: string) => (
-    <th scope="col" aria-sort={sort === key ? "descending" : "none"} className={cn("px-2 py-2 text-right font-medium", cls)}>
-      <button
-        type="button"
-        onClick={() => setSort(key)}
-        className={cn("inline-flex items-center gap-1 rounded-[var(--radius-sm)] px-1 py-0.5 hover:text-[var(--color-ink)]", sort === key && "text-[var(--color-ink)]")}
-      >
+
+  const head = (key: SortKey, label: string, cls = "") => (
+    <th scope="col" aria-sort={sort === key ? "descending" : "none"} className={cn("whitespace-nowrap px-3 py-3.5 text-center font-semibold", cls)}>
+      <button type="button" onClick={() => setSort(key)} className={cn("inline-flex items-center gap-1 uppercase tracking-[0.06em] hover:text-[var(--color-ink)]", sort === key && "text-[var(--color-ink)]")}>
         {label}
-        <ChevronDown className={cn("h-3.5 w-3.5", sort === key ? "opacity-100" : "opacity-0")} aria-hidden="true" />
+        <ChevronsUpDown className="h-3.5 w-3.5" aria-hidden="true" />
       </button>
     </th>
   );
+
   return (
-    <div className="flex flex-col gap-5">
-      {free ? (
-        <UpgradeCard lastChecked={data.shop.lastCheckedOn} />
-      ) : (
-        data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />
-      )}
+    <div className="flex flex-col gap-6">
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-[var(--color-border)] pb-5">
+        <div>
+          <p className="text-[12px] font-semibold uppercase tracking-[0.08em] text-[var(--color-ink-muted)]">Listing optimization</p>
+          <h1 className="mt-1 text-[28px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">Listing Helper</h1>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {data.shop.lastCheckedOn && (
+            <span className="inline-flex items-center gap-1.5 text-[13.5px] text-[var(--color-ink-muted)]">
+              <Clock className="h-4 w-4" aria-hidden="true" /> Updated {longDate(data.shop.lastCheckedOn)}
+            </span>
+          )}
+          <Link href="/dashboard" className={cn(btnQuiet, "min-h-[42px] px-4 text-[14px]")}>
+            Shop overview
+          </Link>
+          {free ? (
+            <Unlock label="Fix listings" primary />
+          ) : (
+            worst && (
+              <button type="button" onClick={() => open(worst.listingId, "write")} disabled={busy !== null || !canEdit} className={cn(btnPrimary, "min-h-[42px]")}>
+                {busy === worst.listingId ? "Opening..." : "Fix lowest score"}
+              </button>
+            )
+          )}
+        </div>
+      </header>
       {prefError && <p role="alert" className="text-[14px] text-[var(--color-weak)]">{prefError}</p>}
+      {free && <UpgradeCard lastChecked={data.shop.lastCheckedOn} />}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Filter" className="flex flex-wrap gap-2">
-          {chips.map((c) => (
-            <Link
-              key={c.label}
-              href={c.key ? `/dashboard/shop?filter=${c.key}` : "/dashboard/shop"}
-              aria-current={(filter ?? null) === c.key ? "page" : undefined}
-              className={cn(
-                "rounded-[var(--radius-md)] border px-3 py-1.5 text-[13px] font-semibold",
-                (filter ?? null) === c.key ? "border-[var(--color-neutral-dark)] bg-[var(--color-neutral-dark)] text-white" : "border-[var(--color-border)] bg-white text-[var(--color-ink)]"
-              )}
-            >
-              {c.label}
-            </Link>
-          ))}
-        </nav>
-        <label className="flex items-center gap-2 text-[13px] text-[var(--color-ink-muted)] md:hidden">
-          Sort
-          <select
-            value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            className="min-h-[36px] rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white px-2 text-[13px] font-semibold text-[var(--color-ink)]"
+      <section className={card}>
+        <div className="flex items-center gap-4 p-5 sm:p-6">
+          <span className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-[var(--radius-lg)] border border-[var(--color-border-soft)] bg-[var(--color-page)] text-[22px] font-semibold text-[var(--color-ink-muted)]">
+            {data.shop.name.slice(0, 1).toUpperCase()}
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-[20px] font-semibold text-[var(--color-ink)]">{data.shop.name}</p>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              <CountChip>{recs.toLocaleString("en-US")} Recommendations</CountChip>
+              <CountChip>{sugs.toLocaleString("en-US")} Suggestions</CountChip>
+              <CountChip>{v.listings.length.toLocaleString("en-US")} Listings</CountChip>
+            </div>
+          </div>
+          <ScoreCircle score={shopScore} />
+          <button
+            type="button"
+            onClick={() => setExpanded((x) => !x)}
+            aria-expanded={expanded}
+            aria-label={expanded ? "Hide shop views" : "Show shop views"}
+            className="flex h-9 w-9 items-center justify-center rounded-[var(--radius-md)] text-[var(--color-ink-muted)] hover:bg-[var(--color-page)] hover:text-[var(--color-ink)]"
           >
-            {SORTS.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.desc}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {!trendsReady && (
-        <p className="-mt-2 text-[13px] text-[var(--color-ink-muted)]">
-          {`Rising and falling need ${MIN_HISTORY_DAYS} days of daily numbers (day ${v.historyDays} now). `}Views/day marked &quot;avg&quot; is all-time views divided by days live.
-        </p>
-      )}
+            <ChevronDown className={cn("h-5 w-5 transition-transform", expanded && "rotate-180")} aria-hidden="true" />
+          </button>
+        </div>
+        {expanded && (
+          <div className="border-t border-[var(--color-border-soft)] p-5 sm:p-6">
+            <p className="mb-3 text-[13px] text-[var(--color-ink-muted)]">
+              Shop score is the average of every listing&apos;s checklist score (title, tags, description, photos). It measures the checklist, not sales.
+            </p>
+            {data.shop.lastCheckedOn && !free && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
+          </div>
+        )}
+      </section>
 
-      <section className={cn(card, "overflow-hidden")}>
-        <table className="w-full table-fixed text-[14px]">
-          <thead className="border-b border-[var(--color-border-soft)] text-[12px] text-[var(--color-ink-soft)]">
-            <tr>
-              <th scope="col" className="px-4 py-2 text-left font-medium sm:px-5">
-                Listing
-              </th>
-              {head("total", "Total views", "hidden w-[108px] md:table-cell")}
-              {head("perDay", "Views/day", "w-[92px] sm:w-[104px]")}
-              {head("favorites", "Favorites", "hidden w-[96px] lg:table-cell")}
-              {head("trend", "Trend", "hidden w-[104px] md:table-cell")}
-              {head("tags", "Tags", "hidden w-[72px] md:table-cell")}
-              {head("photos", "Photos", "hidden w-[80px] lg:table-cell")}
-              <th scope="col" className="w-[96px] px-3 py-2 sm:w-[108px] sm:px-4">
-                <span className="sr-only">Open</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-border-soft)]">
-            {rows.length === 0 ? (
+      <section className={cn(card, "overflow-visible")}>
+        <div className="flex flex-wrap items-center gap-3 border-b border-[var(--color-border-soft)] px-4 py-3.5 sm:px-6">
+          <label className="flex min-w-[200px] flex-1 items-center gap-2.5">
+            <Search className="h-4.5 w-4.5 text-[var(--color-ink-soft)]" aria-hidden="true" />
+            <span className="sr-only">Search listings</span>
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search"
+              className="w-full bg-transparent text-[15px] text-[var(--color-ink)] outline-none placeholder:text-[var(--color-ink-soft)]"
+            />
+          </label>
+          <div className="relative flex items-center gap-2" ref={menuRef}>
+            <button type="button" onClick={() => setMenu(menu === "filter" ? null : "filter")} aria-expanded={menu === "filter"} className={cn(btnQuiet, "min-h-[38px] px-3.5 text-[14px]")}>
+              Filter <ChevronDown className="h-4 w-4" aria-hidden="true" />
+            </button>
+            <button type="button" onClick={() => setMenu(menu === "display" ? null : "display")} aria-expanded={menu === "display"} className={cn(btnQuiet, "min-h-[38px] px-3.5 text-[14px]")}>
+              <SlidersHorizontal className="h-4 w-4" aria-hidden="true" /> Display
+            </button>
+            {menu === "filter" && (
+              <div className="absolute right-0 top-[calc(100%+6px)] z-30 w-[240px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-soft-strong)]">
+                <p className="px-2.5 pb-1 pt-1.5 text-[12px] font-medium text-[var(--color-ink-soft)]">Score</p>
+                {BANDS.map((b) => (
+                  <button key={b.key} type="button" onClick={() => { setBand(b.key); setMenu(null); }} className={cn("flex w-full rounded-[var(--radius-md)] px-2.5 py-2 text-left text-[14px] hover:bg-[var(--color-page)]", band === b.key ? "font-semibold text-[var(--color-ink)]" : "text-[var(--color-ink-muted)]")}>
+                    {b.label}
+                  </button>
+                ))}
+                <p className="px-2.5 pb-1 pt-2 text-[12px] font-medium text-[var(--color-ink-soft)]">Views {trendsReady ? "" : `(after ${MIN_HISTORY_DAYS} days)`}</p>
+                <Link href="/dashboard/shop" className={cn("flex rounded-[var(--radius-md)] px-2.5 py-2 text-[14px] hover:bg-[var(--color-page)]", !filter ? "font-semibold text-[var(--color-ink)]" : "text-[var(--color-ink-muted)]")}>
+                  Any
+                </Link>
+                {(Object.keys(STATUS_META) as (keyof typeof STATUS_META)[]).map((k) => (
+                  <Link key={k} href={`/dashboard/shop?filter=${k}`} className={cn("flex justify-between rounded-[var(--radius-md)] px-2.5 py-2 text-[14px] hover:bg-[var(--color-page)]", filter === k ? "font-semibold text-[var(--color-ink)]" : "text-[var(--color-ink-muted)]")}>
+                    {STATUS_META[k].label}
+                    {(trendsReady || k === "dead") && <span className="tabular-nums text-[var(--color-ink-soft)]">{v.counts[k]}</span>}
+                  </Link>
+                ))}
+              </div>
+            )}
+            {menu === "display" && (
+              <div className="absolute right-0 top-[calc(100%+6px)] z-30 w-[220px] rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1.5 shadow-[var(--shadow-soft-strong)]">
+                <p className="px-2.5 pb-1 pt-1.5 text-[12px] font-medium text-[var(--color-ink-soft)]">Also show</p>
+                {EXTRA_COLS.map((c) => (
+                  <label key={c.key} className="flex cursor-pointer items-center gap-2.5 rounded-[var(--radius-md)] px-2.5 py-2 text-[14px] text-[var(--color-ink)] hover:bg-[var(--color-page)]">
+                    <input type="checkbox" checked={extra.has(c.key)} onChange={() => toggleExtra(c.key)} className="h-4 w-4 accent-[var(--color-primary)]" />
+                    {c.label}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] table-fixed text-[15px]">
+            <thead className="border-b border-[var(--color-border-soft)] text-[12px] text-[var(--color-ink-muted)]">
               <tr>
-                <td colSpan={8} className="px-5 py-8 text-center text-[14px] text-[var(--color-ink-muted)]">
-                  No listings here right now.
-                </td>
+                <th scope="col" className="px-4 py-3.5 text-left font-semibold uppercase tracking-[0.06em] sm:px-6">
+                  Listing
+                </th>
+                {extra.has("total") && head("total", "Views", "w-[110px]")}
+                {extra.has("perDay") && head("perDay", "Views/day", "w-[120px]")}
+                {extra.has("favorites") && head("favorites", "Favorites", "w-[120px]")}
+                {extra.has("trend") && head("trend", "Trend", "w-[120px]")}
+                {head("recs", "Recommendations", "w-[170px]")}
+                {head("sugs", "Suggestions", "w-[140px]")}
+                {head("score", "Score", "w-[110px] pr-4 sm:pr-6")}
               </tr>
-            ) : (
-              rows.map((l) => {
-                const pd = perDay(l);
-                const problem = [...l.issues].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "high" ? -1 : 1))[0];
-                return (
-                  <tr key={l.listingId} className="align-middle">
-                    <td className="px-4 py-2.5 sm:px-5">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <Thumb url={l.mainImageUrl} small />
-                        <div className="min-w-0">
-                          <p className="truncate text-[14px] text-[var(--color-ink)]">{l.title}</p>
-                          {l.protected && (
-                            <p className="text-[12px] text-[var(--color-ink-muted)]">
-                              Protected: no fix suggestions.{" "}
-                              {canEdit && (
-                                <button type="button" className={linkBtn} disabled={pending !== null} onClick={() => void setPref(l.listingId, "unprotect")}>
-                                  Undo
-                                </button>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-border-soft)]">
+              {rows.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="px-6 py-10 text-center text-[14px] text-[var(--color-ink-muted)]">
+                    No listings match.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((l) => {
+                  const pd = perDay(l);
+                  const openRow = () => {
+                    if (free || !canEdit || busy !== null) return;
+                    void open(l.listingId, "write");
+                  };
+                  return (
+                    <tr
+                      key={l.listingId}
+                      onClick={openRow}
+                      className={cn("align-middle transition-colors", !free && canEdit && "cursor-pointer hover:bg-[var(--color-page)]", busy === l.listingId && "opacity-60")}
+                    >
+                      <td className="px-4 py-3.5 sm:px-6">
+                        <div className="flex min-w-0 items-center gap-3.5">
+                          <Thumb url={l.mainImageUrl} small />
+                          <div className="min-w-0">
+                            {free ? (
+                              <p className="truncate text-[15px] text-[var(--color-ink)]">{l.title}</p>
+                            ) : (
+                              <button type="button" onClick={(e) => { e.stopPropagation(); openRow(); }} className="block max-w-full truncate text-left text-[15px] text-[var(--color-ink)] hover:underline">
+                                {l.title}
+                              </button>
+                            )}
+                            <p className="mt-0.5 flex items-center gap-1 text-[12.5px] text-[var(--color-ink-soft)]">
+                              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                              {longDate(l.createdOn) ?? "Listed date not known yet"}
+                              {l.protected && (
+                                <span className="ml-2 text-[var(--color-ink-muted)]">
+                                  Protected.{" "}
+                                  {canEdit && (
+                                    <button type="button" className={linkBtn} disabled={pending !== null} onClick={(e) => { e.stopPropagation(); void setPref(l.listingId, "unprotect"); }}>
+                                      Undo
+                                    </button>
+                                  )}
+                                </span>
                               )}
                             </p>
-                          )}
-                          {(l.spark.some((x) => x !== null) || l.status in STATUS_META || problem) && (
-                            <div className="mt-0.5 flex items-center gap-2">
-                              {l.spark.some((x) => x !== null) && <Sparkline values={l.spark} />}
-                              {l.status in STATUS_META ? (
-                                <span className="truncate text-[12px] text-[var(--color-ink-muted)]">{STATUS_META[l.status as keyof typeof STATUS_META].label}</span>
-                              ) : (
-                                problem && <span className="truncate text-[12px] text-[var(--color-ink-muted)] md:hidden">{problem.text}</span>
-                              )}
-                            </div>
-                          )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] md:table-cell">{fmt(l.totalViews)}</td>
-                    <td className="px-2 text-right tabular-nums text-[var(--color-ink)]">
-                      {fmt(pd.value)}
-                      {pd.avg && <span className="ml-1 text-[11px] text-[var(--color-ink-soft)]">avg</span>}
-                    </td>
-                    <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] lg:table-cell">{fmt(l.totalFavorites)}</td>
-                    <td className="hidden px-2 text-right md:table-cell">
-                      <TrendCell l={l} />
-                    </td>
-                    <td className={cn("hidden px-2 text-right tabular-nums md:table-cell", l.tagsUsed === 0 ? "font-semibold text-[var(--color-weak)]" : "text-[var(--color-ink)]")}>{l.tagsUsed}/13</td>
-                    <td className="hidden px-2 text-right tabular-nums text-[var(--color-ink)] lg:table-cell">{l.imageCount ?? "–"}</td>
-                    <td className="px-3 text-right sm:px-4">
-                      {free ? (
-                        <Link href="/subscribe" aria-label="Open (paid plans)" className={cn(btnQuiet, "min-h-[36px] px-3")}>
-                          <Lock className="h-3.5 w-3.5" aria-hidden="true" />
-                          Open
-                        </Link>
-                      ) : (
-                        <button type="button" onClick={() => open(l.listingId, "analytics")} disabled={busy !== null || !canEdit} className={cn(btnQuiet, "min-h-[36px] px-3")}>
-                          {busy === l.listingId ? "..." : "Open"}
-                        </button>
+                      </td>
+                      {extra.has("total") && <td className="px-3 text-center tabular-nums text-[var(--color-ink)]">{fmt(l.totalViews)}</td>}
+                      {extra.has("perDay") && (
+                        <td className="px-3 text-center tabular-nums text-[var(--color-ink)]">
+                          {fmt(pd.value)}
+                          {pd.avg && <span className="ml-1 text-[11px] text-[var(--color-ink-soft)]">avg</span>}
+                        </td>
                       )}
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      {extra.has("favorites") && <td className="px-3 text-center tabular-nums text-[var(--color-ink)]">{fmt(l.totalFavorites)}</td>}
+                      {extra.has("trend") && (
+                        <td className="px-3 text-center">
+                          <TrendCell l={l} />
+                        </td>
+                      )}
+                      <td className="px-3 text-center tabular-nums text-[var(--color-ink)]">{l.check.recommendations}</td>
+                      <td className="px-3 text-center tabular-nums text-[var(--color-ink)]">{l.check.suggestions}</td>
+                      <td className="py-3.5 pl-3 pr-4 text-center sm:pr-6">
+                        <ScoreChip score={l.check.score} />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {free && (
+          <p className="flex items-center gap-1.5 border-t border-[var(--color-border-soft)] px-6 py-3 text-[13px] text-[var(--color-ink-muted)]">
+            <Lock className="h-3.5 w-3.5" aria-hidden="true" /> Opening a listing and fixing it is on paid plans.
+          </p>
+        )}
       </section>
       {error && (
         <p role="alert" className="text-[13.5px] text-[var(--color-weak)]">

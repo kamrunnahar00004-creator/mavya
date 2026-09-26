@@ -104,11 +104,11 @@ describe("listing check covers title, description, tags, and photos", () => {
   });
 
   it("an unscored main photo points the seller to the Photo tab", () => {
-    expect(checkListing({ ...base, photos: { imageCount: 8, mainScore: null } })).toContainEqual({
+    expect(checkListing({ ...base, photos: { imageCount: 8, mainScore: null } })).toContainEqual(expect.objectContaining({
       area: "photos",
       ok: false,
       text: "Main photo not scored yet. Open the Photo tab.",
-    });
+    }));
   });
 });
 

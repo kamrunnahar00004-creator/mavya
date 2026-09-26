@@ -1,3 +1,4 @@
+import { descriptionFacts } from "@/lib/listing-check";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { EtsyApiError, fetchShopActiveListings } from "@/lib/etsy";
 import { addDays } from "@/lib/listing-analytics";
@@ -40,6 +41,10 @@ export async function runShopMonitor(
         title: l.title.slice(0, 300),
         tags: l.tags.slice(0, 13),
         created_on: l.createdAt ? new Date(l.createdAt * 1000).toISOString().slice(0, 10) : null,
+        ...(() => {
+          const f = descriptionFacts(l.description ?? "");
+          return { description_len: f.length, description_has_size: f.hasSize, description_has_file_info: f.hasFileInfo };
+        })(),
       };
     });
     for (let i = 0; i < rows.length; i += 500) {
@@ -88,7 +93,7 @@ export async function loadShopHome(supabase: SupabaseClient, today: string): Pro
   for (let page = 0; monitor.last_checked_on; page++) {
     const { data, error } = await supabase
       .from("shop_listing_snapshots")
-      .select("listing_id, snapshot_date, views, favorites, image_count, main_image_id, main_image_url, title, tags, created_on")
+      .select("listing_id, snapshot_date, views, favorites, image_count, main_image_id, main_image_url, title, tags, created_on, description_len, description_has_size, description_has_file_info")
       .eq("etsy_shop_id", monitor.etsy_shop_id)
       .gte("snapshot_date", addDays(today, -35))
       .lte("snapshot_date", monitor.last_checked_on)
