@@ -75,6 +75,29 @@ function useOpenListing(opened: Record<number, string>) {
   return { open, busy, error };
 }
 
+/** "Not now" / "Don't touch" / undo for a listing's fix tip. */
+function useListingPref() {
+  const router = useRouter();
+  const [pending, setPending] = useState<number | null>(null);
+  async function setPref(listingId: number, action: "dismiss" | "protect" | "unprotect") {
+    setPending(listingId);
+    try {
+      const res = await fetch("/api/shop/listing-pref", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId, action }),
+      });
+      if (res.ok) router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+  return { setPref, pending };
+}
+
+const linkBtn =
+  "text-[12.5px] font-semibold text-[var(--color-ink-muted)] underline-offset-2 hover:text-[var(--color-ink)] hover:underline disabled:opacity-50";
+
 function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCancel?: () => void; current?: string }) {
   const router = useRouter();
   const [shop, setShop] = useState("");
@@ -149,6 +172,7 @@ function ConnectShop({ canEdit, onCancel, current }: { canEdit: boolean; onCance
 export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit: boolean }) {
   const [switching, setSwitching] = useState(false);
   const { open, busy, error } = useOpenListing(data?.opened ?? {});
+  const { setPref, pending } = useListingPref();
   if (!data) {
     return (
       <p className={cn(card, "p-6 text-[15px] text-[var(--color-ink-muted)]")}>
@@ -188,8 +212,7 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
       ) : (
         <>
           <ShopNumbers v={v} />
-          {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
-          {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
+          {v.historyDays >= MIN_HISTORY_DAYS && <ThisWeek v={v} />}
 
           {v.shopWide && (
             <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="shopwide">
@@ -238,6 +261,16 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[15px] text-[var(--color-ink)]">{f.title}</p>
                       <p className="text-[13.5px] text-[var(--color-ink)]">{f.todo}</p>
+                      {canEdit && (
+                        <p className="mt-1 flex gap-3">
+                          <button type="button" className={linkBtn} disabled={pending !== null} onClick={() => void setPref(f.listingId, "dismiss")}>
+                            Not now
+                          </button>
+                          <button type="button" className={linkBtn} disabled={pending !== null} onClick={() => void setPref(f.listingId, "protect")} title="Mavya will stop suggesting changes to this listing">
+                            Don&apos;t touch, it works
+                          </button>
+                        </p>
+                      )}
                     </div>
                     <button
                       type="button"
@@ -258,6 +291,9 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
               </p>
             )}
           </section>
+
+          {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
+          {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
 
           {v.top.length > 0 && (
             <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="top3">
@@ -291,6 +327,46 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
 }
 
 type View = NonNullable<ShopHomeData["view"]>;
+
+/** Once trends exist: the week in three lines, before any detail. */
+function ThisWeek({ v }: { v: View }) {
+  const pctText = (r: number) => `${r >= 1 ? "+" : ""}${Math.round((r - 1) * 100)}%`;
+  const rising = v.listings.filter((l) => l.status === "rising" && l.trendRatio !== null).sort((a, b) => (b.trendRatio ?? 0) - (a.trendRatio ?? 0)).slice(0, 3);
+  const falling = v.listings.filter((l) => l.status === "falling" && l.trendRatio !== null).sort((a, b) => (a.trendRatio ?? 0) - (b.trendRatio ?? 0)).slice(0, 3);
+  const measured = v.summary.measured;
+  if (!rising.length && !falling.length && !measured) return null;
+  const row = (label: string, list: typeof rising, cls: string) =>
+    list.length > 0 && (
+      <li className="py-2.5">
+        <p className="text-[13px] font-semibold text-[var(--color-ink-muted)]">{label}</p>
+        <ul className="mt-1 flex flex-col gap-1">
+          {list.map((l) => (
+            <li key={l.listingId} className="flex items-center justify-between gap-3 text-[14px]">
+              <span className="min-w-0 truncate text-[var(--color-ink)]">{l.title}</span>
+              <span className={cn("flex-shrink-0 font-semibold tabular-nums", cls)}>{pctText(l.trendRatio as number)}</span>
+            </li>
+          ))}
+        </ul>
+      </li>
+    );
+  return (
+    <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="thisweek">
+      <h3 id="thisweek" className={sectionTitle}>
+        This week
+      </h3>
+      <p className="mt-0.5 text-[13px] text-[var(--color-ink-muted)]">Last 7 days compared with the 4 weeks before.</p>
+      <ul className="mt-1 divide-y divide-[var(--color-border-soft)]">
+        {row("Rising", rising, "text-[var(--color-strong)]")}
+        {row("Falling", falling, "text-[var(--color-weak)]")}
+        {measured > 0 && (
+          <li className="py-2.5 text-[14px] text-[var(--color-ink)]">
+            Your changes: {v.summary.better} of {measured} measured look better.
+          </li>
+        )}
+      </ul>
+    </section>
+  );
+}
 
 function Thumb({ url, small }: { url: string | null; small?: boolean }) {
   return (
@@ -391,6 +467,7 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
               <p className="text-[13px] text-[var(--color-ink-muted)]">
                 {c.kinds.map((k) => ({ main_photo: "Main photo", title: "Title", tags: "Tags", description: "Description" })[k]).join(", ")} · {shortDate(c.date)}
                 {c.beforePerDay !== null && c.afterPerDay !== null && ` · ${fmt(c.beforePerDay)} → ${fmt(c.afterPerDay)} views a day`}
+                {c.verdict === "better" && c.wasFalling && " · it was falling before, so part of this may be a natural bounce"}
                 {c.verdict === "no_change" && c.liftLow !== null && c.liftHigh !== null &&
                   ` · likely between ${c.liftLow >= 1 ? "+" : ""}${Math.round((c.liftLow - 1) * 100)}% and ${c.liftHigh >= 1 ? "+" : ""}${Math.round((c.liftHigh - 1) * 100)}%`}
               </p>
@@ -453,6 +530,7 @@ function TrendCell({ l }: { l: Row }) {
 /** Full list of tracked listings: sortable columns and an optional status filter. */
 export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; filter: string | null; canEdit: boolean }) {
   const { open, busy, error } = useOpenListing(data.opened);
+  const { setPref, pending } = useListingPref();
   const [sort, setSort] = useState<SortKey>("total");
   const v = data.view;
   if (!data.shop || !v) return <ConnectShop canEdit={canEdit} />;
@@ -552,6 +630,16 @@ export function ShopListings({ data, filter, canEdit }: { data: ShopHomeData; fi
                         <Thumb url={l.mainImageUrl} small />
                         <div className="min-w-0">
                           <p className="truncate text-[14px] text-[var(--color-ink)]">{l.title}</p>
+                          {l.protected && (
+                            <p className="text-[12px] text-[var(--color-ink-muted)]">
+                              Protected: no fix suggestions.{" "}
+                              {canEdit && (
+                                <button type="button" className={linkBtn} disabled={pending !== null} onClick={() => void setPref(l.listingId, "unprotect")}>
+                                  Undo
+                                </button>
+                              )}
+                            </p>
+                          )}
                           {(l.spark.some((x) => x !== null) || l.status in STATUS_META || problem) && (
                             <div className="mt-0.5 flex items-center gap-2">
                               {l.spark.some((x) => x !== null) && <Sparkline values={l.spark} />}

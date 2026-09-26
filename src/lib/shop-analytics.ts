@@ -11,6 +11,7 @@
 
 import {
   addDays,
+  wasFallingBefore,
   liftRange,
   liftVerdict,
   buildDailySeries,
@@ -46,9 +47,11 @@ export function titleIssues(title: string | null): ShopIssue[] {
   const t = (title ?? "").trim();
   if (!t) return [{ kind: "title", severity: "high", text: "No title" }];
   const out: ShopIssue[] = [];
-  // Etsy's own advice favors short, readable titles, so only a genuinely
-  // thin title (under 40 characters) is flagged; 40-140 is fine.
-  if (t.length < 40) out.push({ kind: "title", severity: "high", text: "Very short title" });
+  // Etsy's own advice favors short, readable titles. Under 20 characters
+  // ("Keychain") is a real gap; 20-39 ("Silver Moon Stud Earrings") is only a
+  // small nudge; 40-140 is fine.
+  if (t.length < 20) out.push({ kind: "title", severity: "high", text: "Very short title" });
+  else if (t.length < 40) out.push({ kind: "title", severity: "medium", text: "Short title" });
   const counts = new Map<string, number>();
   for (const w of t.toLowerCase().match(/[a-z0-9']+/g) ?? []) {
     if (w.length > 2 && !TITLE_STOP.has(w)) counts.set(w, (counts.get(w) ?? 0) + 1);
@@ -85,6 +88,8 @@ export type ShopListingView = {
   trendRatio: number | null;
   /** Views per day for the last 14 days, oldest first; null = unknown day. */
   spark: (number | null)[];
+  /** Seller marked it as working: never suggested for changes. */
+  protected: boolean;
 };
 
 export type ShopFix = {
@@ -133,6 +138,8 @@ export type ShopChangeResult = {
   /** Likely range of the lift (count noise); null until measured. */
   liftLow: number | null;
   liftHigh: number | null;
+  /** Already falling before the change: a rise may partly be a natural bounce. */
+  wasFalling: boolean;
   verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
 };
 
@@ -169,6 +176,10 @@ export type ShopView = {
 };
 
 export const MIN_HISTORY_DAYS = 14;
+/** Confidence x ease per problem area (see the score in buildShopView). */
+const ISSUE_FACTOR: Record<ShopIssue["kind"], number> = { tags: 1.0 * 1.2, title: 0.8 * 1.0, photos: 0.8 * 0.7 };
+/** Monthly views above this add no more priority. */
+const TRAFFIC_CAP = 3000;
 /** Views needed in a week before a rise or fall is called (noise floor). */
 export const MIN_TREND_VIEWS = 20;
 const CHANGE_WINDOW = 7;
@@ -197,7 +208,19 @@ function toSnapshot(r: ShopSnapshotRow): ListingSnapshot {
   };
 }
 
-export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds?: readonly number[]): ShopView {
+/** Seller choices for "Fix these first" (migration 0037). */
+export type ShopFixPrefs = {
+  /** Listing id -> date (YYYY-MM-DD) until which its tip is hidden ("Not now"). */
+  dismissed?: Record<string, string>;
+  /** Listings the seller marked as working: never suggested for changes. */
+  protectedIds?: readonly number[];
+};
+
+export const DISMISS_DAYS = 30;
+
+export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds?: readonly number[], prefs: ShopFixPrefs = {}): ShopView {
+  const protectedSet = new Set((prefs.protectedIds ?? []).map(Number));
+  const hiddenUntil = prefs.dismissed ?? {};
   const byListing = new Map<number, ListingSnapshot[]>();
   const createdById = new Map<number, string>();
   const dates = new Set<string>();
@@ -286,8 +309,14 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     else if (emptyTags >= 7) issues.push({ kind: "tags", severity: "high", text: `${emptyTags} empty tag slots` });
     else if (emptyTags > 0) issues.push({ kind: "tags", severity: "medium", text: `${emptyTags} empty tag slot${emptyTags > 1 ? "s" : ""}` });
 
-    const statusWeight = { falling: 3, seen_not_liked: 2, dead: 1.5, rising: 0, steady: 0, collecting: 0 }[status];
-    const issueWeight = issues.filter((i) => !(tagsShopWide && i.kind === "tags")).reduce((s, i) => s + (i.severity === "high" ? 2 : 1), 0);
+    // Priority = severity x confidence x ease, then x capped traffic. Tags are
+    // certain and take minutes (quick wins give early proof); title advice is
+    // likelier to be a judgment call; photos take a reshoot. Status points are
+    // discounted by how sure a trend label can be at Etsy traffic levels.
+    const statusWeight = { falling: 3 * 0.9, seen_not_liked: 2 * 0.7, dead: 1.5 * 0.9, rising: 0, steady: 0, collecting: 0 }[status];
+    const issueWeight = issues
+      .filter((i) => !(tagsShopWide && i.kind === "tags"))
+      .reduce((s, i) => s + (i.severity === "high" ? 2 : 1) * ISSUE_FACTOR[i.kind], 0);
     // Traffic weighs strongly (square root, not log): the same gap on a listing
     // many buyers see is worth more than two gaps on one almost nobody sees.
     const createdAtDay = createdById.get(id) ?? null;
@@ -295,7 +324,8 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     // Day 1 (no daily data): 30 days at the listing's average views/day since
     // it went live; without a creation date, all-time views / 30 as before.
     const monthViews = last30.views || ((w.latest.views ?? 0) / (liveDays ? liveDays / 30 : 30));
-    const importance = 1 + Math.sqrt(Math.max(0, monthViews));
+    // Capped so a very popular listing cannot win on traffic alone.
+    const importance = 1 + Math.sqrt(Math.min(TRAFFIC_CAP, Math.max(0, monthViews)));
     const score = (statusWeight + issueWeight) * importance;
 
     const totalViews = typeof w.latest.views === "number" && w.latest.views > 0 ? w.latest.views : null;
@@ -314,6 +344,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
           ? last7.viewsPerDay / prev.viewsPerDay
           : null,
       spark,
+      protected: protectedSet.has(id),
       listingId: id,
       title: w.latest.title ?? `Listing ${id}`,
       mainImageUrl: w.latest.main_image_url,
@@ -333,7 +364,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   for (const l of listings) if (l.status in counts) counts[l.status as keyof typeof counts] += 1;
 
   const fixQueue: ShopFix[] = listings
-    .filter((l) => l.score > 0)
+    .filter((l) => l.score > 0 && !l.protected && !((hiddenUntil[String(l.listingId)] ?? "") >= today))
     .slice(0, 3)
     .map((l) => {
       const tagIssue = l.issues.find((i) => i.kind === "tags");
@@ -370,7 +401,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   let totalViews = 0;
   let totalFavorites = 0;
   const top: ShopTopListing[] = [];
-  const perDate = new Map<string, { sum: number; n: number; fav: number; favN: number }>();
+  const perDate = new Map<string, { sum: number; n: number; fav: number; favN: number; weight: number }>();
   let tracked = 0;
   for (const [id, w] of work) {
     if (!current.has(id)) continue;
@@ -381,9 +412,10 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     top.push({ listingId: id, title: w.latest.title ?? `Listing ${id}`, mainImageUrl: w.latest.main_image_url, views, favorites: w.latest.favorites });
     for (const pt of w.series) {
       if (pt.date < last30From || pt.date > today || pt.viewsPerDay === null) continue;
-      const d = perDate.get(pt.date) ?? { sum: 0, n: 0, fav: 0, favN: 0 };
+      const d = perDate.get(pt.date) ?? { sum: 0, n: 0, fav: 0, favN: 0, weight: 0 };
       d.sum += pt.viewsPerDay;
       d.n += 1;
+      d.weight += views;
       if (pt.favoritesPerDay !== null) {
         d.fav += pt.favoritesPerDay;
         d.favN += 1;
@@ -392,12 +424,14 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     }
   }
   top.sort((a, b) => b.views - a.views);
-  // A day counts only when most tracked listings reported it, so a partial
-  // Etsy tabulation never shows up as a fake dip.
+  // A day counts only when the listings that reported it carry 80%+ of the
+  // shop's views (weighted by all-time views, not a head count): a missing
+  // best-seller must not pass for a quiet day, and a missing dud must not
+  // blank one. Shops with no view history fall back to the head count.
   const daily: ShopView["daily"] = [];
   for (let d = last30From; d <= today; d = addDays(d, 1)) {
     const x = perDate.get(d);
-    const complete = x && tracked > 0 && x.n >= Math.max(1, Math.ceil(tracked * 0.8));
+    const complete = x && tracked > 0 && (totalViews > 0 ? x.weight >= totalViews * 0.8 : x.n >= Math.max(1, Math.ceil(tracked * 0.8)));
     daily.push({ date: d, views: complete ? x.sum : null, favorites: complete && x.favN === x.n ? x.fav : null });
   }
   while (daily.length && daily[0].views === null) daily.shift();
@@ -409,7 +443,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
         count: thin.length,
         none: thin.filter((l) => l.tagsUsed === 0).length,
         total: listings.length,
-        start: [...thin]
+        start: thin.filter((l) => !l.protected)
           .sort((a, b) => (b.totalViews ?? 0) - (a.totalViews ?? 0))
           .slice(0, 5)
           .map((l) => ({ listingId: l.listingId, title: l.title, mainImageUrl: l.mainImageUrl })),
@@ -452,7 +486,7 @@ function shopChanges(
     const series = work.get(e.id)!.series;
     const before = windowStats(series, bFrom, bTo);
     const after = windowStats(series, aFrom, aTo < today ? aTo : today);
-    const base = { listingId: e.id, title: e.title, date: e.date, kinds: e.kinds, beforePerDay: before.viewsPerDay, afterPerDay: after.viewsPerDay, shopChange: null, lift: null, liftLow: null, liftHigh: null };
+    const base = { listingId: e.id, title: e.title, date: e.date, kinds: e.kinds, beforePerDay: before.viewsPerDay, afterPerDay: after.viewsPerDay, shopChange: null, lift: null, liftLow: null, liftHigh: null, wasFalling: wasFallingBefore(series, bFrom, before.viewsPerDay) };
     const ownChanges = changeDates.get(e.id) ?? [];
     if (ownChanges.some((d) => d > e.date && d <= aTo)) {
       results.push({ ...base, verdict: "interrupted" });

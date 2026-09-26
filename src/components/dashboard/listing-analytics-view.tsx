@@ -61,6 +61,8 @@ export type AnalyticsViewModel = {
     liftHigh: number | null;
     /** Search position before vs after the change. */
     rank: { keyword: string; before: number | null; after: number | null }[];
+    /** Already falling before the change (a rise may partly be a bounce). */
+    wasFalling: boolean;
     beforeTitle: string | null;
     afterTitle: string | null;
     beforeImage: string | null;
@@ -966,6 +968,8 @@ function changeSentence(t: AnalyticsViewModel["tests"][number]): string {
       return "Not enough data to compare.";
     case "no_clear_change":
       return withRank(`${views} · ${rangeText(t) ?? "too close to call"}.`);
+    case "better":
+      return withRank(`${views} · ${pct(t.lift ?? 1)} vs top listings${t.wasFalling ? ". It was falling before, so part of this may be a natural bounce" : ""}.`);
     default:
       return withRank(t.lift === null ? `${views}.` : `${views} · ${pct(t.lift)} vs top listings.`);
   }

@@ -53,13 +53,14 @@ describe("writer uses the keyword check", () => {
   it("explains tags with checked numbers", () => {
     expect(tagReasons(["coraline doll"], ctx)[0].reason).toBe("1.1K matching listings, you about #68");
   });
-  it("drops NEW tags the check marked crowded or quiet", () => {
+  it("keeps a broad tag that fits (founder 2026-09-26: no auto-drop; the prompt only asks for them when they fit)", () => {
     const out = finalizeWriterOutput(
       { titles: ["Coraline Doll Crochet Pattern PDF", "Crochet Pattern PDF for a Coraline Doll"], tags: ["coraline", "coraline doll", "digital crochet", "doll pattern", "crochet doll", "amigurumi doll", ...Array.from({ length: 8 }, (_, i) => `tag ${i}`)], description: "A crochet pattern for a doll, sent as a PDF." },
       ctx
     );
-    expect(out.tags.map((t) => t.tag)).not.toContain("digital crochet");
+    expect(out.tags.map((t) => t.tag)).toContain("digital crochet");
     expect(out.tags.map((t) => t.tag)).toContain("coraline");
+    expect(out.tags).toHaveLength(13);
   });
 });
 

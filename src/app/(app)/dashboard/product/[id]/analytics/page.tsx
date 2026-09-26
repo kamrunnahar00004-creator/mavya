@@ -195,6 +195,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
       liftLow: t.liftLow,
       liftHigh: t.liftHigh,
       rank: t.rank,
+      wasFalling: t.wasFalling,
       beforeTitle: t.event.before.title,
       afterTitle: t.event.after.title,
       beforeImage: t.event.before.mainImageUrl,

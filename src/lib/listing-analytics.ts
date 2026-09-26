@@ -303,6 +303,18 @@ export function liftVerdict(lift: number, range: { low: number; high: number }):
   return "no_clear_change";
 }
 
+/**
+ * Was the listing already sliding before the change? Before-window views/day at
+ * or under 60% of the 4 weeks before it. A listing picked for a fix because it
+ * had a bad stretch often recovers on its own, so a later "better" partly
+ * reflects that bounce; the UI says so instead of claiming the full rise.
+ */
+export function wasFallingBefore(series: DailyPoint[], beforeFrom: string, beforeViewsPerDay: number | null): boolean {
+  if (beforeViewsPerDay === null) return false;
+  const prior = windowStats(series, addDays(beforeFrom, -28), addDays(beforeFrom, -1));
+  return prior.days >= 7 && (prior.viewsPerDay ?? 0) >= 1 && beforeViewsPerDay <= (prior.viewsPerDay as number) * 0.6;
+}
+
 export type ChangeKind = "main_photo" | "title" | "tags" | "description";
 
 export type ChangeEvent = {
@@ -373,6 +385,8 @@ export type TestResult = {
   liftHigh: number | null;
   /** Search position before vs after, per keyword present on both sides. */
   rank: { keyword: string; before: number | null; after: number | null }[];
+  /** The listing was already falling before the change (see wasFallingBefore). */
+  wasFalling: boolean;
 };
 
 /**
@@ -403,7 +417,8 @@ export function evaluateTest(
   const after = windowStats(matched, afterFrom, afterTo);
   const daysAfter = Math.max(0, dayNumber(afterTo) - dayNumber(event.date));
 
-  const base = { event, daysAfter, before, after, listingChange: null, marketChange: null, lift: null, liftLow: null, liftHigh: null, rank: [] as TestResult["rank"] };
+  const wasFalling = wasFallingBefore(series, beforeFrom, windowStats(series, beforeFrom, beforeTo).viewsPerDay);
+  const base = { event, daysAfter, before, after, listingChange: null, marketChange: null, lift: null, liftLow: null, liftHigh: null, rank: [] as TestResult["rank"], wasFalling };
 
   const interrupted = nextEventDate !== null && nextEventDate <= today && nextEventDate <= addDays(event.date, TEST_WINDOW_DAYS);
   const ended = today >= addDays(event.date, TEST_WINDOW_DAYS);

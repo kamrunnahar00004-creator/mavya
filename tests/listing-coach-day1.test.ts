@@ -277,7 +277,7 @@ describe("Fix these first favors listings buyers actually see", () => {
 });
 
 describe("writer spare tags", () => {
-  it("still returns exactly 13 tags when crowded or too-long tags are dropped", async () => {
+  it("still returns exactly 13 tags when an over-long tag is dropped, and keeps broad ones", async () => {
     const { finalizeWriterOutput } = await import("@/lib/listing-writer");
     const tags = ["roblox keychain", "forsaken roblox", "this tag is far too long to use", ...Array.from({ length: 13 }, (_, i) => `good tag ${i}`)];
     const out = finalizeWriterOutput(
@@ -286,6 +286,7 @@ describe("writer spare tags", () => {
         ideas: [{ keyword: "forsaken roblox", label: "quiet", competition: 817, position: null } as never] }
     );
     expect(out.tags).toHaveLength(13);
-    expect(out.tags.map((t) => t.tag)).not.toContain("forsaken roblox");
+    expect(out.tags.map((t) => t.tag)).toContain("forsaken roblox");
+    expect(out.tags.map((t) => t.tag)).not.toContain("this tag is far too long to use");
   });
 });

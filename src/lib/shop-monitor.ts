@@ -79,7 +79,7 @@ export type ShopHomeData = {
 export async function loadShopHome(supabase: SupabaseClient, today: string): Promise<ShopHomeData> {
   const { data: monitor, error: monitorError } = await supabase
     .from("shop_monitors")
-    .select("etsy_shop_id, shop_name, last_checked_on, last_error, current_listing_ids, active_listing_count")
+    .select("etsy_shop_id, shop_name, last_checked_on, last_error, current_listing_ids, active_listing_count, fix_dismissed, protected_listing_ids")
     .maybeSingle();
   if (monitorError) throw new Error("shop_hydration_failed");
   if (!monitor) return { shop: null, view: null, opened: {} };
@@ -105,7 +105,12 @@ export async function loadShopHome(supabase: SupabaseClient, today: string): Pro
   }
   return {
     shop: { name: monitor.shop_name, lastCheckedOn: monitor.last_checked_on, lastError: monitor.last_error, activeListings: monitor.active_listing_count },
-    view: monitor.last_checked_on ? buildShopView(rows, today, monitor.current_listing_ids?.map(Number)) : null,
+    view: monitor.last_checked_on
+      ? buildShopView(rows, today, monitor.current_listing_ids?.map(Number), {
+          dismissed: (monitor.fix_dismissed as Record<string, string> | null) ?? {},
+          protectedIds: ((monitor.protected_listing_ids as (number | string)[] | null) ?? []).map(Number),
+        })
+      : null,
     opened,
   };
 }

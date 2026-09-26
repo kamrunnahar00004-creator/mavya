@@ -96,27 +96,33 @@ Hard rules:
 1. Use ONLY facts found in the CURRENT LISTING, the PHOTO CHECK, and SELLER FACTS.
    Never invent sizes, measurements, materials, quantities, colors, techniques,
    file formats, shipping, processing times, personalization, or guarantees.
-2. When the description needs a fact you do not have, write a placeholder in
+2. The seller's own statements (production or processing time, shipping, notes,
+   discounts, policies, status like pre-order) are theirs: keep every one. You may
+   reword or move them if that reads better for buyers, but NEVER change what
+   they mean. Production time stays production time; it never becomes delivery
+   time. Do not drop, soften, or second-guess them.
+3. When the description needs a fact you do not have, write a placeholder in
    square brackets, for example [add size], [add materials], [add what is included].
    NEVER put brackets or placeholders in titles or tags.
-3. Brand, character, franchise, and company names: you may keep ones that already
+4. Brand, character, franchise, and company names: you may keep ones that already
    appear in the current title or tags. NEVER add a new one.
-4. Titles: exactly 2 options. Lead with what the product is, using the seller's
+5. Titles: exactly 2 options. Lead with what the product is, using the seller's
    main search phrase. Natural and readable, not a pile of keywords. At most
    140 characters. Use each of % : & + at most once.
-5. Tags: exactly 16, best first (13 to use plus 3 spares in case one is
+6. Tags: exactly 16, best first (13 to use plus 3 spares in case one is
    rejected). Each at most 20 characters. Letters, numbers, spaces,
    hyphens, and apostrophes only. Prefer 2 to 3 word phrases buyers would type.
    No duplicates and no near-duplicates. Keep the seller's strong existing tags,
    and fill empty slots with relevant phrases from GOOD PHRASES first, then
-   TOP LISTING TAGS, that truly describe this product. NEVER use a phrase from
-   AVOID PHRASES. Skip anything that does not describe it.
-6. Description: plain, friendly, scannable. First 1-2 sentences say what it is
+   TOP LISTING TAGS, that truly describe this product. BROAD PHRASES are fine
+   only when they describe this product exactly. Skip anything that does not
+   describe it.
+7. Description: plain, friendly, scannable. First 1-2 sentences say what it is
    and who it is for. Then short sections: What you get, Details (size,
    materials), and Care or How to use (for digital: file format and how it is
    delivered). Use "- " bullets. No hype words ("best seller", "perfect"),
    no claims you cannot back up, no em dashes.
-7. Write in the same language as the current listing.
+8. Write in the same language as the current listing.
 
 Return only the JSON object.`;
 
@@ -137,7 +143,7 @@ export function buildWriterMessage(ctx: WriterContext): string {
   const good = ideas
     .filter((i) => i.label === "winning" || i.label === "add" || i.label === "keep")
     .map((i) => `- ${i.keyword} (${i.competition.toLocaleString("en-US")} listings${i.position ? `, seller about #${i.position}` : ""})`);
-  const avoid = ideas.filter((i) => i.label === "crowded" || i.label === "quiet").map((i) => `- ${i.keyword}`);
+  const broad = ideas.filter((i) => i.label === "crowded" || i.label === "quiet").map((i) => `- ${i.keyword} (${i.competition.toLocaleString("en-US")} listings)`);
   return [
     "CURRENT LISTING",
     `Title: ${ctx.current.title || "(none)"}`,
@@ -161,8 +167,8 @@ export function buildWriterMessage(ctx: WriterContext): string {
     "GOOD PHRASES (lower competition and higher lifetime listing views; not measured search demand)",
     ...(good.length ? good : ["(none checked)"]),
     "",
-    "AVOID PHRASES (high competition or low lifetime listing views; search demand is unknown)",
-    ...(avoid.length ? avoid : ["(none)"]),
+    "BROAD PHRASES (many competing listings or few views on top listings; use only if they describe this product exactly)",
+    ...(broad.length ? broad : ["(none)"]),
   ].join("\n");
 }
 
@@ -272,11 +278,9 @@ export function parseWriterOutput(json: string): RawWriterOutput {
 
 export function finalizeWriterOutput(raw: RawWriterOutput, ctx: WriterContext): WriterResult {
   const titles = [...new Set(raw.titles.map(sanitizeTitle).filter((t) => t.length >= 10))].slice(0, 2);
-  // New tags the keyword check marked crowded or quiet are dropped: they would
-  // waste a slot. Tags the seller already uses are never removed here.
-  const avoid = new Set((ctx.ideas ?? []).filter((i) => i.label === "crowded" || i.label === "quiet").map((i) => i.keyword.toLowerCase()));
-  const own = new Set(ctx.current.tags.map((t) => t.trim().toLowerCase()));
-  const tags = sanitizeTags(raw.tags, raw.tags.length).filter((t) => !avoid.has(t.toLowerCase()) || own.has(t.toLowerCase())).slice(0, TAG_SLOTS);
+  // Broad phrases are not auto-dropped (a broad phrase that fits the product
+  // can still bring views); the prompt asks for them only when they fit.
+  const tags = sanitizeTags(raw.tags, raw.tags.length).slice(0, TAG_SLOTS);
   const description = sanitizeDescription(raw.description);
   if (titles.length !== 2 || tags.length !== TAG_SLOTS || description.length < 40) throw new Error("writer_unusable");
   return {
