@@ -65,10 +65,15 @@ export async function POST(req: NextRequest) {
   if (!UUID_RE.test(productId)) return apiError("bad_request", "Invalid product id.");
   const facts = normalizeFacts(body.facts);
   if (facts === null) return apiError("bad_request", "Facts must be short text.");
+  const rawInstruction = (body as { instruction?: unknown }).instruction;
+  if (rawInstruction !== undefined && (typeof rawInstruction !== "string" || rawInstruction.length > 300)) {
+    return apiError("bad_request", "Keep the request under 300 characters.");
+  }
 
   const supabase = await createSupabaseServerClient();
   const ctx = await loadWriterContext(supabase, productId, facts);
   if (!ctx) return apiError("forbidden", "Link your Etsy listing first, then Mavya can write for it.");
+  if (typeof rawInstruction === "string" && rawInstruction.trim()) ctx.instruction = rawInstruction.trim();
 
   if (!(await withinGlobalBudget("write"))) return apiError("rate_limited", "Mavya is busy right now. Try again in a little while.");
 

@@ -50,6 +50,7 @@ export function ListingWriteView({
   mainImageUrl = null,
   lastChecked = null,
   scoreChange = null,
+  studioNote = null,
   looksDigital,
   canWrite,
 }: {
@@ -61,6 +62,8 @@ export function ListingWriteView({
   mainImageUrl?: string | null;
   lastChecked?: string | null;
   scoreChange?: { from: number; to: number; date: string } | null;
+  /** Request typed in AI Studio: pre-fills "Your request" and writes right away. */
+  studioNote?: string | null;
   looksDigital: boolean;
   canWrite: boolean;
 }) {
@@ -83,6 +86,7 @@ export function ListingWriteView({
   const [editedFacts, setFacts] = useState<Facts | null>(null);
   const facts = editedFacts ?? saved?.facts ?? EMPTY_FACTS;
   const [showFacts, setShowFacts] = useState(false);
+  const [instruction, setInstruction] = useState(studioNote ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fresh, setResult] = useState<Result | null>(null);
@@ -97,7 +101,7 @@ export function ListingWriteView({
       const res = await fetch("/api/listings/write", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, facts }),
+        body: JSON.stringify({ productId, facts, instruction: instruction.trim() || undefined }),
       });
       const json = (await res.json().catch(() => ({}))) as Partial<Result> & { ok?: boolean; error?: string };
       if (!res.ok || json.ok === false || !json.titles) {
@@ -123,12 +127,12 @@ export function ListingWriteView({
   // revision per browser (the saved draft then satisfies later visits).
   const autoStarted = useRef(false);
   useEffect(() => {
-    if (autoStarted.current || !linked || !current || !canWrite || saved || fresh) return;
+    if (autoStarted.current || !linked || !current || !canWrite || fresh || (saved && !studioNote)) return;
     autoStarted.current = true;
     const t = setTimeout(() => void write(), 0);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [linked, current, canWrite, saved, fresh]);
+  }, [linked, current, canWrite, saved, fresh, studioNote]);
 
   if (!linked || !current) {
     return (
@@ -217,6 +221,20 @@ export function ListingWriteView({
         <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">
           Built from your listing, your keywords, and what top listings for them use.
         </p>
+
+        <label htmlFor="write-request" className="mt-4 block text-[13px] font-medium text-[var(--color-ink)]">
+          Your request (optional)
+        </label>
+        <textarea
+          id="write-request"
+          value={instruction}
+          onChange={(e) => setInstruction(e.target.value.slice(0, 300))}
+          disabled={busy}
+          rows={2}
+          placeholder="e.g. shorter title, friendlier tone, focus on gift buyers"
+          className={cn(input, "mt-1 min-h-[64px] py-2.5")}
+        />
+        <p className="mt-1 text-[12px] text-[var(--color-ink-soft)]">Changes style and focus only. Mavya never adds facts you did not give.</p>
 
         <button
           type="button"

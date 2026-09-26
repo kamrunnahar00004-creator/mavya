@@ -47,6 +47,8 @@ export type WriterContext = {
   ideas?: KeywordIdea[];
   isDigital: boolean | null;
   facts: SellerFacts;
+  /** Optional request typed in AI Studio ("shorter title", "friendlier tone"). Style and focus only. */
+  instruction?: string;
   /** Linked Etsy listing id (lets the route run the keyword finder). */
   listingId?: number;
 };
@@ -123,6 +125,9 @@ Hard rules:
    delivered). Use "- " bullets. No hype words ("best seller", "perfect"),
    no claims you cannot back up, no em dashes.
 8. Write in the same language as the current listing.
+9. SELLER REQUEST, when given, changes style, focus, length, or tone only.
+   Follow it unless it breaks a rule above. It never adds facts: a claim in
+   it that is not in the listing or SELLER FACTS becomes a [placeholder].
 
 Return only the JSON object.`;
 
@@ -157,6 +162,9 @@ export function buildWriterMessage(ctx: WriterContext): string {
     "",
     "SELLER FACTS (trust these)",
     ...(facts.length ? facts : ["(none given)"]),
+    "",
+    "SELLER REQUEST (style and focus only)",
+    ctx.instruction?.trim() ? ctx.instruction.trim().slice(0, 300) : "(none)",
     "",
     "TRACKED SEARCH PHRASES (Mavya's approximate position)",
     ...(kw.length ? kw : ["(none)"]),

@@ -43,3 +43,20 @@ describe("listing helper checks", () => {
     expect(checkListing({ ...good, photos: { imageCount: 6, mainScore: null } }).find((i) => i.name === "Main photo score")?.level).toBe("suggestion");
   });
 });
+
+import { buildWriterMessage } from "@/lib/listing-writer";
+
+describe("AI Studio request in the writer", () => {
+  const ctx = {
+    current: { title: "Mug", tags: [], description: "" },
+    photo: { productSummary: null, category: null },
+    keywords: [],
+    winnerTags: [],
+    isDigital: false,
+    facts: { size: "", materials: "", included: "", format: "" },
+  };
+  it("passes the seller request as style and focus only", () => {
+    expect(buildWriterMessage({ ...ctx, instruction: "friendlier tone" })).toContain("SELLER REQUEST (style and focus only)\nfriendlier tone");
+    expect(buildWriterMessage(ctx)).toContain("SELLER REQUEST (style and focus only)\n(none)");
+  });
+});

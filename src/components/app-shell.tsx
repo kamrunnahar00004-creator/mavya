@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, type ReactNode } from "react";
-import { Bookmark, CreditCard, LayoutDashboard, List, LogOut, MessageSquare, Package, Search, Store } from "lucide-react";
+import { Bookmark, CreditCard, FlaskConical, LayoutDashboard, List, LogOut, MessageSquare, Package, Search, Sparkles, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AppHeader } from "@/components/app-header";
@@ -22,7 +22,6 @@ const NAV: { heading: string; items: NavItem[] }[] = [
     heading: "Shop",
     items: [
       { href: "/dashboard", label: "Overview", Icon: LayoutDashboard, match: (p) => p === "/dashboard" || p.startsWith("/dashboard/product") },
-      { href: "/dashboard/shop", label: "All listings", Icon: List, match: (p) => p.startsWith("/dashboard/shop") },
     ],
   },
   {
@@ -32,6 +31,14 @@ const NAV: { heading: string; items: NavItem[] }[] = [
       { href: "/dashboard/research/products", label: "Products", Icon: Package, match: (p) => p.startsWith("/dashboard/research/products") },
       { href: "/dashboard/research/shops", label: "Shops", Icon: Store, match: (p) => p.startsWith("/dashboard/research/shops") },
       { href: "/dashboard/research/saved", label: "Saved", Icon: Bookmark, match: (p) => p.startsWith("/dashboard/research/saved") },
+    ],
+  },
+  {
+    heading: "Optimization",
+    items: [
+      { href: "/dashboard/shop", label: "Listing Helper", Icon: List, match: (p) => p.startsWith("/dashboard/shop") },
+      { href: "/dashboard/tests", label: "A/B Tests", Icon: FlaskConical, match: (p) => p.startsWith("/dashboard/tests") },
+      { href: "/dashboard/studio", label: "AI Studio", Icon: Sparkles, match: (p) => p.startsWith("/dashboard/studio") },
     ],
   },
   {

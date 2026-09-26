@@ -69,10 +69,18 @@ type JobRow = {
  */
 export default async function ProductPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<{ studioPhoto?: string; studioAction?: string; studioNote?: string }>;
 }) {
   const { id } = await params;
+  const sp = (await searchParams) ?? {};
+  // AI Studio hand-off (validated here; the workspace only acts on its own photos).
+  const studio =
+    typeof sp.studioPhoto === "string" && /^[0-9a-f-]{36}$/i.test(sp.studioPhoto) && (sp.studioAction === "polish" || sp.studioAction === "score")
+      ? { photoId: sp.studioPhoto, action: sp.studioAction as "polish" | "score", instruction: typeof sp.studioNote === "string" ? sp.studioNote.slice(0, 500) : undefined }
+      : null;
   const user = await timed("product.auth", () => getProtectedPageIdentity());
   if (!user) redirect("/?auth=login");
 
@@ -568,6 +576,7 @@ export default async function ProductPage({
         initialPhotos={initialPhotos}
         coverageState={coverageState}
         outperformsShop={await beatsShopPromise}
+        studio={studio}
       />
     </>
   );

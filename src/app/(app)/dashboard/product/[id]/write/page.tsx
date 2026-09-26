@@ -15,8 +15,15 @@ export const dynamic = "force-dynamic";
  * (north star 11.4 F). The page only loads what it needs to render the
  * starting state; the writing itself happens in POST /api/listings/write.
  */
-export default async function ProductWritePage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProductWritePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams?: Promise<{ studioNote?: string }>;
+}) {
   const { id } = await params;
+  const { studioNote } = (await searchParams) ?? {};
   const user = await getProtectedPageIdentity();
   if (!user) redirect("/?auth=login");
 
@@ -108,6 +115,7 @@ export default async function ProductWritePage({ params }: { params: Promise<{ i
         mainImageUrl={latestSnap?.main_image_url ?? null}
         lastChecked={latestSnap?.snapshot_date ?? null}
         scoreChange={scoreChange}
+        studioNote={typeof studioNote === "string" && studioNote.trim() ? studioNote.trim().slice(0, 300) : null}
         looksDigital={looksDigital}
         canWrite={entitlement.active}
       />

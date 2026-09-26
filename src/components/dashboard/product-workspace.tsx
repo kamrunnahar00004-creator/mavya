@@ -131,6 +131,8 @@ type Props = {
   coverageState: CoverageState;
   /** The linked listing gets more favorites per view than most of the shop. */
   outperformsShop?: boolean;
+  /** Hand-off from AI Studio: select this photo and, for "polish", start a one-click fix with the seller's instruction. */
+  studio?: { photoId: string; action: "polish" | "score"; instruction?: string } | null;
 };
 
 type Photo = {
@@ -514,6 +516,7 @@ export function ProductWorkspace({
   pendingMain,
   coverageState,
   outperformsShop = false,
+  studio = null,
 }: Props) {
   const mountedRef = useRef(true);
   const router = useRouter();
@@ -538,7 +541,11 @@ export function ProductWorkspace({
     [productId]
   );
   const [activeId, setActiveId] = useState<string>(
-    () => initialPhotos.find((p) => p.role === "main")?.id ?? initialPhotos[0]?.id ?? ""
+    () =>
+      (studio && initialPhotos.some((p) => p.id === studio.photoId) ? studio.photoId : null) ??
+      initialPhotos.find((p) => p.role === "main")?.id ??
+      initialPhotos[0]?.id ??
+      ""
   );
   // Seed synchronously from the persisted audit rubric: saved suggestions
   // render on first paint and no provider round-trip happens for them.
@@ -1330,6 +1337,20 @@ export function ProductWorkspace({
     },
     [activeId, applyJobPayload, patch, pollJob, stopPolling]
   );
+
+  // AI Studio hand-off: start the one-click fix once, on the chosen photo,
+  // with the seller's instruction (an edit when there is one).
+  const studioStarted = useRef(false);
+  useEffect(() => {
+    if (!studio || studio.action !== "polish" || studioStarted.current) return;
+    if (activeId !== studio.photoId) return;
+    const photo = photosRef.current.find((p) => p.id === studio.photoId);
+    if (!photo || photo.improveStatus === "generating") return;
+    studioStarted.current = true;
+    const t = setTimeout(() => void runImprove(false, studio.instruction?.trim() || undefined), 0);
+    router.replace(`/dashboard/product/${productId}`, { scroll: false });
+    return () => clearTimeout(t);
+  }, [studio, activeId, runImprove, router, productId]);
 
   // Version selection UI hidden: server-side score-based selection handles auto-replacement.
   // Seller explicitly chooses "Use improved photo" or "Keep original" via main UI.
