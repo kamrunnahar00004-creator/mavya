@@ -521,9 +521,8 @@ function StatusTiles({ v }: { v: View }) {
   );
 }
 
-const VERDICT_LABEL = { observed: "Observed", better: "Better", worse: "Worse", no_change: "No clear change", measuring: "Measuring", not_enough_data: "Can't measure", interrupted: "Changed again" } as const;
+const VERDICT_LABEL = { better: "Better", worse: "Worse", no_change: "Too close to call", measuring: "Measuring", not_enough_data: "Can't tell", interrupted: "Changed again" } as const;
 const VERDICT_CLS = {
-  observed: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   interrupted: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   better: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
   worse: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]",
@@ -539,7 +538,7 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
         Your changes
         {v.summary.measured > 0 && (
           <span className="ml-1.5 font-normal text-[var(--color-ink-soft)]">
-            {v.summary.measured} comparisons recorded
+            {v.summary.better} of {v.summary.measured} look better
           </span>
         )}
       </h3>
@@ -551,11 +550,12 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
               <p className="text-[13px] text-[var(--color-ink-muted)]">
                 {c.kinds.map((k) => ({ main_photo: "Main photo", title: "Title", tags: "Tags", description: "Description" })[k]).join(", ")} · {shortDate(c.date)}
                 {c.beforePerDay !== null && c.afterPerDay !== null && ` · ${fmt(c.beforePerDay)} → ${fmt(c.afterPerDay)} views a day`}
-                {c.verdict === "observed" && c.lift !== null && ` · descriptive comparison: ${Math.round((c.lift - 1) * 100)}% relative to the rest of your shop; not an established effect of the edit`}
-                {c.verdict === "observed" && c.wasFalling && ". Views were falling beforehand; a rebound may be unrelated to the edit."}
-                {c.verdict === "better" && c.wasFalling && " · it was falling before, so part of this may be a natural bounce"}
+                {(c.verdict === "better" || c.verdict === "worse") && c.lift !== null &&
+                  ` · about ${c.lift >= 1 ? "+" : ""}${Math.round((c.lift - 1) * 100)}% compared with your other listings`}
+                {c.verdict === "better" && c.wasFalling && ". It was falling before, so part of this may be a natural bounce"}
                 {c.verdict === "no_change" && c.liftLow !== null && c.liftHigh !== null &&
-                  ` · likely between ${c.liftLow >= 1 ? "+" : ""}${Math.round((c.liftLow - 1) * 100)}% and ${c.liftHigh >= 1 ? "+" : ""}${Math.round((c.liftHigh - 1) * 100)}%`}
+                  ` · somewhere between ${c.liftLow >= 1 ? "+" : ""}${Math.round((c.liftLow - 1) * 100)}% and ${c.liftHigh >= 1 ? "+" : ""}${Math.round((c.liftHigh - 1) * 100)}% compared with your other listings`}
+                {c.verdict === "not_enough_data" && " · your other listings got too few views to compare with"}
               </p>
             </div>
             <span className={cn("flex-shrink-0 rounded-[var(--radius-md)] px-2.5 py-1 text-[12.5px] font-semibold", VERDICT_CLS[c.verdict])}>{VERDICT_LABEL[c.verdict]}</span>

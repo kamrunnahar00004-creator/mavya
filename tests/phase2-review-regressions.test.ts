@@ -24,8 +24,8 @@ it("missing control observations cannot manufacture a win", () => {
   const inc = (d: number) => d === 22 || d === 23 ? 100 : 10;
   const seller = history(1, inc, [15]);
   const complete = [2, 3, 4].flatMap((id) => history(id, inc));
-  expect(buildShopView([...seller, ...complete], today).changes[0].verdict).toBe("observed");
-  expect(buildShopView([...seller, ...complete], today).changes[0].lift).toBeCloseTo(1);
+  expect(buildShopView([...seller, ...complete], today).changes[0].verdict).toBe("no_change");
+  expect(buildShopView([...seller, ...complete], today).changes[0].lift).toBeCloseTo(1, 1);
   const sparse = complete.filter((r) => r.snapshot_date !== addDays(start, 22));
   expect(buildShopView([...seller, ...sparse], today).changes[0].verdict).toBe("not_enough_data");
 });

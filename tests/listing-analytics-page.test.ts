@@ -59,7 +59,8 @@ describe("analytics page history wiring", () => {
     const vm = (rendered.props as { children: { props: { vm: AnalyticsViewModel } }[] }).children[1].props.vm;
     expect(vm.series).toHaveLength(30);
     expect(vm.tests).toHaveLength(1);
-    expect(vm.tests[0].verdict).toBe("observed");
+    // Doubled (10 -> 20 a day) against a flat comparison group: a clear Better.
+    expect(vm.tests[0].verdict).toBe("better");
     expect(vm.tests[0].beforeViewsPerDay).toBe(10);
     expect(vm.tests[0].afterViewsPerDay).toBe(20);
     expect(vm.keywords.map((k) => k.keyword)).toEqual(current);

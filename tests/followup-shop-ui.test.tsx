@@ -17,14 +17,18 @@ it("renders a retry button for a failed free check, not a daily-retry promise", 
   expect(html).not.toContain("next daily run");
 });
 
-it("renders a descriptive observation without a confidence range or win tally", () => {
+it("says 'too close to call' with a plain range, and 'can't tell' when the comparison is too thin", () => {
   const view = buildShopView([], "2026-09-26");
-  view.changes = [{ listingId: 1, title: "Soy candle", date: "2026-09-01", kinds: ["title"], beforePerDay: 1000, afterPerDay: 1000, shopChange: 4 / 7, lift: 1.75, liftLow: null, liftHigh: null, wasFalling: false, verdict: "observed" }];
+  view.changes = [
+    { listingId: 1, title: "Soy candle", date: "2026-09-01", kinds: ["title"], beforePerDay: 10, afterPerDay: 12, shopChange: 1, lift: 1.2, liftLow: 0.9, liftHigh: 1.6, wasFalling: false, verdict: "no_change" },
+    { listingId: 2, title: "Beeswax candle", date: "2026-09-02", kinds: ["tags"], beforePerDay: 1000, afterPerDay: 1000, shopChange: null, lift: null, liftLow: null, liftHigh: null, wasFalling: false, verdict: "not_enough_data" },
+  ];
   view.summary = { measured: 1, better: 0 };
   const data: ShopHomeData = { shop: { name: "Example", lastCheckedOn: "2026-09-26", lastError: null }, view, opened: {} };
   const html = renderToStaticMarkup(<ShopHome data={data} canEdit />);
-  expect(html).toContain("Observed");
-  expect(html).toContain("not an established effect of the edit");
-  expect(html).not.toContain("likely between");
-  expect(html).not.toContain("look better");
+  expect(html).toContain("Too close to call");
+  expect(html).toContain("somewhere between -10% and +60% compared with your other listings");
+  expect(html).toContain("Can&#x27;t tell");
+  expect(html).toContain("your other listings got too few views to compare with");
+  expect(html).not.toContain("Observed");
 });

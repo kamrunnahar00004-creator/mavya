@@ -7,21 +7,25 @@ When this doc conflicts with older direction docs, this doc wins.
 ### Verification correction, 2026-09-26
 
 The follow-up fixes supersede older implementation claims about proof and free
-budget isolation below. Completed before/after comparisons are descriptive
-"Observed" results after 14 days, not calibrated Better/Worse verdicts or
-likely-effect intervals. The raw comparisons remain, with causation caveats.
-Reintroducing confidence claims requires a validated method that includes the
-comparison group's uncertainty, not just seller counts.
+budget isolation below. Before/after results are judged once, after a fixed
+14-day window, from the DAILY ratio of the listing to its comparison group: the
+range comes from how much that ratio actually varies day to day (floored at
+counting noise), so thin or noisy comparison groups widen it automatically;
+comparison groups under 30 views per window say "Can't tell". Better/Worse only
+when the whole range is past 1x and the lift is at least 1.15x / 0.87x.
+Validated in no-effect simulations (tests/proof-validation-simulation.test.ts):
+0.3% to 3% wrong Better/Worse calls; a real doubling is found 200/200 times.
+Wording stays "after", never "because".
 
 Free requests, including retries, consume at most 1,000 of the application's
 4,500 rolling-24-hour Etsy calls. This leaves 3,500 daily calls for paid traffic;
 per-second capacity is still shared. Weekly free eligibility is checked under
 a durable scan lease, and failed scans have an explicit retry path.
 
-Peer comparisons now require recognized matching product types and exclude
-individual unrelated results. Unknown product types produce unavailable peer
-comparisons, not invented evidence. This conservative matcher is not a universal
-category classifier. See docs/CLAUDE_FOLLOWUP_FIXES_HANDOFF_2026-09-26.md.
+Keyword relevance (does the keyword describe the product) and peer
+comparability (which results are fair to compare) are separate. Peers need the
+same recognized product type, or, for unrecognized types, 2+ shared product
+words; too few peers means comparisons are unavailable, never padded. See docs/CLAUDE_FOLLOWUP_FIXES_HANDOFF_2026-09-26.md.
 
 ## 1. Why we are doing this
 

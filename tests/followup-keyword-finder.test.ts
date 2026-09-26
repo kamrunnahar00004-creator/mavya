@@ -6,7 +6,10 @@ import { findKeywordIdeas } from "@/lib/keyword-finder-server";
 
 it("does not turn unrelated results into keyword advice or writer ideas", async () => {
   cache.mockResolvedValue({ count: 500, results: Array.from({ length: 25 }, (_, listingId) => ({ listingId, title: "Silver picture frame", tags: ["silver frame"], views: 10000, createdAt: 1 })) });
-  expect(await findKeywordIdeas({} as SupabaseClient, { listingId: 100, title: "Silver earrings", tags: [] }, "silver earrings", "2026-09-26")).toEqual([]);
+  const ideas = await findKeywordIdeas({} as SupabaseClient, { listingId: 100, title: "Silver earrings", tags: [] }, "silver earrings", "2026-09-26");
+  // The query itself is kept (it describes the product), but frames are not
+  // peers: no interest number, no label that could reach the writer.
+  expect(ideas.map((i) => [i.keyword, i.interest, i.label])).toEqual([["silver earrings", null, "unknown"]]);
 });
 
 it("calculates interest only from comparable peers and preserves original rank", async () => {

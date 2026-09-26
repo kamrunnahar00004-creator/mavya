@@ -13,7 +13,10 @@ const row = (id: number, d: number, views: number, changed = false): ShopSnapsho
 it("rejects material-only peers and separates accessories and digital items", () => {
   const listing = { title: "Silver moon stud earrings", tags: [] };
   const peers = Array.from({ length: 25 }, (_, i) => ({ title: i < 3 ? "Silver picture frame" : "Wooden dining table", tags: [] }));
-  expect(keywordIsRelevant(listing, "silver earrings", peers)).toBe(false);
+  // The keyword describes the product; the RESULTS are not peers, so nothing
+  // is compared against the frames or tables.
+  expect(keywordIsRelevant(listing, "silver earrings", peers)).toBe(true);
+  expect(comparablePeers(listing, peers)).toEqual([]);
   const candle = { title: "Soy candle", tags: [] };
   expect(comparablePeers(candle, ["Candle holder", "Candle mold", "Candle label", "Digital candle", "Soy candles"].map(title => ({ title, tags: [] })))).toEqual([{ title: "Soy candles", tags: [] }]);
   expect(comparablePeers({ title: "Mug", tags: [] }, [{ title: "Mug wrap", tags: [] }])).toEqual([]);
@@ -21,10 +24,12 @@ it("rejects material-only peers and separates accessories and digital items", ()
   expect(comparablePeers({ title: "Earrings", tags: [] }, [{ title: "Earring supplies", tags: [] }])).toEqual([]);
 });
 
-it("supports explicit synonyms and plurals, with unknown for unsupported product types", () => {
+it("supports explicit synonyms and plurals; unsupported types get no invented peers", () => {
   const peers = Array.from({ length: 3 }, () => ({ title: "Wool cushions", tags: [] }));
   expect(keywordIsRelevant({ title: "Pillows", tags: [] }, "pillow", peers)).toBe(true);
-  expect(keywordIsRelevant({ title: "Handmade zither", tags: [] }, "zither", peers)).toBeNull();
+  expect(comparablePeers({ title: "Pillows", tags: [] }, peers)).toHaveLength(3);
+  expect(keywordIsRelevant({ title: "Handmade zither", tags: [] }, "zither", peers)).toBe(true);
+  expect(comparablePeers({ title: "Handmade zither", tags: [] }, peers)).toEqual([]);
 });
 
 it("keeps only comparable peers, never the other 22 results that passed alongside them", () => {
@@ -62,10 +67,10 @@ it("never calls a flat seller better because tiny controls lost a few views", ()
   const result = buildShopView(rows, addDays(start, 34)).changes[0];
   expect(result.beforePerDay).toBe(1000);
   expect(result.afterPerDay).toBe(1000);
-  expect(result.lift).toBeCloseTo(1.75);
-  expect(result.verdict).toBe("observed");
-  expect(result.liftLow).toBeNull();
-  expect(result.liftHigh).toBeNull();
+  // Three controls with ~1 view a day are too thin to compare against: the
+  // app says it cannot tell, never "Better" (the old formula said Better, 1.75x).
+  expect(result.verdict).toBe("not_enough_data");
+  expect(result.lift).toBeNull();
 });
 
 it("observed zero traffic does not fall back to lifetime traffic", () => {

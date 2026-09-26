@@ -196,9 +196,10 @@ describe("shop home", () => {
     const v = buildShopView(rows, TODAY);
     const c = v.changes.find((x) => x.listingId === 1)!;
     expect(c.kinds).toEqual(["title"]);
-    expect(c.verdict).toBe("observed");
-    expect(c.lift).toBeCloseTo(3);
-    expect(v.summary).toEqual({ measured: 1, better: 0 });
+    expect(c.verdict).toBe("better");
+    expect(c.lift).toBeCloseTo(3, 0);
+    expect(c.liftLow).toBeGreaterThan(1);
+    expect(v.summary).toEqual({ measured: 1, better: 1 });
   });
 
   it("does not call a shop-wide rise a win", () => {
@@ -206,8 +207,8 @@ describe("shop home", () => {
     const lift = (d: number) => (d > 20 ? 30 : 10);
     const rows = [...history(1, lift, { change }), ...history(2, lift), ...history(3, lift), ...history(4, lift)];
     const c = buildShopView(rows, TODAY).changes.find((x) => x.listingId === 1)!;
-    expect(c.verdict).toBe("observed");
-    expect(c.lift).toBeCloseTo(1);
+    expect(c.verdict).toBe("no_change");
+    expect(c.lift).toBeCloseTo(1, 1);
   });
 });
 

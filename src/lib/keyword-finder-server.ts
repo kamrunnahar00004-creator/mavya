@@ -32,12 +32,12 @@ export async function findKeywordIdeas(
     try {
       const r = keyword === main ? base : await getSearchCached(admin, keyword, today, deadlineAt);
       const relevant = keywordIsRelevant(listing, keyword, r.results);
-      if (relevant === false) continue;
+      if (!relevant) continue;
       const peers = comparablePeers(listing, r.results.filter(l => l.listingId !== listing.listingId));
       const idx = r.results.findIndex((l) => l.listingId === listing.listingId);
       const stats = {
         competition: r.count,
-        interest: relevant === true && peers.length >= 3 ? viewsPerDayMedian(peers.slice(0, 10), today) : null,
+        interest: peers.length >= 3 ? viewsPerDayMedian(peers.slice(0, 10), today) : null,
         position: idx >= 0 ? idx + 1 : null,
         inTags: own.has(keyword),
       };

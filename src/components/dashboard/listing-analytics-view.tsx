@@ -884,14 +884,13 @@ function RankingTable({ keyword, you, depth, top }: { keyword: string; you: TopE
 // ---------------------------------------------------------------------------
 
 const VERDICT: Record<TestVerdict, { label: string; cls: string }> = {
-  observed: { label: "Observed", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   better: { label: "Better", cls: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" },
   worse: { label: "Worse", cls: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]" },
   no_clear_change: { label: "No clear change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   running: { label: "Measuring", cls: "bg-[var(--color-mid-soft)] text-[#8A5A12]" },
   interrupted: { label: "Stopped", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   no_baseline: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
-  insufficient_data: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
+  insufficient_data: { label: "Can't tell", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
 };
 
 function Changes({ vm }: { vm: AnalyticsViewModel }) {
@@ -952,30 +951,32 @@ function rankSentence(t: AnalyticsViewModel["tests"][number]): string | null {
 function rangeText(t: AnalyticsViewModel["tests"][number]): string | null {
   if (t.liftLow === null || t.liftHigh === null) return null;
   const p = (x: number) => `${x >= 1 ? "+" : ""}${Math.round((x - 1) * 100)}%`;
-  return `likely between ${p(t.liftLow)} and ${p(t.liftHigh)} vs top listings`;
+  return `somewhere between ${p(t.liftLow)} and ${p(t.liftHigh)}`;
 }
+
+const BOUNCE = " It was falling before, so part of this may be a natural bounce.";
 
 function changeSentence(t: AnalyticsViewModel["tests"][number]): string {
   const rank = rankSentence(t);
   const withRank = (x: string) => (rank ? `${x} ${rank}.` : x);
   const views = `${fmt(t.beforeViewsPerDay)} → ${fmt(t.afterViewsPerDay)} views a day`;
   switch (t.verdict) {
-    case "observed":
-      return withRank(`${views}. Descriptive comparison: ${pct(t.lift ?? 1)} relative to comparable top listings. This does not establish an effect of the edit.${t.wasFalling ? " Views were falling beforehand; a rebound may be unrelated to the edit." : ""}`);
     case "running":
-      return withRank(`Day ${t.daysAfter} of 14${rangeText(t) ? `, ${rangeText(t)} so far` : ""}.`);
+      return withRank(`Measuring: day ${t.daysAfter} of 14.`);
     case "interrupted":
       return t.interruptionReason === "keywords_changed" ? "Stopped because your keywords changed." : "Another change came too soon to measure this one.";
     case "no_baseline":
       return "Not enough data from before the change.";
     case "insufficient_data":
-      return "Not enough data to compare.";
+      return "Can't tell: similar top listings got too few views to compare with.";
     case "no_clear_change":
-      return withRank(`${views} · ${rangeText(t) ?? "too close to call"}.`);
+      return withRank(`${views}. Too close to call${rangeText(t) ? `: ${rangeText(t)} compared with similar top listings` : ""}.`);
     case "better":
-      return withRank(`${views} · ${pct(t.lift ?? 1)} vs top listings${t.wasFalling ? ". It was falling before, so part of this may be a natural bounce" : ""}.`);
+      return withRank(`${views}, about ${pct(t.lift ?? 1)} compared with similar top listings over the same days.${t.wasFalling ? BOUNCE : ""}`);
+    case "worse":
+      return withRank(`${views}, about ${pct(t.lift ?? 1)} compared with similar top listings over the same days.`);
     default:
-      return withRank(t.lift === null ? `${views}.` : `${views} · ${pct(t.lift)} vs top listings.`);
+      return withRank(`${views}.`);
   }
 }
 

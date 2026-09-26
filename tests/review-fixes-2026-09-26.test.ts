@@ -7,6 +7,7 @@ import {
   detectChanges,
   diagnose,
   evaluateAllTests,
+  comparablePeers,
   keywordIsRelevant,
   stripStatus,
   suggestKeywords,
@@ -48,12 +49,27 @@ describe("keyword relevance", () => {
   it("a keyword that returns unrelated listings is not relevant", () => {
     expect(keywordIsRelevant(listing, "pre-order", [t("Chunky yarn preorder"), t("Halloween stocking"), t("Doll eyes 12mm"), t("Fantasy book")])).toBe(false);
   });
-  it("a shared franchise does not make different products comparable", () => {
-    expect(keywordIsRelevant(listing, "roblox arg", [t("Roblox shirt"), t("roblox arg poster"), t("Brandon works charm"), t("Anime pin")])).toBe(false);
-    expect(keywordIsRelevant(listing, "roblox arg", [t("Roblox keychain"), t("roblox arg keyring"), t("Brandon works keychains")])).toBe(true);
+  // Relevance (does the keyword describe the product) is separate from peers
+  // (which results are fair to compare): a correct franchise keyword stays
+  // tracked, but only same-type results are compared against.
+  it("a shared franchise keeps the keyword but does not make different products comparable", () => {
+    const mixed = [t("Roblox shirt"), t("roblox arg poster"), t("Brandon works charm"), t("Anime pin")];
+    expect(keywordIsRelevant(listing, "roblox arg", mixed)).toBe(true);
+    expect(comparablePeers(listing, mixed)).toEqual([]);
+    const keychains = [t("Roblox keychain"), t("roblox arg keyring"), t("Brandon works keychains")];
+    expect(comparablePeers(listing, keychains)).toHaveLength(3);
   });
-  it("unknown until there are search results", () => {
-    expect(keywordIsRelevant(listing, "roblox arg", [])).toBeNull();
+  it("no search results: keyword still describes the product, but there are no peers", () => {
+    expect(keywordIsRelevant(listing, "roblox arg", [])).toBe(true);
+    expect(comparablePeers(listing, [])).toEqual([]);
+  });
+  it("the Forsaken keychain keeps 'roblox forsaken' (live 2026-09-26: 1 keychain among 25 results)", () => {
+    const own = { title: "some READY TO SHIP | Roblox Forsaken - Chance & Mafioso / Don Sonnellino | Acrylic Ice cream Keychain", tags: [] };
+    expect(keywordIsRelevant(own, "roblox forsaken")).toBe(true);
+  });
+  it("unrecognized product types compare against results sharing 2+ product words", () => {
+    const towel = { title: "Linen tea towel, natural", tags: [] };
+    expect(comparablePeers(towel, [t("Kitchen tea towel set"), t("Ceramic tea set"), t("Linen napkins")]).map((x) => x.title)).toEqual(["Kitchen tea towel set"]);
   });
 });
 
@@ -102,7 +118,11 @@ describe("shop trends and patterns", () => {
 });
 
 describe("honest before/after", () => {
-  it.each([2, 40])("never derives effect confidence from seller-only counts (%i views/day)", (rate) => {
+  // A busy listing's steady doubling is a clear Better. A tiny listing
+  // (2 views a day, 20 vs 40 views) gets a much wider range even though its
+  // few views look perfectly steady, so it honestly reads "too close to call".
+  const widths: Record<number, number> = {};
+  it.each([40, 2])("a steady doubling is judged with counting noise in mind (%i views/day)", (rate) => {
     const snaps: ListingSnapshot[] = Array.from({ length: 25 }, (_, d) => ({
       snapshot_date: addDays("2026-09-01", d), etsy_listing_id: 1, state: "active",
       views: 100 + Math.min(d, 10) * rate + Math.max(0, d - 10) * rate * 2,
@@ -112,10 +132,11 @@ describe("honest before/after", () => {
     const series = buildDailySeries(snaps);
     const market = series.map(p => ({ date: p.date, winnerViewsPerDay: 10 }));
     const result = evaluateAllTests(detectChanges(snaps), series, market, addDays("2026-09-01", 24))[0];
-    expect(result.verdict).toBe("observed");
-    expect(result.lift).toBeCloseTo(2);
-    expect(result.liftLow).toBeNull();
-    expect(result.liftHigh).toBeNull();
+    expect(result.verdict).toBe(rate === 40 ? "better" : "no_clear_change");
+    expect(result.lift).toBeCloseTo(2, 0);
+    if (rate === 40) expect(result.liftLow).toBeGreaterThan(1);
+    widths[rate] = (result.liftHigh as number) / (result.liftLow as number);
+    if (rate === 2) expect(widths[2]).toBeGreaterThan(widths[40] * 2);
   });
 
   it("reports search position before vs after a title change", () => {

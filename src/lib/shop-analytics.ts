@@ -11,6 +11,9 @@
 
 import {
   addDays,
+  dailyRatioTest,
+  ratioVerdict,
+  type RatioDay,
   wasFallingBefore,
   buildDailySeries,
   detectChanges,
@@ -133,12 +136,12 @@ export type ShopChangeResult = {
   afterPerDay: number | null;
   shopChange: number | null;
   lift: number | null;
-  /** Reserved for a future calibrated interval; currently always null. */
+  /** Likely range of the lift from the daily-ratio test; null until judged. */
   liftLow: number | null;
   liftHigh: number | null;
   /** Already falling before the change: a rise may partly be a natural bounce. */
   wasFalling: boolean;
-  verdict: "observed" | "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
+  verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
 };
 
 export type ShopTopListing = { listingId: number; title: string; mainImageUrl: string | null; views: number; favorites: number | null };
@@ -393,7 +396,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     });
 
   const changes = shopChanges(work, today);
-  const measured = changes.filter((c) => c.verdict === "observed");
+  const measured = changes.filter((c) => c.verdict === "better" || c.verdict === "worse" || c.verdict === "no_change");
 
   // Day-1 numbers: Etsy's all-time counters on each listing's latest check.
   let totalViews = 0;
@@ -506,24 +509,30 @@ function shopChanges(
     // windows. Independently averaging sparse windows manufactures lift.
     const matchedDates = new Set(series.filter((p) => p.viewsPerDay !== null &&
       ((p.date >= bFrom && p.date <= bTo) || (p.date >= aFrom && p.date <= aTo && p.date <= today))).map((p) => p.date));
-    const ratios: number[] = [];
+    // Comparison group: every other listing unchanged through both windows
+    // that reported every matched day, summed per day.
+    const controlByDate = new Map<string, number>();
+    let controls = 0;
     for (const [id, w] of work) {
       if (id === e.id) continue;
       if ((changeDates.get(id) ?? []).some((d) => d >= bFrom && d <= aTo)) continue;
       const matched = w.series.filter((p) => matchedDates.has(p.date) && p.viewsPerDay !== null);
       if (matched.length !== matchedDates.size) continue;
-      const b = windowStats(matched, bFrom, bTo);
-      const a = windowStats(matched, aFrom, aTo);
-      if (b.viewsPerDay && b.viewsPerDay > 0 && a.viewsPerDay !== null && b.days >= 3 && a.days >= MIN_AFTER_DAYS) ratios.push(a.viewsPerDay / b.viewsPerDay);
+      controls += 1;
+      for (const pt of matched) controlByDate.set(pt.date, (controlByDate.get(pt.date) ?? 0) + (pt.viewsPerDay as number));
     }
-    const shopChange = ratios.length >= 3 ? med(ratios) : null;
-    if (!shopChange || shopChange <= 0) {
+    const days: RatioDay[] = series
+      .filter((pt) => pt.viewsPerDay !== null && matchedDates.has(pt.date))
+      .map((pt) => ({ phase: pt.date <= bTo ? "before" : "after", own: pt.viewsPerDay as number, control: controlByDate.get(pt.date) ?? 0 }));
+    const test = controls >= 3 ? dailyRatioTest(days) : null;
+    if (!test) {
       results.push({ ...base, verdict: "not_enough_data" });
       continue;
     }
-    const lift = (after.viewsPerDay ?? 0) / before.viewsPerDay / shopChange;
-    // A descriptive ratio is not a calibrated estimate of the edit's effect.
-    results.push({ ...base, shopChange, lift, verdict: "observed" });
+    const cb = days.filter((d) => d.phase === "before").reduce((sum, d) => sum + d.control, 0) / test.before;
+    const ca = days.filter((d) => d.phase === "after").reduce((sum, d) => sum + d.control, 0) / test.after;
+    const call = ratioVerdict(test);
+    results.push({ ...base, shopChange: cb > 0 ? ca / cb : null, lift: test.lift, liftLow: test.low, liftHigh: test.high, verdict: call === "no_clear_change" ? "no_change" : call });
   }
   return results.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
 }

@@ -55,6 +55,12 @@ export const TEST_WINDOW_DAYS = 14;
 export const MIN_AFTER_DAYS = 7;
 export const MIN_AFTER_VIEWS = 20;
 export const MIN_SERIES_DAYS = 5;
+/** A change is called Better/Worse only past these relative lifts, AND only
+ *  when the whole likely range is past 1x (see dailyRatioTest). */
+export const BETTER_LIFT = 1.15;
+export const WORSE_LIFT = 0.87;
+/** Minimum comparison-group views in EACH window before any comparison. */
+export const MIN_CONTROL_VIEWS = 30;
 export const ETSY_TAG_MAX = 20;
 export const ETSY_TAG_SLOTS = 13;
 /** Seller photo must out-score the top listings' median by this much before Mavya stops pointing at the photo. */
@@ -281,6 +287,61 @@ export function recentWinnerFavoriteRate(snapshots: KeywordSnapshot[], series: D
 // Change detection + before/after tests
 // ---------------------------------------------------------------------------
 
+export type RatioDay = { phase: "before" | "after"; own: number; control: number };
+export type RatioTest = { lift: number; low: number; high: number; before: number; after: number };
+
+/**
+ * Did the listing move relative to its comparison group, beyond normal daily
+ * wobble? (Codex follow-up review, finding 2.)
+ *
+ * For each observed day: log((own + 0.5) / (control + 0.5)). The lift is the
+ * change in the mean of that daily log-ratio from before to after. Its
+ * uncertainty comes from how much the daily ratio ACTUALLY varies in each
+ * window (a Welch-style standard error), so a thin or noisy comparison group,
+ * a noisy listing, and day-to-day swings all widen the range automatically;
+ * nothing assumes clean counting noise. The range uses 2.5 standard errors,
+ * wider than 95% on purpose (validated: under 5% wrong Better/Worse calls in
+ * no-effect simulations, tests/proof-validation-simulation.test.ts), and is
+ * judged once, at the end of a fixed 14-day window (no repeated early looks).
+ *
+ * Null when either window has too few days or the comparison group has too
+ * few views to say anything.
+ */
+export function dailyRatioTest(days: RatioDay[], minBefore = 3, minAfter = MIN_AFTER_DAYS): RatioTest | null {
+  const logs = (phase: RatioDay["phase"]) => days.filter((d) => d.phase === phase).map((d) => Math.log((d.own + 0.5) / (d.control + 0.5)));
+  const b = logs("before");
+  const a = logs("after");
+  if (b.length < minBefore || a.length < minAfter) return null;
+  const controlBefore = days.filter((d) => d.phase === "before").reduce((sum, d) => sum + d.control, 0);
+  const controlAfter = days.filter((d) => d.phase === "after").reduce((sum, d) => sum + d.control, 0);
+  if (controlBefore < MIN_CONTROL_VIEWS || controlAfter < MIN_CONTROL_VIEWS) return null;
+  const mean = (x: number[]) => x.reduce((sum, v) => sum + v, 0) / x.length;
+  const variance = (x: number[]) => {
+    const m = mean(x);
+    return x.length > 1 ? x.reduce((sum, v) => sum + (v - m) ** 2, 0) / (x.length - 1) : 0;
+  };
+  // Floor the per-day spread at counting noise (about 1/views for each side
+  // of the ratio) and at 0.01 (+-10% a day), so a suspiciously smooth window,
+  // or a tiny listing whose few views happen to look steady, can never
+  // produce a razor-thin range.
+  const countingNoise = (phase: RatioDay["phase"]) => {
+    const ds = days.filter((d) => d.phase === phase);
+    return ds.reduce((sum, d) => sum + 1 / (d.own + 0.5) + 1 / (d.control + 0.5), 0) / ds.length;
+  };
+  const vb = Math.max(variance(b), countingNoise("before"), 0.01);
+  const va = Math.max(variance(a), countingNoise("after"), 0.01);
+  const diff = mean(a) - mean(b);
+  const se = Math.sqrt(vb / b.length + va / a.length);
+  return { lift: Math.exp(diff), low: Math.exp(diff - 2.5 * se), high: Math.exp(diff + 2.5 * se), before: b.length, after: a.length };
+}
+
+/** Better / Worse only when the whole range is past 1x and the lift is meaningful. */
+export function ratioVerdict(t: RatioTest): "better" | "worse" | "no_clear_change" {
+  if (t.low > 1 && t.lift >= BETTER_LIFT) return "better";
+  if (t.high < 1 && t.lift <= WORSE_LIFT) return "worse";
+  return "no_clear_change";
+}
+
 /**
  * Was the listing already sliding before the change? Before-window views/day at
  * or under 60% of the 4 weeks before it. A listing picked for a fix because it
@@ -343,7 +404,7 @@ export function detectChanges(snapshots: ListingSnapshot[]): ChangeEvent[] {
   return events;
 }
 
-export type TestVerdict = "observed" | "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline" | "insufficient_data";
+export type TestVerdict = "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline" | "insufficient_data";
 
 export type TestResult = {
   interruptionReason?: "keywords_changed";
@@ -358,7 +419,7 @@ export type TestResult = {
   marketChange: number | null;
   /** listingChange divided by marketChange; null without a usable control. */
   lift: number | null;
-  /** Reserved for a future calibrated interval; currently always null. */
+  /** Likely range of the lift from the daily-ratio test; null until judged. */
   liftLow: number | null;
   liftHigh: number | null;
   /** Search position before vs after, per keyword present on both sides. */
@@ -378,7 +439,9 @@ export function evaluateTest(
   series: DailyPoint[],
   market: MarketPoint[],
   today: string,
-  previousEventDate: string | null = null
+  previousEventDate: string | null = null,
+  /** How many top listings stand behind each day's market median. */
+  controlSize = 3
 ): TestResult {
   const beforeFrom = previousEventDate && addDays(previousEventDate, 1) > addDays(event.date, -TEST_WINDOW_DAYS)
     ? addDays(previousEventDate, 1) : addDays(event.date, -TEST_WINDOW_DAYS);
@@ -422,9 +485,16 @@ export function evaluateTest(
   const lift = listingChange !== null && marketChange !== null && marketChange > 0 ? listingChange / marketChange : null;
 
   if (lift === null) return { ...base, verdict: "insufficient_data", listingChange, marketChange, lift };
-  // Control uncertainty is not calibrated. Report observations, not significance.
-  const verdict: TestVerdict = interrupted ? "interrupted" : ended ? "observed" : "running";
-  return { ...base, verdict, listingChange, marketChange, lift };
+  // Judged once, at the end of the fixed window, from the daily ratio against
+  // the comparison group (median views of the top listings x how many there are).
+  if (!ended) return { ...base, verdict: interrupted ? "interrupted" : "running", listingChange, marketChange, lift };
+  const marketByDate = new Map(matchedMarket.map((m) => [m.date, m.winnerViewsPerDay as number]));
+  const days: RatioDay[] = matched
+    .filter((p) => p.viewsPerDay !== null && marketByDate.has(p.date) && ((p.date >= beforeFrom && p.date <= beforeTo) || (p.date >= afterFrom && p.date <= afterTo)))
+    .map((p) => ({ phase: p.date <= beforeTo ? "before" : "after", own: p.viewsPerDay as number, control: (marketByDate.get(p.date) as number) * controlSize }));
+  const test = dailyRatioTest(days);
+  if (!test) return { ...base, verdict: "insufficient_data", listingChange, marketChange, lift };
+  return { ...base, verdict: interrupted ? "interrupted" : ratioVerdict(test), listingChange, marketChange, lift: test.lift, liftLow: test.low, liftHigh: test.high };
 }
 
 export function evaluateAllTests(
@@ -445,6 +515,7 @@ export function evaluateAllTests(
       const nextListingChange = sorted[i + 1]?.date ?? null;
       const nextChange = [nextListingChange, controlEnd].filter((d): d is string => Boolean(d)).sort()[0] ?? null;
       let control = market;
+      let controlSize = 3;
       if (keywordSnapshots) {
         const from = addDays(e.date, -TEST_WINDOW_DAYS - 1);
         const to = [today, addDays(e.date, TEST_WINDOW_DAYS), nextChange ? addDays(nextChange, -1) : today].sort()[0];
@@ -462,13 +533,15 @@ export function evaluateAllTests(
         // Only keywords whose fixed cohort can yield a median (>= 3 listings)
         // take part, and every one of them must be present on a counted day.
         const usable = [...idsByKeyword].filter(([, ids]) => ids.size >= 3).map(([k]) => k);
+        // Smallest fixed cohort behind the averaged medians (conservative).
+        controlSize = Math.max(3, Math.min(10, ...[...idsByKeyword].filter(([k]) => usable.includes(k)).map(([, ids]) => ids.size)));
         control = buildMarketSeries(
           snaps.filter((k) => usable.includes(k.keyword)).map((k) => ({ ...k, top: k.top.filter((t) => idsByKeyword.get(k.keyword)?.has(t.id)) })),
           10,
           usable
         );
       }
-      const evaluated = evaluateTest(e, nextChange, series, control, today, sorted[i - 1]?.date ?? null);
+      const evaluated = evaluateTest(e, nextChange, series, control, today, sorted[i - 1]?.date ?? null, controlSize);
       // Search position moves within days of a title or tag edit and needs no
       // traffic, so it is the fastest honest signal for those changes.
       let rank: TestResult["rank"] = [];
@@ -961,9 +1034,14 @@ export function suggestKeywords(title: string, tags: string[]): string[] {
 }
 
 /**
- * Query relevance and peer comparability are separate. Require three peers
- * with matching recognized product kinds; unknown kinds stay unclassified.
- * Callers must filter individual peers too, not merely pass the query gate.
+ * Two separate questions (Codex follow-up review, finding 4):
+ * 1. keywordIsRelevant: does the KEYWORD describe this product? Keyword-side
+ *    only, so a correct query whose results are mixed ("roblox forsaken" for a
+ *    Forsaken keychain, where most results are plush and shirts) stays tracked.
+ * 2. comparablePeers: which RESULTS are fair to compare against? Each result is
+ *    filtered: same recognized product type, or (type not recognized) 2+ shared
+ *    product words. Too few peers means comparisons are unavailable, never
+ *    padded with unrelated listings.
  */
 type PeerListing = { title: string | null; tags: string[]; etsy_listing_id?: number; listingId?: number };
 
@@ -983,7 +1061,14 @@ const PRODUCT_TYPES = [
   ["template", "templates"], ["soap", "soaps"], ["vase", "vases"],
   ["pillow", "pillows", "cushion", "cushions"], ["blanket", "blankets", "throw", "throws"],
   ["table", "tables"], ["chair", "chairs"], ["rug", "rugs"],
-  ["ornament", "ornaments"], ["wreath", "wreaths"], ["toy", "toys", "plush", "plushie", "plushies"],
+  ["ornament", "ornaments"], ["wreath", "wreaths"], ["toy", "toys", "plush", "plushie", "plushies", "doll", "dolls", "amigurumi"],
+  ["portrait", "portraits"], ["wall hanging", "wall hangings", "tapestry", "tapestries"],
+  ["planner", "planners"], ["svg", "svgs"], ["collar", "collars"], ["leash", "leashes"],
+  ["sweater", "sweaters", "cardigan", "cardigans", "jumper", "jumpers"], ["towel", "towels"],
+  ["cutting board", "cutting boards", "charcuterie board", "charcuterie boards"], ["phone case", "phone cases"],
+  ["pin", "pins"], ["patch", "patches"], ["bookmark", "bookmarks"], ["tumbler", "tumblers"],
+  ["apron", "aprons"], ["brooch", "brooches"], ["quilt", "quilts"], ["basket", "baskets"],
+  ["lamp", "lamps"], ["clock", "clocks"], ["bowl", "bowls"], ["plate", "plates"],
   ["hat", "hats", "beanie", "beanies"], ["scarf", "scarves"], ["shoe", "shoes"],
   ["invitation", "invitations", "invite", "invites"], ["card", "cards"],
   ["notebook", "notebooks", "journal", "journals"], ["charm", "charms"],
@@ -1013,12 +1098,24 @@ function peerKind(listing: PeerListing): string | null {
 export function comparablePeers<T extends PeerListing & { id?: number }>(listing: PeerListing, top: T[]): T[] {
   const kind = peerKind(listing);
   const ownId = listing.etsy_listing_id ?? listing.listingId;
-  return kind === null ? [] : top.filter(peer => (ownId === undefined || (peer.id ?? peer.listingId) !== ownId) && peerKind(peer) === kind);
+  const notSelf = (peer: T) => ownId === undefined || (peer.id ?? peer.listingId) !== ownId;
+  if (kind !== null) return top.filter(peer => notSelf(peer) && peerKind(peer) === kind);
+  // Type not recognized: a peer must share 2+ product words (not status or
+  // generic words), so "tea set" is not a peer for "linen tea towel".
+  const own = distinctiveWords(listing.title ?? "", listing.tags);
+  if (own.size < 2) return [];
+  return top.filter(peer => {
+    if (!notSelf(peer)) return false;
+    const words = distinctiveWords(peer.title ?? "", peer.tags ?? []);
+    let shared = 0;
+    for (const w of words) if (own.has(w)) shared += 1;
+    return shared >= 2;
+  });
 }
 
 export function comparableKeywordSnapshots(listing: PeerListing, snapshots: KeywordSnapshot[]): KeywordSnapshot[] {
   return snapshots.flatMap(k => {
-    if (keywordIsRelevant(listing, k.keyword, k.top) !== true) return [];
+    if (keywordIsRelevant(listing, k.keyword, k.top) === false) return [];
     const top = comparablePeers(listing, k.top);
     return top.length >= 3 ? [{ ...k, top }] : [];
   });
@@ -1027,14 +1124,17 @@ export function comparableKeywordSnapshots(listing: PeerListing, snapshots: Keyw
 export function keywordIsRelevant(
   listing: { title: string | null; tags: string[] },
   keyword: string,
-  top: { title: string | null; tags: string[] }[]
-): boolean | null {
+  // Kept for call compatibility; relevance is decided by the keyword alone.
+  _top?: { title: string | null; tags: string[] }[]
+): boolean {
+  void _top;
   const own = distinctiveWords(listing.title ?? "", listing.tags);
   const queryKind = peerKind({ title: keyword, tags: [] });
-  if (!kwWords(keyword).some((w) => own.has(w)) && !(queryKind && queryKind === peerKind(listing))) return false;
-  const sample = top.slice(0, 25);
-  if (sample.length < 3 || peerKind(listing) === null) return null;
-  return comparablePeers(listing, sample).length >= 3;
+  const listingKind = peerKind(listing);
+  // Describes the product when one of its real words is in the listing, or it
+  // names the same recognized product type ("pillow" for "Wool cushions").
+  // Pure status or generic phrases ("pre-order", "gift for her") never do.
+  return kwWords(keyword).some((w) => own.has(w)) || (queryKind !== null && listingKind !== null && queryKind.split(":")[1] === listingKind.split(":")[1]);
 }
 
 export function normalizeKeywords(raw: unknown): string[] | null {

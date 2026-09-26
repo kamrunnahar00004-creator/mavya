@@ -165,7 +165,7 @@ describe("evaluateAllTests", () => {
     expect(early.liftHigh).toBeNull();
     // Window over: matched by the market, so no clear change.
     const [done] = evaluateAllTests(events, series, buildMarketSeries(kws), addDays(START, 24));
-    expect(done.verdict).toBe("observed");
+    expect(done.verdict).toBe("no_clear_change");
   });
 
   it("marks a test interrupted when another change lands too soon", () => {
@@ -378,7 +378,7 @@ describe("tests keep their original keyword controls", () => {
     const history = original.filter((_, d) => d < 26).concat(original.filter((_, d) => d >= 26).map((k) => ({ ...k, revision: "new", top: k.top.map((t) => ({ ...t, views: 999999 })) })));
     const before = evaluateAllTests(detectChanges(snapshots), buildDailySeries(snapshots), [], addDays(START, 30), original, "original")[0];
     const after = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), history, "new")[0];
-    expect(before.verdict).toBe("observed");
+    expect(before.verdict).toBe("better");
     expect(after.verdict).toBe(before.verdict);
     expect(after.lift).toBe(before.lift);
     expect(after.before).toEqual(before.before);
@@ -463,7 +463,7 @@ describe("coach review regressions", () => {
     expect(t.lift).toBeNull();
   });
   it("retains results for a fixed, observed comparison cohort", () => {
-    expect(evaluateAllTests([event], series, market, addDays(START, 30), keywords)[0].verdict).toBe("observed");
+    expect(evaluateAllTests([event], series, market, addDays(START, 30), keywords)[0].verdict).toBe("no_clear_change");
   });
   it("does not average the market over missing days", () => {
     expect(buildMarketSeries([kw(0, 1, 100), kw(3, 1, 400)])).toEqual([]);
