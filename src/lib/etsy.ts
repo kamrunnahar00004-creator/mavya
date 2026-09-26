@@ -294,6 +294,75 @@ export async function fetchShopByName(name: string, deadlineAt = Date.now() + 20
   return null;
 }
 
+/** Public shop numbers Etsy shows on any shop page (research, 2026-09-26). */
+export type EtsyShopPublic = {
+  shopId: number;
+  shopName: string;
+  title: string | null;
+  iconUrl: string | null;
+  country: string | null;
+  /** Lifetime sales, as Etsy counts them on the shop page. */
+  soldCount: number | null;
+  reviewCount: number | null;
+  reviewAverage: number | null;
+  favorers: number | null;
+  activeListings: number | null;
+  /** Unix seconds the shop opened. */
+  createdAt: number | null;
+  url: string | null;
+};
+
+/** Normalize one raw Etsy shop object. Exported for tests. */
+export function normalizeShop(raw: unknown): EtsyShopPublic | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const shopId = num(r.shop_id);
+  const shopName = str(r.shop_name);
+  if (!shopId || !shopName) return null;
+  const icon = str(r.icon_url_fullxfull);
+  return {
+    shopId,
+    shopName,
+    title: str(r.title) ? decodeEntities(str(r.title) as string) : null,
+    iconUrl: icon && icon.startsWith("https://i.etsystatic.com/") ? icon : null,
+    country: str(r.shop_location_country_iso),
+    soldCount: num(r.transaction_sold_count),
+    reviewCount: num(r.review_count),
+    reviewAverage: num(r.review_average),
+    favorers: num(r.num_favorers),
+    activeListings: num(r.listing_active_count),
+    createdAt: num(r.create_date) ?? num(r.created_timestamp),
+    url: str(r.url),
+  };
+}
+
+/** Fuzzy shop-name search (Etsy findShops): up to 25 shops plus Etsy's total match count. One call. */
+export async function searchShops(name: string, limit = 25, deadlineAt = Date.now() + 20_000): Promise<{ count: number; results: EtsyShopPublic[] }> {
+  const body = await etsyGet("/shops", { shop_name: name, limit: Math.min(Math.max(limit, 1), 100) }, deadlineAt);
+  const results = (body as { results?: unknown })?.results;
+  if (!Array.isArray(results)) throw new EtsyApiError("Unexpected Etsy response", 200, "bad_response");
+  return {
+    count: num((body as { count?: unknown })?.count) ?? results.length,
+    results: results.map(normalizeShop).filter((s): s is EtsyShopPublic => s !== null),
+  };
+}
+
+/** One shop's public numbers by id. One call. */
+export async function fetchShopPublic(shopId: number, deadlineAt = Date.now() + 20_000): Promise<EtsyShopPublic | null> {
+  const shop = normalizeShop(await etsyGet(`/shops/${shopId}`, {}, deadlineAt));
+  if (!shop) throw new EtsyApiError("Unexpected Etsy response", 200, "bad_response");
+  return shop;
+}
+
+/**
+ * A shop's newest active listings (one page, up to 100) with views and
+ * favorites, without images. One call. Research uses it to show a shop's
+ * most viewed recent listings without reading the whole shop.
+ */
+export async function fetchShopListingsPage(shopId: number, limit = 100, deadlineAt = Date.now() + 20_000): Promise<EtsyListing[]> {
+  return resultsOf(await etsyGet(`/shops/${shopId}/listings/active`, { limit: Math.min(Math.max(limit, 1), 100) }, deadlineAt));
+}
+
 /**
  * All active listings of a shop (public), up to `max`, most viewed first when
  * the shop is larger than `max`. One call per 100 listings, then one batch

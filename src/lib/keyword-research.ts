@@ -12,6 +12,9 @@ import type { EtsyListing } from "@/lib/etsy";
 export type ResearchListing = {
   rank: number;
   listingId: number;
+  shopId: number | null;
+  /** Unix seconds (original creation). */
+  createdAt: number | null;
   title: string;
   url: string | null;
   image: string | null;
@@ -77,6 +80,8 @@ export function summarizeResearch(
     return {
       rank: i + 1,
       listingId: r.listingId,
+      shopId: d?.shopId ?? r.shopId ?? null,
+      createdAt: typeof createdAt === "number" && createdAt > 0 ? createdAt : null,
       title: d?.title || r.title,
       url: d?.url ?? r.url,
       image: image && image.includes("/il_570xN.") ? image.replace("/il_570xN.", "/il_170x135.") : image,

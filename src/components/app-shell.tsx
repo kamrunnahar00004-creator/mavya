@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, type ReactNode } from "react";
-import { CreditCard, LayoutDashboard, List, LogOut, MessageSquare, Search } from "lucide-react";
+import { Bookmark, CreditCard, LayoutDashboard, List, LogOut, MessageSquare, Package, Search, Store } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { AppHeader } from "@/components/app-header";
@@ -28,7 +28,10 @@ const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: "Research",
     items: [
-      { href: "/dashboard/keywords", label: "Keyword research", Icon: Search, match: (p) => p.startsWith("/dashboard/keywords") },
+      { href: "/dashboard/research/keywords", label: "Keywords", Icon: Search, match: (p) => p.startsWith("/dashboard/research/keywords") || p.startsWith("/dashboard/keywords") },
+      { href: "/dashboard/research/products", label: "Products", Icon: Package, match: (p) => p.startsWith("/dashboard/research/products") },
+      { href: "/dashboard/research/shops", label: "Shops", Icon: Store, match: (p) => p.startsWith("/dashboard/research/shops") },
+      { href: "/dashboard/research/saved", label: "Saved", Icon: Bookmark, match: (p) => p.startsWith("/dashboard/research/saved") },
     ],
   },
   {

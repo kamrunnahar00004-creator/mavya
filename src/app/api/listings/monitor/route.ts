@@ -6,6 +6,7 @@ import { timingSafeEqualString } from "@/lib/secret-compare";
 import { isEtsyConfigured } from "@/lib/etsy";
 import { runListingMonitor, todayUtc, type MonitorRow } from "@/lib/listing-monitor";
 import { runShopMonitor, type ShopMonitorRow } from "@/lib/shop-monitor";
+import { runSavedShopChecks } from "@/lib/research-cron";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -144,8 +145,21 @@ async function handle(req: NextRequest) {
     }
   }
 
-  logEvent("listing_monitor.run", { ...totals, shops });
-  return NextResponse.json({ ok: true, ...totals, shops });
+  // Saved research shops: one call each, after the sellers' own shops.
+  let savedShops = { due: 0, checked: 0, errors: 0 };
+  if (Date.now() - started < TIME_BUDGET_MS - 10_000) {
+    try {
+      savedShops = await runSavedShopChecks(admin, today, started + TIME_BUDGET_MS, async (userId) => {
+        if (!activeByUser.has(userId)) activeByUser.set(userId, (await getEntitlement(userId)).active);
+        return activeByUser.get(userId) as boolean;
+      });
+    } catch {
+      savedShops.errors += 1;
+    }
+  }
+
+  logEvent("listing_monitor.run", { ...totals, shops, savedShops });
+  return NextResponse.json({ ok: true, ...totals, shops, savedShops });
 }
 
 export const GET = handle;
