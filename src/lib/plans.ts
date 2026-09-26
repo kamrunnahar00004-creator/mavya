@@ -92,8 +92,8 @@ export const ALLOWED_LISTING_LIMITS: readonly number[] = Object.freeze([100, 300
  * Free Shop check (founder decision 2026-09-26, replaces "nothing is free" for
  * this one thing): a signed-in seller without a plan can check their shop once
  * every 7 days. Public Etsy data only, no AI, no daily tracking, no keywords.
- * Free checks draw from their own Etsy budget so a busy day can never starve
- * paying customers; the app-wide daily cap still applies on top.
+ * Free calls consume at most 1,000 of the shared 4,500 rolling daily calls,
+ * reserving 3,500 for paid traffic. Per-second capacity remains shared.
  */
 export const FREE_SHOP_LISTINGS = 100;
 export const FREE_CHECK_EVERY_DAYS = 7;
@@ -101,8 +101,6 @@ export const FREE_CHECK_EVERY_DAYS = 7;
 export const FREE_ETSY_CALLS_PER_DAY = 1000;
 /** Free checks read at most this many shop pages (100 listings each). */
 export const FREE_MAX_PAGES = 5;
-/** Calls reserved per free check: shop lookup + up to 5 pages + 1 detail batch. */
-export const FREE_CHECK_CALLS = 1 + FREE_MAX_PAGES + 1;
 
 /** Tracked search keywords across all listings (each costs 1 Etsy call a day). */
 export function keywordLimitFor(activeListingLimit: number | null): number {

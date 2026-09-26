@@ -688,6 +688,7 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
             depth={k.depth}
             top={k.top.slice(0, 5)}
           />
+          {k.top.length === 0 && <p className="mt-2 text-[13px] text-[var(--color-ink-muted)]">Not enough comparable listings to show a peer comparison.</p>}
         </>
       )}
     </section>
@@ -883,6 +884,7 @@ function RankingTable({ keyword, you, depth, top }: { keyword: string; you: TopE
 // ---------------------------------------------------------------------------
 
 const VERDICT: Record<TestVerdict, { label: string; cls: string }> = {
+  observed: { label: "Observed", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   better: { label: "Better", cls: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" },
   worse: { label: "Worse", cls: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]" },
   no_clear_change: { label: "No clear change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
@@ -958,6 +960,8 @@ function changeSentence(t: AnalyticsViewModel["tests"][number]): string {
   const withRank = (x: string) => (rank ? `${x} ${rank}.` : x);
   const views = `${fmt(t.beforeViewsPerDay)} → ${fmt(t.afterViewsPerDay)} views a day`;
   switch (t.verdict) {
+    case "observed":
+      return withRank(`${views}. Descriptive comparison: ${pct(t.lift ?? 1)} relative to comparable top listings. This does not establish an effect of the edit.${t.wasFalling ? " Views were falling beforehand; a rebound may be unrelated to the edit." : ""}`);
     case "running":
       return withRank(`Day ${t.daysAfter} of 14${rangeText(t) ? `, ${rangeText(t)} so far` : ""}.`);
     case "interrupted":

@@ -12,8 +12,6 @@
 import {
   addDays,
   wasFallingBefore,
-  liftRange,
-  liftVerdict,
   buildDailySeries,
   detectChanges,
   windowStats,
@@ -135,12 +133,12 @@ export type ShopChangeResult = {
   afterPerDay: number | null;
   shopChange: number | null;
   lift: number | null;
-  /** Likely range of the lift (count noise); null until measured. */
+  /** Reserved for a future calibrated interval; currently always null. */
   liftLow: number | null;
   liftHigh: number | null;
   /** Already falling before the change: a rise may partly be a natural bounce. */
   wasFalling: boolean;
-  verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
+  verdict: "observed" | "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
 };
 
 export type ShopTopListing = { listingId: number; title: string; mainImageUrl: string | null; views: number; favorites: number | null };
@@ -182,7 +180,7 @@ const ISSUE_FACTOR: Record<ShopIssue["kind"], number> = { tags: 1.0 * 1.2, title
 const TRAFFIC_CAP = 3000;
 /** Views needed in a week before a rise or fall is called (noise floor). */
 export const MIN_TREND_VIEWS = 20;
-const CHANGE_WINDOW = 7;
+const CHANGE_WINDOW = 14;
 const MIN_AFTER_DAYS = 7;
 
 const med = (v: number[]) => {
@@ -323,7 +321,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     const liveDays = createdAtDay ? Math.max(1, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${createdAtDay}T00:00:00Z`)) / 86_400_000)) : null;
     // Day 1 (no daily data): 30 days at the listing's average views/day since
     // it went live; without a creation date, all-time views / 30 as before.
-    const monthViews = last30.views || ((w.latest.views ?? 0) / (liveDays ? liveDays / 30 : 30));
+    const monthViews = last30.days > 0 ? last30.views / last30.days * 30 : ((w.latest.views ?? 0) / (liveDays ? liveDays / 30 : 30));
     // Capped so a very popular listing cannot win on traffic alone.
     const importance = 1 + Math.sqrt(Math.min(TRAFFIC_CAP, Math.max(0, monthViews)));
     const score = (statusWeight + issueWeight) * importance;
@@ -395,7 +393,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     });
 
   const changes = shopChanges(work, today);
-  const measured = changes.filter((c) => c.verdict === "better" || c.verdict === "worse" || c.verdict === "no_change");
+  const measured = changes.filter((c) => c.verdict === "observed");
 
   // Day-1 numbers: Etsy's all-time counters on each listing's latest check.
   let totalViews = 0;
@@ -443,7 +441,7 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
         count: thin.length,
         none: thin.filter((l) => l.tagsUsed === 0).length,
         total: listings.length,
-        start: thin.filter((l) => !l.protected)
+        start: thin.filter((l) => !l.protected && !((hiddenUntil[String(l.listingId)] ?? "") >= today))
           .sort((a, b) => (b.totalViews ?? 0) - (a.totalViews ?? 0))
           .slice(0, 5)
           .map((l) => ({ listingId: l.listingId, title: l.title, mainImageUrl: l.mainImageUrl })),
@@ -496,7 +494,7 @@ function shopChanges(
       results.push({ ...base, verdict: "not_enough_data" });
       continue;
     }
-    if (after.days < MIN_AFTER_DAYS) {
+    if (today < aTo || after.days < MIN_AFTER_DAYS) {
       results.push({ ...base, verdict: aTo >= today ? "measuring" : "not_enough_data" });
       continue;
     }
@@ -524,9 +522,8 @@ function shopChanges(
       continue;
     }
     const lift = (after.viewsPerDay ?? 0) / before.viewsPerDay / shopChange;
-    const range = liftRange(lift, after.views, before.views);
-    const call = liftVerdict(lift, range);
-    results.push({ ...base, shopChange, lift, liftLow: range.low, liftHigh: range.high, verdict: call === "no_clear_change" ? "no_change" : call });
+    // A descriptive ratio is not a calibrated estimate of the edit's effect.
+    results.push({ ...base, shopChange, lift, verdict: "observed" });
   }
   return results.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
 }

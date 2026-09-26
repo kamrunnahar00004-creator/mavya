@@ -1,4 +1,5 @@
 import { Redis } from "@upstash/redis";
+import { randomUUID } from "node:crypto";
 
 export type RateLimitResult = {
   ok: boolean;
@@ -30,6 +31,59 @@ function getRedis(): Redis {
   if (redis) return redis;
   redis = Redis.fromEnv();
   return redis;
+}
+
+/** Actual-request rolling budgets, atomically charged across all applicable limits. */
+export async function rollingRateLimitMany(entries: readonly WeightedRateLimitEntry[], windowMs: number): Promise<RateLimitResult> {
+  if (rateLimitDisabled()) return { ok: true };
+  if (durableRateLimitConfigured()) {
+    try {
+      const result = await getRedis().eval(`
+local clock = redis.call('TIME')
+local now = tonumber(clock[1]) * 1000 + math.floor(tonumber(clock[2]) / 1000)
+local window = tonumber(ARGV[1])
+for i, key in ipairs(KEYS) do
+  redis.call('ZREMRANGEBYSCORE', key, '-inf', now - window)
+  if redis.call('ZCARD', key) >= tonumber(ARGV[i + 2]) then return 0 end
+end
+for i, key in ipairs(KEYS) do
+  redis.call('ZADD', key, now, ARGV[2])
+  redis.call('PEXPIRE', key, window)
+end
+return 1`, entries.map(e => `rolling:{etsy}:${e.key}`), [windowMs, randomUUID(), ...entries.map(e => e.max)]);
+      return Number(result) === 1 ? { ok: true } : { ok: false, reason: "limited" };
+    } catch {
+      return { ok: false, reason: "store_error" };
+    }
+  }
+  if (requiresDurableRateLimit()) return { ok: false, reason: "missing_durable_store" };
+  const now = Date.now();
+  const active = entries.map(e => ({ ...e, hits: (buckets.get(`rolling:${e.key}`) ?? []).filter(t => now - t < windowMs) }));
+  if (active.some(e => e.hits.length >= e.max)) return { ok: false, reason: "limited" };
+  for (const e of active) buckets.set(`rolling:${e.key}`, [...e.hits, now]);
+  return { ok: true };
+}
+
+const leases = new Map<string, { token: string; until: number }>();
+
+/** Fail closed in production; only the current owner can release a lease. */
+export async function acquireLease(key: string, ttlMs: number): Promise<(() => Promise<void>) | null> {
+  const token = randomUUID();
+  const redisKey = `lease:${key}`;
+  if (durableRateLimitConfigured()) {
+    try {
+      if (!await getRedis().set(redisKey, token, { nx: true, px: ttlMs })) return null;
+    } catch { return null; }
+    return async () => {
+      try {
+        await getRedis().eval("if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end return 0", [redisKey], [token]);
+      } catch { /* Expiry releases the lease if Redis is temporarily unavailable. */ }
+    };
+  }
+  if (requiresDurableRateLimit()) return null;
+  if ((leases.get(key)?.until ?? 0) > Date.now()) return null;
+  leases.set(key, { token, until: Date.now() + ttlMs });
+  return async () => { if (leases.get(key)?.token === token) leases.delete(key); };
 }
 
 async function redisRateLimit(

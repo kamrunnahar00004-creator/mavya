@@ -55,8 +55,6 @@ export const TEST_WINDOW_DAYS = 14;
 export const MIN_AFTER_DAYS = 7;
 export const MIN_AFTER_VIEWS = 20;
 export const MIN_SERIES_DAYS = 5;
-export const BETTER_LIFT = 1.15;
-export const WORSE_LIFT = 0.87;
 export const ETSY_TAG_MAX = 20;
 export const ETSY_TAG_SLOTS = 13;
 /** Seller photo must out-score the top listings' median by this much before Mavya stops pointing at the photo. */
@@ -284,26 +282,6 @@ export function recentWinnerFavoriteRate(snapshots: KeywordSnapshot[], series: D
 // ---------------------------------------------------------------------------
 
 /**
- * Likely range for a before/after lift. Daily views are counts, so the noise
- * in each window is about sqrt(views) (Poisson). Relative noise of the ratio
- * combines both windows: sqrt(1/after + 1/before). The range is the lift
- * times exp(+-2 x that), roughly a 95% band. With 20 views after and 30 before
- * the band is about -48% to +90%: most small-listing tests honestly read "too
- * close to call", which is the point.
- */
-export function liftRange(lift: number, afterViews: number, beforeViews: number): { low: number; high: number } {
-  const rel = Math.sqrt(1 / Math.max(1, afterViews) + 1 / Math.max(1, beforeViews));
-  return { low: lift * Math.exp(-2 * rel), high: lift * Math.exp(2 * rel) };
-}
-
-/** Better/Worse only when the whole likely range is past 1x and the lift is meaningful. */
-export function liftVerdict(lift: number, range: { low: number; high: number }): "better" | "worse" | "no_clear_change" {
-  if (range.low > 1 && lift >= BETTER_LIFT) return "better";
-  if (range.high < 1 && lift <= WORSE_LIFT) return "worse";
-  return "no_clear_change";
-}
-
-/**
  * Was the listing already sliding before the change? Before-window views/day at
  * or under 60% of the 4 weeks before it. A listing picked for a fix because it
  * had a bad stretch often recovers on its own, so a later "better" partly
@@ -365,7 +343,7 @@ export function detectChanges(snapshots: ListingSnapshot[]): ChangeEvent[] {
   return events;
 }
 
-export type TestVerdict = "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline" | "insufficient_data";
+export type TestVerdict = "observed" | "running" | "better" | "worse" | "no_clear_change" | "interrupted" | "no_baseline" | "insufficient_data";
 
 export type TestResult = {
   interruptionReason?: "keywords_changed";
@@ -380,7 +358,7 @@ export type TestResult = {
   marketChange: number | null;
   /** listingChange divided by marketChange; null without a usable control. */
   lift: number | null;
-  /** Likely range of the lift given count noise (see liftRange). */
+  /** Reserved for a future calibrated interval; currently always null. */
   liftLow: number | null;
   liftHigh: number | null;
   /** Search position before vs after, per keyword present on both sides. */
@@ -444,13 +422,9 @@ export function evaluateTest(
   const lift = listingChange !== null && marketChange !== null && marketChange > 0 ? listingChange / marketChange : null;
 
   if (lift === null) return { ...base, verdict: "insufficient_data", listingChange, marketChange, lift };
-  const range = liftRange(lift, after.views, before.views);
-  // A clear result can land early; "too close to call" waits for the window.
-  const call = liftVerdict(lift, range);
-  // Flat with a tight range (inside +-15%) is a clear "no change" already.
-  const settledFlat = range.low > WORSE_LIFT && range.high < BETTER_LIFT;
-  const verdict: TestVerdict = call === "no_clear_change" && !ended && !interrupted && !settledFlat ? "running" : call;
-  return { ...base, verdict, listingChange, marketChange, lift, liftLow: range.low, liftHigh: range.high };
+  // Control uncertainty is not calibrated. Report observations, not significance.
+  const verdict: TestVerdict = interrupted ? "interrupted" : ended ? "observed" : "running";
+  return { ...base, verdict, listingChange, marketChange, lift };
 }
 
 export function evaluateAllTests(
@@ -759,24 +733,22 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
       state: "testing",
       fixTarget: null,
       headline: "Give your change time to work",
-      detail: `You changed ${describeKinds(running.event.kinds)}. Leave the listing as is for about a week so Mavya can measure it.`,
+      detail: `You changed ${describeKinds(running.event.kinds)}. Leave the listing as is for 14 days so Mavya can compare the observations.`,
       evidence,
     };
   }
 
   // Findability does not need a view history: the search position is known day 1.
   if (latestKeywords.length > 0 && (best === null || best > PAGE_ONE_SIZE)) {
-    // A listing that is not on page one yet still gets real traffic is being
-    // found some other way (social, links, repeat buyers, Etsy ads). Telling
-    // it "buyers may not be finding this" is wrong; say where it stands.
+    // Selected search positions cannot establish a listing's traffic sources.
     const recent = windowStats(series, addDays(today, -6), today);
     const busy = (recent.days >= 3 && (recent.viewsPerDay ?? 0) >= 3) || (input.totalViews ?? 0) >= 1000;
     if (busy) {
       return {
         state: "improve",
         fixTarget: "title_tags",
-        headline: "Most of your views likely come from outside Etsy search",
-        detail: "This listing gets views but does not show near the top for your keywords. Better title and tags can add search traffic on top.",
+        headline: "Your listing has views, but not a top position for these searches",
+        detail: "We did not find it in the top 48 for your tracked keywords. We cannot tell where those views came from.",
         evidence,
       };
     }
@@ -989,23 +961,80 @@ export function suggestKeywords(title: string, tags: string[]): string[] {
 }
 
 /**
- * Does a tracked keyword actually find listings like this one? True when at
- * least 3 of the top 25 results share a word that describes this listing, and
- * the keyword itself contains such a word. False = Etsy shows unrelated
- * listings for it, so its rank, "top listings", and comparisons are
- * meaningless. Null = no search results yet (unknown).
+ * Query relevance and peer comparability are separate. Require three peers
+ * with matching recognized product kinds; unknown kinds stay unclassified.
+ * Callers must filter individual peers too, not merely pass the query gate.
  */
+type PeerListing = { title: string | null; tags: string[]; etsy_listing_id?: number; listingId?: number };
+
+// Conservative, explicit product nouns. Unknown types are not evidence of peers.
+const PRODUCT_TYPES = [
+  ["candle holder", "candle holders", "candlestick", "candlesticks"],
+  ["candle mold", "candle molds", "candle mould", "candle moulds"],
+  ["earring", "earrings", "stud", "studs"], ["necklace", "necklaces"],
+  ["bracelet", "bracelets"], ["ring", "rings"], ["keychain", "keychains", "keyring", "keyrings"],
+  ["candle", "candles"], ["mug", "mugs"], ["coaster", "coasters"],
+  ["shirt", "shirts", "tshirt", "tshirts", "t-shirt", "t-shirts", "tee", "tees"],
+  ["sweatshirt", "sweatshirts", "hoodie", "hoodies"], ["dress", "dresses"],
+  ["bag", "bags", "tote", "totes"], ["wallet", "wallets"],
+  ["poster", "posters", "print", "prints"], ["frame", "frames"], ["painting", "paintings"],
+  ["sticker", "stickers", "decal", "decals"], ["label", "labels"],
+  ["yarn", "yarns"], ["fabric", "fabrics"], ["pattern", "patterns"],
+  ["template", "templates"], ["soap", "soaps"], ["vase", "vases"],
+  ["pillow", "pillows", "cushion", "cushions"], ["blanket", "blankets", "throw", "throws"],
+  ["table", "tables"], ["chair", "chairs"], ["rug", "rugs"],
+  ["ornament", "ornaments"], ["wreath", "wreaths"], ["toy", "toys", "plush", "plushie", "plushies"],
+  ["hat", "hats", "beanie", "beanies"], ["scarf", "scarves"], ["shoe", "shoes"],
+  ["invitation", "invitations", "invite", "invites"], ["card", "cards"],
+  ["notebook", "notebooks", "journal", "journals"], ["charm", "charms"],
+];
+
+function peerKind(listing: PeerListing): string | null {
+  let text = ` ${(listing.title ?? "").toLowerCase().replace(/[^a-z0-9-]+/g, " ")} `;
+  const forms = ["cover", "case", "wrap", "holder", "mold", "mould", "kit", "supply", "supplies", "blank", "refill"]
+    .filter(word => new RegExp(`\\b${word}s?\\b`).test(text))
+    .map(word => word === "mould" ? "mold" : word === "supplies" ? "supply" : word);
+  const kinds: number[] = [];
+  PRODUCT_TYPES.forEach((aliases, index) => {
+    let found = false;
+    for (const alias of aliases) {
+      if (text.includes(` ${alias} `)) {
+        found = true;
+        text = text.replaceAll(` ${alias} `, " ");
+      }
+    }
+    if (found) kinds.push(index);
+  });
+  if (!kinds.length) return null;
+  const digital = /\b(digital|download|pdf|svg|png|printable)\b/i.test([listing.title, ...listing.tags].join(" "));
+  return `${digital ? "digital" : "physical"}:${kinds.join(",")}:${[...new Set(forms)].sort().join(",")}`;
+}
+
+export function comparablePeers<T extends PeerListing & { id?: number }>(listing: PeerListing, top: T[]): T[] {
+  const kind = peerKind(listing);
+  const ownId = listing.etsy_listing_id ?? listing.listingId;
+  return kind === null ? [] : top.filter(peer => (ownId === undefined || (peer.id ?? peer.listingId) !== ownId) && peerKind(peer) === kind);
+}
+
+export function comparableKeywordSnapshots(listing: PeerListing, snapshots: KeywordSnapshot[]): KeywordSnapshot[] {
+  return snapshots.flatMap(k => {
+    if (keywordIsRelevant(listing, k.keyword, k.top) !== true) return [];
+    const top = comparablePeers(listing, k.top);
+    return top.length >= 3 ? [{ ...k, top }] : [];
+  });
+}
+
 export function keywordIsRelevant(
   listing: { title: string | null; tags: string[] },
   keyword: string,
   top: { title: string | null; tags: string[] }[]
 ): boolean | null {
   const own = distinctiveWords(listing.title ?? "", listing.tags);
-  if (!kwWords(keyword).some((w) => own.has(w))) return false;
+  const queryKind = peerKind({ title: keyword, tags: [] });
+  if (!kwWords(keyword).some((w) => own.has(w)) && !(queryKind && queryKind === peerKind(listing))) return false;
   const sample = top.slice(0, 25);
-  if (sample.length === 0) return null;
-  const sharing = sample.filter((t) => [t.title ?? "", ...(t.tags ?? [])].some((x) => kwWords(x).some((w) => own.has(w)))).length;
-  return sharing >= Math.min(3, sample.length);
+  if (sample.length < 3 || peerKind(listing) === null) return null;
+  return comparablePeers(listing, sample).length >= 3;
 }
 
 export function normalizeKeywords(raw: unknown): string[] | null {

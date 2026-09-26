@@ -1,17 +1,44 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const limit = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/rate-limit", () => ({ weightedRateLimit: limit }));
-import { fetchEtsyImage, fetchListingsBatch, normalizeListing, searchActiveListings } from "@/lib/etsy";
+const daily = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/rate-limit", () => ({ weightedRateLimit: limit, rollingRateLimitMany: daily }));
+import { fetchEtsyImage, fetchListingsBatch, normalizeListing, searchActiveListings, withEtsyRequestTier } from "@/lib/etsy";
 
 beforeEach(() => {
   vi.stubEnv("ETSY_API_KEYSTRING", "test");
   vi.stubEnv("ETSY_SHARED_SECRET", "test");
   limit.mockReset().mockResolvedValue({ ok: true });
+  daily.mockReset().mockResolvedValue({ ok: true });
   vi.stubGlobal("fetch", vi.fn());
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 describe("Etsy client safety", () => {
+  it("charges each free provider retry to both actual-request budgets", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 429 })).mockResolvedValueOnce(new Response(JSON.stringify({ results: [] })));
+    await withEtsyRequestTier("free", () => searchActiveListings("soy candle"));
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(daily).toHaveBeenCalledTimes(2);
+    for (const call of daily.mock.calls) expect(call).toEqual([[{ key: "requests:day", max: 4500 }, { key: "free:day", max: 1000 }], 86_400_000]);
+  });
+  it("free context cannot leak into a concurrent paid call", async () => {
+    vi.mocked(fetch).mockImplementation(async () => new Response(JSON.stringify({ results: [] })));
+    await Promise.all([withEtsyRequestTier("free", () => searchActiveListings("soy candle")), searchActiveListings("mug")]);
+    expect(daily.mock.calls.map(c => c[0].length).sort()).toEqual([1, 2]);
+  });
+  it("charges batch fallback requests to the free allowance too", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockImplementation(async () => new Response(JSON.stringify({ results: [] })));
+    await withEtsyRequestTier("free", () => fetchListingsBatch([1, 2]));
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(daily).toHaveBeenCalledTimes(3);
+    expect(daily.mock.calls.every(c => c[0].some((e: { key: string }) => e.key === "free:day"))).toBe(true);
+  });
+  it("a denied daily budget never reaches the provider", async () => {
+    daily.mockResolvedValue({ ok: false });
+    await expect(withEtsyRequestTier("free", () => searchActiveListings("soy candle"))).rejects.toMatchObject({ code: "rate_limited" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
   it("denies provider traffic when the durable shared budget denies it", async () => {
     limit.mockResolvedValue({ ok: false });
     await expect(searchActiveListings("bunny", 100, Date.now() + 400)).rejects.toMatchObject({ code: "rate_limited" });
@@ -26,7 +53,7 @@ describe("Etsy client safety", () => {
   it("never spends daily quota while waiting for a per-second slot", async () => {
     limit.mockImplementation(async (key: string) => ({ ok: key !== "etsy:requests:second" }));
     await expect(searchActiveListings("bunny", 100, Date.now() + 400)).rejects.toMatchObject({ code: "rate_limited" });
-    expect(limit.mock.calls.some((c) => c[0] === "etsy:requests:day")).toBe(false);
+    expect(daily).not.toHaveBeenCalled();
   });
   it("does not launch a request after its caller's deadline", async () => {
     await expect(fetchListingsBatch([123456], Date.now() - 1)).rejects.toMatchObject({ status: 504 });

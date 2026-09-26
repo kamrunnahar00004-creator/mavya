@@ -186,9 +186,9 @@ describe("shop home", () => {
   });
 
   it("compares a change with the rest of the shop over the same days", () => {
-    const change = { day: 30, patch: { title: "New title" } };
+    const change = { day: 20, patch: { title: "New title" } };
     const rows = [
-      ...history(1, (d) => (d > 30 ? 30 : 10), { change }), // tripled after its title change
+      ...history(1, (d) => (d > 20 ? 30 : 10), { change }), // tripled after its title change
       ...history(2, () => 10),
       ...history(3, () => 12),
       ...history(4, () => 8),
@@ -196,16 +196,18 @@ describe("shop home", () => {
     const v = buildShopView(rows, TODAY);
     const c = v.changes.find((x) => x.listingId === 1)!;
     expect(c.kinds).toEqual(["title"]);
-    expect(c.verdict).toBe("better");
-    expect(v.summary).toEqual({ measured: 1, better: 1 });
+    expect(c.verdict).toBe("observed");
+    expect(c.lift).toBeCloseTo(3);
+    expect(v.summary).toEqual({ measured: 1, better: 0 });
   });
 
   it("does not call a shop-wide rise a win", () => {
-    const change = { day: 30, patch: { title: "New title" } };
-    const lift = (d: number) => (d > 30 ? 30 : 10);
+    const change = { day: 20, patch: { title: "New title" } };
+    const lift = (d: number) => (d > 20 ? 30 : 10);
     const rows = [...history(1, lift, { change }), ...history(2, lift), ...history(3, lift), ...history(4, lift)];
     const c = buildShopView(rows, TODAY).changes.find((x) => x.listingId === 1)!;
-    expect(c.verdict).toBe("no_change");
+    expect(c.verdict).toBe("observed");
+    expect(c.lift).toBeCloseTo(1);
   });
 });
 

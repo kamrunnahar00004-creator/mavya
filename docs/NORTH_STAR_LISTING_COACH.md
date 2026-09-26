@@ -4,6 +4,25 @@ Status: ACTIVE NORTH STAR. Founder-approved 2026-09-24.
 Owner: founder. Builder: Claude. Reviewer: Codex.
 When this doc conflicts with older direction docs, this doc wins.
 
+### Verification correction, 2026-09-26
+
+The follow-up fixes supersede older implementation claims about proof and free
+budget isolation below. Completed before/after comparisons are descriptive
+"Observed" results after 14 days, not calibrated Better/Worse verdicts or
+likely-effect intervals. The raw comparisons remain, with causation caveats.
+Reintroducing confidence claims requires a validated method that includes the
+comparison group's uncertainty, not just seller counts.
+
+Free requests, including retries, consume at most 1,000 of the application's
+4,500 rolling-24-hour Etsy calls. This leaves 3,500 daily calls for paid traffic;
+per-second capacity is still shared. Weekly free eligibility is checked under
+a durable scan lease, and failed scans have an explicit retry path.
+
+Peer comparisons now require recognized matching product types and exclude
+individual unrelated results. Unknown product types produce unavailable peer
+comparisons, not invented evidence. This conservative matcher is not a universal
+category classifier. See docs/CLAUDE_FOLLOWUP_FIXES_HANDOFF_2026-09-26.md.
+
 ## 1. Why we are doing this
 
 Every paying customer unsubscribed. The reason was the same each time: they paid

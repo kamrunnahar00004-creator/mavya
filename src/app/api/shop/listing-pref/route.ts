@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSessionUser, createSupabaseServerClient } from "@/lib/supabase/server";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { apiError, logEvent } from "@/lib/errors";
-import { rateLimit } from "@/lib/rate-limit";
+import { rateLimit, acquireLease } from "@/lib/rate-limit";
 import { addDays } from "@/lib/listing-analytics";
 import { todayUtc } from "@/lib/listing-monitor";
 import { DISMISS_DAYS } from "@/lib/shop-analytics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 30;
 
 type Action = "dismiss" | "protect" | "unprotect";
 const ACTIONS: readonly Action[] = ["dismiss", "protect", "unprotect"];
@@ -35,6 +36,16 @@ export async function POST(req: NextRequest) {
   const action = ACTIONS.find((a) => a === body?.action) ?? null;
   if (!listingId || !action) return apiError("bad_request", "Invalid request.");
 
+  const release = await acquireLease(`shop-pref:${user.id}`, 60_000);
+  if (!release) return apiError("rate_limited", "Another preference is being saved or saving is temporarily unavailable. Try again shortly.");
+  try {
+    return await savePreference(user.id, listingId, action);
+  } finally {
+    await release();
+  }
+}
+
+async function savePreference(userId: string, listingId: number, action: Action) {
   const supabase = await createSupabaseServerClient();
   const { data: shop, error } = await supabase
     .from("shop_monitors")
@@ -55,14 +66,18 @@ export async function POST(req: NextRequest) {
   if (action === "protect") protectedIds.add(listingId);
   if (action === "unprotect") protectedIds.delete(listingId);
 
-  const { error: writeError } = await createSupabaseAdminClient()
+  const { data: saved, error: writeError } = await createSupabaseAdminClient()
     .from("shop_monitors")
     .update({ fix_dismissed: dismissed, protected_listing_ids: [...protectedIds], updated_at: new Date().toISOString() })
-    .eq("user_id", user.id)
-    .eq("etsy_shop_id", shop.etsy_shop_id);
+    .eq("user_id", userId)
+    .eq("etsy_shop_id", shop.etsy_shop_id)
+    .contains("current_listing_ids", [listingId])
+    .select("user_id")
+    .maybeSingle();
   if (writeError) {
-    logEvent("shop.pref_failed", { userId: user.id });
+    logEvent("shop.pref_failed", { userId });
     return apiError("persistence_failed", "Could not save. Try again.");
   }
-  return NextResponse.json({ ok: true });
+  if (saved) return NextResponse.json({ ok: true });
+  return apiError("persistence_failed", "Your shop changed while saving. Try again.");
 }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronRight, Lock, Store } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, Lock, Store, RefreshCw } from "lucide-react";
 import { MetricChart, Sparkline } from "@/components/dashboard/metric-chart";
 import { cn } from "@/lib/utils";
 import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-analytics";
@@ -80,8 +80,10 @@ function useOpenListing(opened: Record<number, string>) {
 function useListingPref() {
   const router = useRouter();
   const [pending, setPending] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
   async function setPref(listingId: number, action: "dismiss" | "protect" | "unprotect") {
     setPending(listingId);
+    setError(null);
     try {
       const res = await fetch("/api/shop/listing-pref", {
         method: "POST",
@@ -89,11 +91,40 @@ function useListingPref() {
         body: JSON.stringify({ listingId, action }),
       });
       if (res.ok) router.refresh();
+      else {
+        const body = await res.json().catch(() => ({}));
+        setError(body.error ?? "Could not save your preference. Try again.");
+      }
+    } catch {
+      setError("Could not save your preference. Check your connection and try again.");
     } finally {
       setPending(null);
     }
   }
-  return { setPref, pending };
+  return { setPref, pending, error };
+}
+
+function RefreshShop({ name }: { name: string }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function refresh() {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/shop/connect", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shop: name }) });
+      const body = await res.json();
+      if (!res.ok) setError(body.error ?? "Check failed. Try again shortly.");
+      else router.refresh();
+    } catch { setError("Check failed. Check your connection and try again."); }
+    finally { setBusy(false); }
+  }
+  return <div>
+    <button type="button" className={btnQuiet} disabled={busy} onClick={() => void refresh()}>
+      <RefreshCw className="h-4 w-4" aria-hidden="true" />{busy ? "Checking..." : "Check shop again"}
+    </button>
+    {error && <p role="alert" className="mt-2 text-[14px] text-[var(--color-weak)]">{error}</p>}
+  </div>;
 }
 
 const linkBtn =
@@ -207,7 +238,7 @@ function UpgradeCard({ lastChecked }: { lastChecked: string | null }) {
 export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData | null; canEdit: boolean; free?: boolean }) {
   const [switching, setSwitching] = useState(false);
   const { open, busy, error } = useOpenListing(data?.opened ?? {});
-  const { setPref, pending } = useListingPref();
+  const { setPref, pending, error: prefError } = useListingPref();
   if (!data) {
     return (
       <p className={cn(card, "p-6 text-[15px] text-[var(--color-ink-muted)]")}>
@@ -231,7 +262,7 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
           </p>
           {v && data.shop.activeListings != null && v.listings.length < data.shop.activeListings && (
             <p className="text-[13px] text-[var(--color-ink-muted)]">
-              Tracking your {v.listings.length} most viewed of {data.shop.activeListings} listings.
+              {free ? `Showing ${v.listings.length} listings selected from up to 500 checked items.` : `Tracking your ${v.listings.length} most viewed of ${data.shop.activeListings} listings.`}
             </p>
           )}
         </div>
@@ -240,9 +271,12 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
         </button>
       </header>
 
+      {prefError && <p role="alert" className="text-[14px] text-[var(--color-weak)]">{prefError}</p>}
+      {(free || data.shop.lastError || !v) && (free || canEdit) && <RefreshShop name={data.shop.name} />}
+
       {!v ? (
         <p className={cn(card, "p-6 text-[15px] text-[var(--color-ink-muted)]")}>
-          {data.shop.lastError ? "The last check did not finish. Mavya will retry on the next daily run." : "First shop check pending."}
+          {data.shop.lastError ? "The last check did not finish. Try the shop check again." : "First shop check pending."}
         </p>
       ) : (
         <>
@@ -257,7 +291,7 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
                   : `${v.shopWide.count} of your ${v.shopWide.total} listings use 6 tags or fewer`}
               </h3>
               <p className="mt-0.5 text-[13.5px] text-[var(--color-ink)]">
-                Each listing gets 13 free tags, and each one is another search it can show up in. Start with your most viewed:
+                {v.shopWide.start.length ? "Each listing has 13 tag slots. Start with these listings:" : "No suggestions right now. Your saved preferences are being respected."}
               </p>
               <ol className="mt-2 divide-y divide-[var(--color-border-soft)]">
                 {v.shopWide.start.map((f, i) => (
@@ -487,8 +521,9 @@ function StatusTiles({ v }: { v: View }) {
   );
 }
 
-const VERDICT_LABEL = { better: "Better", worse: "Worse", no_change: "No clear change", measuring: "Measuring", not_enough_data: "Can't measure", interrupted: "Changed again" } as const;
+const VERDICT_LABEL = { observed: "Observed", better: "Better", worse: "Worse", no_change: "No clear change", measuring: "Measuring", not_enough_data: "Can't measure", interrupted: "Changed again" } as const;
 const VERDICT_CLS = {
+  observed: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   interrupted: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   better: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
   worse: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]",
@@ -504,7 +539,7 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
         Your changes
         {v.summary.measured > 0 && (
           <span className="ml-1.5 font-normal text-[var(--color-ink-soft)]">
-            {v.summary.better} of {v.summary.measured} look better
+            {v.summary.measured} comparisons recorded
           </span>
         )}
       </h3>
@@ -516,6 +551,8 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
               <p className="text-[13px] text-[var(--color-ink-muted)]">
                 {c.kinds.map((k) => ({ main_photo: "Main photo", title: "Title", tags: "Tags", description: "Description" })[k]).join(", ")} · {shortDate(c.date)}
                 {c.beforePerDay !== null && c.afterPerDay !== null && ` · ${fmt(c.beforePerDay)} → ${fmt(c.afterPerDay)} views a day`}
+                {c.verdict === "observed" && c.lift !== null && ` · descriptive comparison: ${Math.round((c.lift - 1) * 100)}% relative to the rest of your shop; not an established effect of the edit`}
+                {c.verdict === "observed" && c.wasFalling && ". Views were falling beforehand; a rebound may be unrelated to the edit."}
                 {c.verdict === "better" && c.wasFalling && " · it was falling before, so part of this may be a natural bounce"}
                 {c.verdict === "no_change" && c.liftLow !== null && c.liftHigh !== null &&
                   ` · likely between ${c.liftLow >= 1 ? "+" : ""}${Math.round((c.liftLow - 1) * 100)}% and ${c.liftHigh >= 1 ? "+" : ""}${Math.round((c.liftHigh - 1) * 100)}%`}
@@ -579,7 +616,7 @@ function TrendCell({ l }: { l: Row }) {
 /** Full list of tracked listings: sortable columns and an optional status filter. */
 export function ShopListings({ data, filter, canEdit, free = false }: { data: ShopHomeData; filter: string | null; canEdit: boolean; free?: boolean }) {
   const { open, busy, error } = useOpenListing(data.opened);
-  const { setPref, pending } = useListingPref();
+  const { setPref, pending, error: prefError } = useListingPref();
   const [sort, setSort] = useState<SortKey>("total");
   const v = data.view;
   if (!data.shop || !v) return <ConnectShop canEdit={canEdit || free} free={free} />;
@@ -609,6 +646,7 @@ export function ShopListings({ data, filter, canEdit, free = false }: { data: Sh
       ) : (
         data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />
       )}
+      {prefError && <p role="alert" className="text-[14px] text-[var(--color-weak)]">{prefError}</p>}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <nav aria-label="Filter" className="flex flex-wrap gap-2">

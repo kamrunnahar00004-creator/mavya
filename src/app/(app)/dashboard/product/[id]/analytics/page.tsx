@@ -15,6 +15,7 @@ import {
   diagnose,
   evaluateAllTests,
   keywordIsRelevant,
+  comparableKeywordSnapshots,
   latestByKeyword,
   listingChecks,
   suggestKeywords,
@@ -99,7 +100,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   );
   const irrelevant = new Set([...relevance].filter(([, r]) => r === false).map(([k]) => k));
   const relevantKeywords = keywords.filter((k) => !irrelevant.has(k));
-  const kwSnaps = trackedSnaps.filter((k) => !irrelevant.has(k.keyword));
+  const kwSnaps = latest ? comparableKeywordSnapshots(latest, trackedSnaps.filter((k) => !irrelevant.has(k.keyword))) : [];
 
   const series = buildDailySeries(snaps);
   const market = buildMarketSeries(kwSnaps);
@@ -110,7 +111,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
     series,
     market,
     today,
-    (keywordHistory as KeywordSnapshot[]).filter((k) => !(k.revision === monitor?.revision && irrelevant.has(k.keyword))),
+    latest ? comparableKeywordSnapshots(latest, keywordHistory as KeywordSnapshot[]) : [],
     monitor?.revision
   );
 
@@ -176,7 +177,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
       position: k.position,
       depth: k.depth,
       date: k.snapshot_date,
-      top: k.top.slice(0, 5),
+      top: latestKeywords.find(peer => peer.keyword === k.keyword)?.top.slice(0, 5) ?? [],
       relevant: relevance.get(k.keyword) ?? null,
     })),
     keywordSuggestions: latest ? suggestKeywords(latest.title ?? "", latest.tags).filter((k) => !keywords.includes(k)) : [],

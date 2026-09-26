@@ -8,8 +8,6 @@ import {
   diagnose,
   evaluateAllTests,
   keywordIsRelevant,
-  liftRange,
-  liftVerdict,
   stripStatus,
   suggestKeywords,
   type KeywordSnapshot,
@@ -50,8 +48,9 @@ describe("keyword relevance", () => {
   it("a keyword that returns unrelated listings is not relevant", () => {
     expect(keywordIsRelevant(listing, "pre-order", [t("Chunky yarn preorder"), t("Halloween stocking"), t("Doll eyes 12mm"), t("Fantasy book")])).toBe(false);
   });
-  it("a keyword whose results share product words is relevant", () => {
-    expect(keywordIsRelevant(listing, "roblox arg", [t("Roblox shirt"), t("roblox arg poster"), t("Brandon works charm"), t("Anime pin")])).toBe(true);
+  it("a shared franchise does not make different products comparable", () => {
+    expect(keywordIsRelevant(listing, "roblox arg", [t("Roblox shirt"), t("roblox arg poster"), t("Brandon works charm"), t("Anime pin")])).toBe(false);
+    expect(keywordIsRelevant(listing, "roblox arg", [t("Roblox keychain"), t("roblox arg keyring"), t("Brandon works keychains")])).toBe(true);
   });
   it("unknown until there are search results", () => {
     expect(keywordIsRelevant(listing, "roblox arg", [])).toBeNull();
@@ -63,7 +62,8 @@ describe("findability advice respects real traffic", () => {
   const base = { linked: true, series: [], market: [], tests: [], today: TODAY, ownPhotoScore: null, winnerPhotoScore: null, lastCheckedOn: TODAY };
   it("a busy listing is not told buyers may not be finding it", () => {
     const d = diagnose({ ...base, latestKeywords: [notFound], totalViews: 2940 });
-    expect(d.headline).toBe("Most of your views likely come from outside Etsy search");
+    expect(d.headline).toBe("Your listing has views, but not a top position for these searches");
+    expect(d.detail).toContain("We cannot tell where those views came from");
   });
   it("a quiet listing still gets the findability warning", () => {
     const d = diagnose({ ...base, latestKeywords: [notFound], totalViews: 40 });
@@ -102,13 +102,20 @@ describe("shop trends and patterns", () => {
 });
 
 describe("honest before/after", () => {
-  it("20 views after and 30 before is too close to call, even at +50%", () => {
-    const r = liftRange(1.5, 20, 30);
-    expect(r.low).toBeLessThan(1);
-    expect(liftVerdict(1.5, r)).toBe("no_clear_change");
-  });
-  it("the same +50% on 400 views each side is Better", () => {
-    expect(liftVerdict(1.5, liftRange(1.5, 400, 400))).toBe("better");
+  it.each([2, 40])("never derives effect confidence from seller-only counts (%i views/day)", (rate) => {
+    const snaps: ListingSnapshot[] = Array.from({ length: 25 }, (_, d) => ({
+      snapshot_date: addDays("2026-09-01", d), etsy_listing_id: 1, state: "active",
+      views: 100 + Math.min(d, 10) * rate + Math.max(0, d - 10) * rate * 2,
+      favorites: 5, title: d >= 10 ? "New title" : "Old title", tags: [],
+      description: null, main_image_id: 1, main_image_url: null, image_count: 5,
+    }));
+    const series = buildDailySeries(snaps);
+    const market = series.map(p => ({ date: p.date, winnerViewsPerDay: 10 }));
+    const result = evaluateAllTests(detectChanges(snaps), series, market, addDays("2026-09-01", 24))[0];
+    expect(result.verdict).toBe("observed");
+    expect(result.lift).toBeCloseTo(2);
+    expect(result.liftLow).toBeNull();
+    expect(result.liftHigh).toBeNull();
   });
 
   it("reports search position before vs after a title change", () => {

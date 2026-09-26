@@ -15,12 +15,12 @@ function database(keywords: string[]) {
   const snapshots = Array.from({ length: 31 }, (_, d) => ({
     product_id: "p", listing_revision: "listing", control_revision: d >= 26 ? "current" : "old",
     snapshot_date: addDays("2026-09-01", d), etsy_listing_id: 1, state: "active",
-    views: 100 + Math.min(d, 10) * 10 + Math.max(0, d - 10) * 20, favorites: 10, title: "Listing", tags: [], description: "", main_image_id: d < 10 ? 1 : 2, main_image_url: null, image_count: 5,
+    views: 100 + Math.min(d, 10) * 10 + Math.max(0, d - 10) * 20, favorites: 10, title: "Soy candle old phrase new phrase", tags: [], description: "", main_image_id: d < 10 ? 1 : 2, main_image_url: null, image_count: 5,
   }));
   const keywordRows = snapshots.flatMap((s, d) => d >= 26 && !keywords.length ? [] : [{
     product_id: "p", listing_revision: "listing", revision: d < 26 ? "old" : "current",
     snapshot_date: s.snapshot_date, keyword: d < 26 ? "old phrase" : "new phrase", position: 4, depth: 100,
-    top: [10, 20, 30].map((id) => ({ id, title: "Competitor", tags: [], views: 1000 + d * 10, favorites: 10, imageCount: 5, mainImageId: id, mainImageUrl: null, url: null })),
+    top: [10, 20, 30, 40, 50].map((id) => ({ id, title: id < 40 ? "Soy candle" : "Candle mold", tags: [], views: 1000 + d * 10, favorites: 10, imageCount: 5, mainImageId: id, mainImageUrl: null, url: null })),
   }]);
   const filters: { table: string; key: string; value: unknown }[] = [];
   const tables: Record<string, Record<string, unknown>[]> = {
@@ -59,10 +59,11 @@ describe("analytics page history wiring", () => {
     const vm = (rendered.props as { children: { props: { vm: AnalyticsViewModel } }[] }).children[1].props.vm;
     expect(vm.series).toHaveLength(30);
     expect(vm.tests).toHaveLength(1);
-    expect(vm.tests[0].verdict).toBe("better");
+    expect(vm.tests[0].verdict).toBe("observed");
     expect(vm.tests[0].beforeViewsPerDay).toBe(10);
     expect(vm.tests[0].afterViewsPerDay).toBe(20);
     expect(vm.keywords.map((k) => k.keyword)).toEqual(current);
+    for (const keyword of vm.keywords) expect(keyword.top.map(peer => peer.id)).toEqual([10, 20, 30]);
     expect(db.filters).toContainEqual({ table: "listing_keyword_snapshots", key: "listing_revision", value: "listing" });
     expect(db.filters.some((f) => f.table === "listing_keyword_snapshots" && f.key === "revision")).toBe(false);
   });

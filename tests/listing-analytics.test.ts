@@ -143,10 +143,10 @@ describe("evaluateAllTests", () => {
     expect(t.verdict).toBe("running");
   });
 
-  it("reports better when the listing rises and the market is flat", () => {
+  it("keeps collecting through the fixed horizon even when the listing rises", () => {
     const market = buildMarketSeries(Array.from({ length: 21 }, (_, d) => kw(d, 5, 1000 + d * 50)));
     const [t] = evaluateAllTests(events, series, market, addDays(START, 20));
-    expect(t.verdict).toBe("better");
+    expect(t.verdict).toBe("running");
     expect(t.lift).toBeGreaterThan(1.5);
   });
 
@@ -161,11 +161,11 @@ describe("evaluateAllTests", () => {
     // Day 20: the likely range (about -22% to +28%) is too wide to call yet.
     const [early] = evaluateAllTests(events, series, buildMarketSeries(kws), addDays(START, 20));
     expect(early.verdict).toBe("running");
-    expect(early.liftLow).toBeLessThan(1);
-    expect(early.liftHigh).toBeGreaterThan(1);
+    expect(early.liftLow).toBeNull();
+    expect(early.liftHigh).toBeNull();
     // Window over: matched by the market, so no clear change.
     const [done] = evaluateAllTests(events, series, buildMarketSeries(kws), addDays(START, 24));
-    expect(done.verdict).toBe("no_clear_change");
+    expect(done.verdict).toBe("observed");
   });
 
   it("marks a test interrupted when another change lands too soon", () => {
@@ -378,7 +378,7 @@ describe("tests keep their original keyword controls", () => {
     const history = original.filter((_, d) => d < 26).concat(original.filter((_, d) => d >= 26).map((k) => ({ ...k, revision: "new", top: k.top.map((t) => ({ ...t, views: 999999 })) })));
     const before = evaluateAllTests(detectChanges(snapshots), buildDailySeries(snapshots), [], addDays(START, 30), original, "original")[0];
     const after = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), history, "new")[0];
-    expect(before.verdict).toBe("better");
+    expect(before.verdict).toBe("observed");
     expect(after.verdict).toBe(before.verdict);
     expect(after.lift).toBe(before.lift);
     expect(after.before).toEqual(before.before);
@@ -403,17 +403,17 @@ describe("tests keep their original keyword controls", () => {
     expect(result.interruptionReason).toBe("keywords_changed");
     expect(result.after.days).toBe(3);
   });
-  it("keeps a usable early result instead of relabeling it interrupted", () => {
+  it("does not finalize an early result when the comparison is interrupted", () => {
     const changed = snapshots.map((s, d) => ({ ...s, control_revision: d >= 20 ? "new" : "original" }));
     const [result] = evaluateAllTests(detectChanges(changed), buildDailySeries(changed), [], addDays(START, 30), original.slice(0, 20), "new");
-    expect(result.verdict).toBe("better");
-    expect(result.interruptionReason).toBeUndefined();
+    expect(result.verdict).toBe("interrupted");
+    expect(result.interruptionReason).toBe("keywords_changed");
   });
   it("keeps the seventh after-day recorded before a same-day keyword edit", () => {
     const s = snapshots.slice(0, 18);
     const [result] = evaluateAllTests(detectChanges(s), buildDailySeries(s), [], addDays(START, 17), original.slice(0, 18), "new");
     expect(result.after.days).toBe(7);
-    expect(result.verdict).toBe("better");
+    expect(result.verdict).toBe("interrupted");
   });
   it("does not mistake a listing change for a keyword edit", () => {
     const changed = snapshots.map((s, d) => ({ ...s, title: d >= 13 ? "new title" : s.title }));
@@ -463,7 +463,7 @@ describe("coach review regressions", () => {
     expect(t.lift).toBeNull();
   });
   it("retains results for a fixed, observed comparison cohort", () => {
-    expect(evaluateAllTests([event], series, market, addDays(START, 30), keywords)[0].verdict).toBe("no_clear_change");
+    expect(evaluateAllTests([event], series, market, addDays(START, 30), keywords)[0].verdict).toBe("observed");
   });
   it("does not average the market over missing days", () => {
     expect(buildMarketSeries([kw(0, 1, 100), kw(3, 1, 400)])).toEqual([]);

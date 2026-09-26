@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RubricJson } from "@/lib/rubric";
-import { keywordIsRelevant, latestByKeyword, winnerTagFrequency, type KeywordSnapshot } from "@/lib/listing-analytics";
+import { comparableKeywordSnapshots, latestByKeyword, winnerTagFrequency, type KeywordSnapshot } from "@/lib/listing-analytics";
 import type { SellerFacts, WriterContext } from "@/lib/listing-writer";
 
 /**
@@ -53,8 +53,7 @@ export async function loadWriterContext(
   // Only keywords that actually find listings like this one (a status word
   // like "pre-order" returns yarn and stockings), in the seller's own order so
   // the first one is their main keyword.
-  const latest = latestByKeyword(((kwResult.data as KeywordSnapshot[] | null) ?? []).filter((k) => keywords.includes(k.keyword)))
-    .filter((k) => keywordIsRelevant({ title: snap.title, tags: snap.tags ?? [] }, k.keyword, k.top) !== false)
+  const latest = comparableKeywordSnapshots({ title: snap.title, tags: snap.tags ?? [], etsy_listing_id: Number(monitor.etsy_listing_id) }, latestByKeyword(((kwResult.data as KeywordSnapshot[] | null) ?? []).filter((k) => keywords.includes(k.keyword))))
     .sort((x, y) => keywords.indexOf(x.keyword) - keywords.indexOf(y.keyword));
 
   let rubric: RubricJson | null = null;

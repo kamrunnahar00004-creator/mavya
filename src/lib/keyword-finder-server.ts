@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getSearchCached } from "@/lib/search-cache";
-import { suggestKeywords } from "@/lib/listing-analytics";
+import { suggestKeywords, comparablePeers, keywordIsRelevant } from "@/lib/listing-analytics";
 import { buildCandidates, labelKeyword, rankIdeas, viewsPerDayMedian, type KeywordIdea } from "@/lib/keyword-finder";
 
 /**
@@ -21,7 +21,7 @@ export async function findKeywordIdeas(
   const candidates = buildCandidates({
     title: listing.title,
     tags: listing.tags,
-    topTags: base.results.filter((l) => l.listingId !== listing.listingId).slice(0, 25).map((l) => l.tags),
+    topTags: comparablePeers(listing, base.results.filter((l) => l.listingId !== listing.listingId).slice(0, 25)).map((l) => l.tags),
   });
   if (!candidates.includes(main)) candidates.unshift(main);
 
@@ -31,10 +31,13 @@ export async function findKeywordIdeas(
     if (Date.now() > deadlineAt - 2_000) break;
     try {
       const r = keyword === main ? base : await getSearchCached(admin, keyword, today, deadlineAt);
+      const relevant = keywordIsRelevant(listing, keyword, r.results);
+      if (relevant === false) continue;
+      const peers = comparablePeers(listing, r.results.filter(l => l.listingId !== listing.listingId));
       const idx = r.results.findIndex((l) => l.listingId === listing.listingId);
       const stats = {
         competition: r.count,
-        interest: viewsPerDayMedian(r.results.slice(0, 10), today),
+        interest: relevant === true && peers.length >= 3 ? viewsPerDayMedian(peers.slice(0, 10), today) : null,
         position: idx >= 0 ? idx + 1 : null,
         inTags: own.has(keyword),
       };

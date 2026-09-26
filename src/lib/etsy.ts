@@ -10,7 +10,14 @@
  * server instance; the daily cron is the only bulk caller.
  */
 
-import { weightedRateLimit } from "@/lib/rate-limit";
+import { weightedRateLimit, rollingRateLimitMany } from "@/lib/rate-limit";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { FREE_ETSY_CALLS_PER_DAY } from "@/lib/plans";
+
+const requestTier = new AsyncLocalStorage<"free" | "paid">();
+export function withEtsyRequestTier<T>(tier: "free" | "paid", work: () => Promise<T>): Promise<T> {
+  return requestTier.run(tier, work);
+}
 
 const ETSY_BASE = "https://openapi.etsy.com/v3/application";
 const MIN_INTERVAL_MS = 250;
@@ -99,7 +106,9 @@ async function etsyGet(path: string, params: Record<string, string | number> = {
     await throttle();
     if (Date.now() >= deadlineAt) throw new EtsyApiError("Etsy check timed out", 504, "upstream");
     await acquireSecondSlot(deadlineAt);
-    if (!(await weightedRateLimit("etsy:requests:day", 1, 4500, 86_400_000)).ok) {
+    const budgets = [{ key: "requests:day", max: 4500 }];
+    if (requestTier.getStore() === "free") budgets.push({ key: "free:day", max: FREE_ETSY_CALLS_PER_DAY });
+    if (!(await rollingRateLimitMany(budgets, 86_400_000)).ok) {
       throw new EtsyApiError("Etsy request budget reached", 429, "rate_limited");
     }
     const res = await fetch(url, {
