@@ -3,6 +3,9 @@
 Date: 2026-09-26. Written by Claude (builder) for independent AI reviewers and the founder.
 You do not have the code. Every rule below is written exactly as it is implemented, with the real numbers.
 
+> Update: several rules changed after the first review round. See
+> MAVYA_REVIEW_FOLLOWUP_2026-09-26.md for the current rules and corrections.
+
 **Your job as a reviewer:** check the logic, find where it is wrong or misleading,
 judge whether this is the right product for Etsy sellers, and say what to add,
 cut, or change. Be blunt. Section 9 lists the specific questions. Please cite the
