@@ -64,9 +64,9 @@ function useOpenListing(opened: Record<number, string>) {
         setBusy(null);
         return;
       }
-      // A new import always lands on the Photo tab, where its main photo is
-      // being scored; Write and Analytics are one tap away from there.
-      router.push(`/dashboard/product/${json.productId}`);
+      // Land where the button said (Add tags -> Write). The main photo keeps
+      // scoring in the background and shows on the Photo tab.
+      router.push(`/dashboard/product/${json.productId}${ACTION_PATH[action]}`);
     } catch {
       setError("Network error. Try again.");
       setBusy(null);
@@ -190,6 +190,36 @@ export function ShopHome({ data, canEdit }: { data: ShopHomeData | null; canEdit
           <ShopNumbers v={v} />
           {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
           {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
+
+          {v.shopWide && (
+            <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="shopwide">
+              <h3 id="shopwide" className={sectionTitle}>
+                {v.shopWide.none === v.shopWide.count
+                  ? `${v.shopWide.count} of your ${v.shopWide.total} listings have no tags`
+                  : `${v.shopWide.count} of your ${v.shopWide.total} listings use 6 tags or fewer`}
+              </h3>
+              <p className="mt-0.5 text-[13.5px] text-[var(--color-ink)]">
+                Each listing gets 13 free tags, and each one is another search it can show up in. Start with your most viewed:
+              </p>
+              <ol className="mt-2 divide-y divide-[var(--color-border-soft)]">
+                {v.shopWide.start.map((f, i) => (
+                  <li key={f.listingId} className="flex items-center gap-3 py-3">
+                    <Thumb url={f.mainImageUrl} />
+                    <p className="min-w-0 flex-1 truncate text-[15px] text-[var(--color-ink)]">{f.title}</p>
+                    <button
+                      type="button"
+                      onClick={() => open(f.listingId, "write")}
+                      disabled={busy !== null || !canEdit}
+                      className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
+                    >
+                      {busy === f.listingId ? "Opening..." : "Add tags"}
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          )}
 
           <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="fix3">
             <h3 id="fix3" className={sectionTitle}>
@@ -332,7 +362,7 @@ function StatusTiles({ v }: { v: View }) {
   );
 }
 
-const VERDICT_LABEL = { better: "Better", worse: "Worse", no_change: "No change", measuring: "Measuring", not_enough_data: "Can't measure", interrupted: "Changed again" } as const;
+const VERDICT_LABEL = { better: "Better", worse: "Worse", no_change: "No clear change", measuring: "Measuring", not_enough_data: "Can't measure", interrupted: "Changed again" } as const;
 const VERDICT_CLS = {
   interrupted: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]",
   better: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]",
@@ -361,6 +391,8 @@ function ChangesSummary({ v }: { v: NonNullable<ShopHomeData["view"]> }) {
               <p className="text-[13px] text-[var(--color-ink-muted)]">
                 {c.kinds.map((k) => ({ main_photo: "Main photo", title: "Title", tags: "Tags", description: "Description" })[k]).join(", ")} · {shortDate(c.date)}
                 {c.beforePerDay !== null && c.afterPerDay !== null && ` · ${fmt(c.beforePerDay)} → ${fmt(c.afterPerDay)} views a day`}
+                {c.verdict === "no_change" && c.liftLow !== null && c.liftHigh !== null &&
+                  ` · likely between ${c.liftLow >= 1 ? "+" : ""}${Math.round((c.liftLow - 1) * 100)}% and ${c.liftHigh >= 1 ? "+" : ""}${Math.round((c.liftHigh - 1) * 100)}%`}
               </p>
             </div>
             <span className={cn("flex-shrink-0 rounded-[var(--radius-md)] px-2.5 py-1 text-[12.5px] font-semibold", VERDICT_CLS[c.verdict])}>{VERDICT_LABEL[c.verdict]}</span>

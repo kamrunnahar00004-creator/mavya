@@ -51,7 +51,7 @@ describe("writer uses the keyword check", () => {
     facts: {},
   };
   it("explains tags with checked numbers", () => {
-    expect(tagReasons(["coraline doll"], ctx)[0].reason).toBe("Low competition (1.1K listings), you about #68");
+    expect(tagReasons(["coraline doll"], ctx)[0].reason).toBe("1.1K matching listings, you about #68");
   });
   it("drops NEW tags the check marked crowded or quiet", () => {
     const out = finalizeWriterOutput(
@@ -74,9 +74,9 @@ describe("shop link parsing", () => {
 });
 
 describe("plans by shop size (prices unchanged)", () => {
-  it("100 / 300 / 1,000 listings and 10 / 30 / 100 keywords at $29 / $59 / $99", () => {
+  it("100 / 300 / 1,000 listings and 30 / 75 / 150 keywords at $29 / $59 / $99", () => {
     expect(ALLOWED_LISTING_LIMITS).toEqual([100, 300, 1000]);
-    for (const [plan, listings, keywords, cents] of [["starter", 100, 10, 2900], ["shop", 300, 30, 5900], ["power", 1000, 100, 9900]] as const) {
+    for (const [plan, listings, keywords, cents] of [["starter", 100, 30, 2900], ["shop", 300, 75, 5900], ["power", 1000, 150, 9900]] as const) {
       const p = getPlanPolicy(plan, "monthly")!;
       expect(p.activeListingLimit).toBe(listings);
       expect(keywordLimitFor(p.activeListingLimit)).toBe(keywords);

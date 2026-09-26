@@ -158,8 +158,14 @@ describe("evaluateAllTests", () => {
       kws.push({ ...kw(d, 5, 0), top: [top(1, wv), top(2, wv + 5), top(3, wv + 9)] });
       wv += d >= 10 ? 100 : 50;
     }
-    const [t] = evaluateAllTests(events, series, buildMarketSeries(kws), addDays(START, 20));
-    expect(t.verdict).toBe("no_clear_change");
+    // Day 20: the likely range (about -22% to +28%) is too wide to call yet.
+    const [early] = evaluateAllTests(events, series, buildMarketSeries(kws), addDays(START, 20));
+    expect(early.verdict).toBe("running");
+    expect(early.liftLow).toBeLessThan(1);
+    expect(early.liftHigh).toBeGreaterThan(1);
+    // Window over: matched by the market, so no clear change.
+    const [done] = evaluateAllTests(events, series, buildMarketSeries(kws), addDays(START, 24));
+    expect(done.verdict).toBe("no_clear_change");
   });
 
   it("marks a test interrupted when another change lands too soon", () => {

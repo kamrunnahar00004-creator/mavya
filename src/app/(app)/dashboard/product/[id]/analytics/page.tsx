@@ -14,8 +14,10 @@ import {
   detectChanges,
   diagnose,
   evaluateAllTests,
+  keywordIsRelevant,
   latestByKeyword,
   listingChecks,
+  suggestKeywords,
   windowStats,
   recentWinnerFavoriteRate,
   type KeywordSnapshot,
@@ -84,24 +86,40 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
   );
   // Only the CURRENTLY linked listing's history (a re-link never mixes listings).
   const snaps = listingId ? allSnaps.filter((s) => s.etsy_listing_id === listingId) : [];
+  const latest = snaps.length ? snaps[snaps.length - 1] : null;
   // Only the CURRENTLY tracked keywords.
-  const kwSnaps = (keywordHistory as KeywordSnapshot[]).filter(
+  const trackedSnaps = (keywordHistory as KeywordSnapshot[]).filter(
     (k) => k.revision === monitor?.revision && keywords.includes(k.keyword)
   );
+  // A keyword that finds unrelated listings (a status word like "pre-order"
+  // returns yarn and stockings) is shown with a replace prompt but kept out of
+  // every rank, comparison, check, and test: its "top listings" are not peers.
+  const relevance = new Map(
+    latestByKeyword(trackedSnaps).map((k) => [k.keyword, latest ? keywordIsRelevant({ title: latest.title, tags: latest.tags }, k.keyword, k.top) : null])
+  );
+  const irrelevant = new Set([...relevance].filter(([, r]) => r === false).map(([k]) => k));
+  const relevantKeywords = keywords.filter((k) => !irrelevant.has(k));
+  const kwSnaps = trackedSnaps.filter((k) => !irrelevant.has(k.keyword));
 
   const series = buildDailySeries(snaps);
   const market = buildMarketSeries(kwSnaps);
   const latestKeywords = latestByKeyword(kwSnaps);
   const events = detectChanges(snaps);
-  const tests = evaluateAllTests(events, series, market, today, keywordHistory, monitor?.revision);
-  const latest = snaps.length ? snaps[snaps.length - 1] : null;
+  const tests = evaluateAllTests(
+    events,
+    series,
+    market,
+    today,
+    (keywordHistory as KeywordSnapshot[]).filter((k) => !(k.revision === monitor?.revision && irrelevant.has(k.keyword))),
+    monitor?.revision
+  );
 
   // Other shops' photos are not AI-scored (founder decision 2026-09-24), so
   // the photo-score comparison in diagnose() stays off.
   const ownPhotoScore = null;
   const winnerPhotoScore = null;
 
-  const checks = listingChecks({ latest, keywords, latestKeywords });
+  const checks = listingChecks({ latest, keywords: relevantKeywords, latestKeywords });
   const diagnosis = diagnose({
     linked: Boolean(monitor),
     series,
@@ -116,6 +134,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
     enabled: monitor?.enabled,
     lastCheckedOn: monitor?.last_checked_on,
     winnerRecentFavoriteRate: recentWinnerFavoriteRate(kwSnaps, series, addDays(today, -6), today),
+    totalViews: latest?.views ?? null,
   });
   const last7 = windowStats(series, addDays(today, -6), today);
 
@@ -152,13 +171,15 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
     series: series.slice(-30).map((p) => ({ date: p.date, viewsPerDay: p.viewsPerDay, favoritesPerDay: p.favoritesPerDay })),
     changeDates: events.map((e) => ({ date: e.date, kinds: e.kinds })),
     // The seller's own order: their main keyword first, not alphabetical.
-    keywords: [...latestKeywords].sort((x, y) => keywords.indexOf(x.keyword) - keywords.indexOf(y.keyword)).map((k) => ({
+    keywords: [...latestByKeyword(trackedSnaps)].sort((x, y) => keywords.indexOf(x.keyword) - keywords.indexOf(y.keyword)).map((k) => ({
       keyword: k.keyword,
       position: k.position,
       depth: k.depth,
       date: k.snapshot_date,
       top: k.top.slice(0, 5),
+      relevant: relevance.get(k.keyword) ?? null,
     })),
+    keywordSuggestions: latest ? suggestKeywords(latest.title ?? "", latest.tags).filter((k) => !keywords.includes(k)) : [],
     diagnosis,
     checks,
     tests: tests.map((t) => ({
@@ -171,6 +192,9 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
       afterViewsPerDay: t.after.viewsPerDay,
       marketChange: t.marketChange,
       lift: t.lift,
+      liftLow: t.liftLow,
+      liftHigh: t.liftHigh,
+      rank: t.rank,
       beforeTitle: t.event.before.title,
       afterTitle: t.event.after.title,
       beforeImage: t.event.before.mainImageUrl,

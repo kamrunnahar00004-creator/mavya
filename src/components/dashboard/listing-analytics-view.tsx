@@ -39,7 +39,11 @@ export type AnalyticsViewModel = {
     depth: number;
     date: string;
     top: TopEntry[];
+    /** False = Etsy shows unrelated listings for it; null = not checked yet. */
+    relevant: boolean | null;
   }[];
+  /** Better keyword phrases from the listing's own title and tags (status words removed). */
+  keywordSuggestions: string[];
   diagnosis: Diagnosis;
   checks: CheckIssue[];
   tests: {
@@ -52,6 +56,11 @@ export type AnalyticsViewModel = {
     afterViewsPerDay: number | null;
     marketChange: number | null;
     lift: number | null;
+    /** Likely range of the lift (count noise). */
+    liftLow: number | null;
+    liftHigh: number | null;
+    /** Search position before vs after the change. */
+    rank: { keyword: string; before: number | null; after: number | null }[];
     beforeTitle: string | null;
     afterTitle: string | null;
     beforeImage: string | null;
@@ -375,7 +384,7 @@ function Numbers({ vm }: { vm: AnalyticsViewModel }) {
   const tags = vm.listing?.tags.length;
   const items = [
     { value: fmt(vm.last7.viewsPerDay), label: "views a day" },
-    { value: fmt(vm.last7.favoritesPer100Views), label: "net favorites per 100 views" },
+    { value: fmt(vm.last7.favoritesPer100Views), label: "favorites per 100 views" },
     { value: tags === undefined ? "–" : `${tags}/13`, label: "tags used" },
   ];
   return (
@@ -506,13 +515,32 @@ function ThingsToFix({ vm }: { vm: AnalyticsViewModel }) {
 function Search({ vm }: { vm: AnalyticsViewModel }) {
   const router = useRouter();
   const current = vm.monitor!.keywords;
-  const [active, setActive] = useState(0);
+  // Open on the first keyword that finds listings like this one.
+  const [active, setActive] = useState(() => Math.max(0, vm.keywords.findIndex((x) => x.relevant !== false)));
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string[]>([...current, "", "", ""].slice(0, 3));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const idx = Math.min(active, Math.max(0, vm.keywords.length - 1));
   const k = vm.keywords[idx];
+  const bad = vm.keywords.filter((x) => x.relevant === false).map((x) => x.keyword);
+
+  // One tap: swap each unrelated keyword for the next suggestion.
+  async function replaceBad() {
+    const pool = vm.keywordSuggestions.filter((x) => !current.includes(x));
+    const next = current
+      .map((x) => (bad.includes(x) ? pool.shift() ?? null : x))
+      .filter((x): x is string => Boolean(x));
+    setBusy(true);
+    setError(null);
+    const res = await postJson("/api/listings/settings", { productId: vm.productId, keywords: next });
+    setBusy(false);
+    if (!res.ok) {
+      setError(res.error ?? "Could not save.");
+      return;
+    }
+    router.refresh();
+  }
 
   function startEdit() {
     setDraft([...current, "", "", ""].slice(0, 3));
@@ -591,6 +619,24 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
       ) : (
         <>
           <p className="mt-1 text-[13px] text-[var(--color-ink-muted)]">Where you show up when buyers search these words. From Mavya&apos;s daily check, so what you see on Etsy may differ a little.</p>
+          {bad.length > 0 && (
+            <div className="mt-3 rounded-[var(--radius-lg)] bg-[var(--color-mid-soft)] px-4 py-3 text-[13.5px] text-[var(--color-ink)]">
+              <p>
+                {bad.map((x) => `"${x}"`).join(" and ")} {bad.length === 1 ? "does" : "do"} not describe your product: Etsy shows unrelated
+                listings for {bad.length === 1 ? "it" : "them"}, so Mavya leaves {bad.length === 1 ? "it" : "them"} out of your numbers.
+              </p>
+              {vm.keywordSuggestions.length > 0 && vm.canEdit && (
+                <button type="button" onClick={() => void replaceBad()} disabled={busy} className={cn(btnPrimary, "mt-2 min-h-[36px] px-4")}>
+                  {busy ? "Saving..." : `Replace with "${vm.keywordSuggestions.slice(0, bad.length).join('" and "')}"`}
+                </button>
+              )}
+              {error && (
+                <p role="alert" className="mt-2 text-[13px] text-[var(--color-weak)]">
+                  {error}
+                </p>
+              )}
+            </div>
+          )}
           <ul className="mt-3 flex flex-col gap-1.5" role="group" aria-label="Your keywords">
             {vm.keywords.map((kw, i) => {
               const selected = i === idx;
@@ -612,10 +658,10 @@ function Search({ vm }: { vm: AnalyticsViewModel }) {
                     <span
                       className={cn(
                         "flex-shrink-0 text-[14px] font-semibold tabular-nums",
-                        found ? "text-[var(--color-ink)]" : "text-[var(--color-weak)]"
+                        kw.relevant === false ? "font-normal text-[var(--color-ink-soft)]" : found ? "text-[var(--color-ink)]" : "text-[var(--color-weak)]"
                       )}
                     >
-                      {found ? `About #${kw.position}` : `Not in first ${kw.depth}`}
+                      {kw.relevant === false ? "Unrelated results" : found ? `About #${kw.position}` : `Not in first ${kw.depth}`}
                     </span>
                   </button>
                 </li>
@@ -837,7 +883,7 @@ function RankingTable({ keyword, you, depth, top }: { keyword: string; you: TopE
 const VERDICT: Record<TestVerdict, { label: string; cls: string }> = {
   better: { label: "Better", cls: "bg-[var(--color-strong-soft)] text-[var(--color-strong)]" },
   worse: { label: "Worse", cls: "bg-[var(--color-weak-soft)] text-[var(--color-weak)]" },
-  no_clear_change: { label: "No change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
+  no_clear_change: { label: "No clear change", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   running: { label: "Measuring", cls: "bg-[var(--color-mid-soft)] text-[#8A5A12]" },
   interrupted: { label: "Stopped", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
   no_baseline: { label: "Can't measure", cls: "bg-[var(--color-page-deep)] text-[var(--color-ink-muted)]" },
@@ -889,19 +935,39 @@ function Changes({ vm }: { vm: AnalyticsViewModel }) {
   );
 }
 
+/** "about #40 → #12 for "roblox arg"": the fastest signal for title/tag edits. */
+function rankSentence(t: AnalyticsViewModel["tests"][number]): string | null {
+  const moved = t.rank.find((r) => r.before !== r.after);
+  const r = moved ?? t.rank[0];
+  if (!r) return null;
+  const at = (n: number | null) => (n === null ? "not in top 100" : `about #${n}`);
+  return `Search "${r.keyword}": ${at(r.before)} → ${at(r.after)}`;
+}
+
+/** "somewhere between -10% and +40%" from the likely range. */
+function rangeText(t: AnalyticsViewModel["tests"][number]): string | null {
+  if (t.liftLow === null || t.liftHigh === null) return null;
+  const p = (x: number) => `${x >= 1 ? "+" : ""}${Math.round((x - 1) * 100)}%`;
+  return `likely between ${p(t.liftLow)} and ${p(t.liftHigh)} vs top listings`;
+}
+
 function changeSentence(t: AnalyticsViewModel["tests"][number]): string {
+  const rank = rankSentence(t);
+  const withRank = (x: string) => (rank ? `${x} ${rank}.` : x);
   const views = `${fmt(t.beforeViewsPerDay)} → ${fmt(t.afterViewsPerDay)} views a day`;
   switch (t.verdict) {
     case "running":
-      return `Day ${t.daysAfter} of 14.`;
+      return withRank(`Day ${t.daysAfter} of 14${rangeText(t) ? `, ${rangeText(t)} so far` : ""}.`);
     case "interrupted":
       return t.interruptionReason === "keywords_changed" ? "Stopped because your keywords changed." : "Another change came too soon to measure this one.";
     case "no_baseline":
       return "Not enough data from before the change.";
     case "insufficient_data":
       return "Not enough data to compare.";
+    case "no_clear_change":
+      return withRank(`${views} · ${rangeText(t) ?? "too close to call"}.`);
     default:
-      return t.lift === null ? views : `${views} · ${pct(t.lift)} vs top listings`;
+      return withRank(t.lift === null ? `${views}.` : `${views} · ${pct(t.lift)} vs top listings.`);
   }
 }
 

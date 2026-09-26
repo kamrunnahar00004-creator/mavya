@@ -226,8 +226,8 @@ export function tagReasons(tags: string[], ctx: Pick<WriterContext, "current" | 
     let reason: string;
     if (idea?.label === "winning") reason = `You're about #${idea.position} for this`;
     else if (idea?.label === "add" || idea?.label === "keep")
-      reason = `Low competition (${compact.format(idea.competition)} listings)${idea.position ? `, you about #${idea.position}` : ""}`;
-    else if (idea?.label === "crowded") reason = `Very crowded (${compact.format(idea.competition)} listings)`;
+      reason = `${compact.format(idea.competition)} matching listings${idea.position ? `, you about #${idea.position}` : ""}`;
+    else if (idea?.label === "crowded") reason = `Very crowded: ${compact.format(idea.competition)} matching listings`;
     else if (idea?.label === "quiet") reason = "Top listings have low lifetime views";
     else if (k) reason = k.position === null ? "Your search phrase, not near the top yet" : `Your search phrase, about #${k.position}`;
     else if (w) reason = `Used by ${w.count} of ${w.total} top listings`;

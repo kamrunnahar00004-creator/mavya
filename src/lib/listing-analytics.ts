@@ -283,6 +283,26 @@ export function recentWinnerFavoriteRate(snapshots: KeywordSnapshot[], series: D
 // Change detection + before/after tests
 // ---------------------------------------------------------------------------
 
+/**
+ * Likely range for a before/after lift. Daily views are counts, so the noise
+ * in each window is about sqrt(views) (Poisson). Relative noise of the ratio
+ * combines both windows: sqrt(1/after + 1/before). The range is the lift
+ * times exp(+-2 x that), roughly a 95% band. With 20 views after and 30 before
+ * the band is about -48% to +90%: most small-listing tests honestly read "too
+ * close to call", which is the point.
+ */
+export function liftRange(lift: number, afterViews: number, beforeViews: number): { low: number; high: number } {
+  const rel = Math.sqrt(1 / Math.max(1, afterViews) + 1 / Math.max(1, beforeViews));
+  return { low: lift * Math.exp(-2 * rel), high: lift * Math.exp(2 * rel) };
+}
+
+/** Better/Worse only when the whole likely range is past 1x and the lift is meaningful. */
+export function liftVerdict(lift: number, range: { low: number; high: number }): "better" | "worse" | "no_clear_change" {
+  if (range.low > 1 && lift >= BETTER_LIFT) return "better";
+  if (range.high < 1 && lift <= WORSE_LIFT) return "worse";
+  return "no_clear_change";
+}
+
 export type ChangeKind = "main_photo" | "title" | "tags" | "description";
 
 export type ChangeEvent = {
@@ -348,6 +368,11 @@ export type TestResult = {
   marketChange: number | null;
   /** listingChange divided by marketChange; null without a usable control. */
   lift: number | null;
+  /** Likely range of the lift given count noise (see liftRange). */
+  liftLow: number | null;
+  liftHigh: number | null;
+  /** Search position before vs after, per keyword present on both sides. */
+  rank: { keyword: string; before: number | null; after: number | null }[];
 };
 
 /**
@@ -378,7 +403,7 @@ export function evaluateTest(
   const after = windowStats(matched, afterFrom, afterTo);
   const daysAfter = Math.max(0, dayNumber(afterTo) - dayNumber(event.date));
 
-  const base = { event, daysAfter, before, after, listingChange: null, marketChange: null, lift: null };
+  const base = { event, daysAfter, before, after, listingChange: null, marketChange: null, lift: null, liftLow: null, liftHigh: null, rank: [] as TestResult["rank"] };
 
   const interrupted = nextEventDate !== null && nextEventDate <= today && nextEventDate <= addDays(event.date, TEST_WINDOW_DAYS);
   const ended = today >= addDays(event.date, TEST_WINDOW_DAYS);
@@ -403,12 +428,14 @@ export function evaluateTest(
   const marketChange = mBefore !== null && mAfter !== null && mBefore > 0 ? mAfter / mBefore : null;
   const lift = listingChange !== null && marketChange !== null && marketChange > 0 ? listingChange / marketChange : null;
 
-  let verdict: TestVerdict = "no_clear_change";
-  if (lift === null) verdict = "insufficient_data";
-  else if (lift >= BETTER_LIFT) verdict = "better";
-  else if (lift <= WORSE_LIFT) verdict = "worse";
-
-  return { ...base, verdict, listingChange, marketChange, lift };
+  if (lift === null) return { ...base, verdict: "insufficient_data", listingChange, marketChange, lift };
+  const range = liftRange(lift, after.views, before.views);
+  // A clear result can land early; "too close to call" waits for the window.
+  const call = liftVerdict(lift, range);
+  // Flat with a tight range (inside +-15%) is a clear "no change" already.
+  const settledFlat = range.low > WORSE_LIFT && range.high < BETTER_LIFT;
+  const verdict: TestVerdict = call === "no_clear_change" && !ended && !interrupted && !settledFlat ? "running" : call;
+  return { ...base, verdict, listingChange, marketChange, lift, liftLow: range.low, liftHigh: range.high };
 }
 
 export function evaluateAllTests(
@@ -452,7 +479,18 @@ export function evaluateAllTests(
           usable
         );
       }
-      const result = evaluateTest(e, nextChange, series, control, today, sorted[i - 1]?.date ?? null);
+      const evaluated = evaluateTest(e, nextChange, series, control, today, sorted[i - 1]?.date ?? null);
+      // Search position moves within days of a title or tag edit and needs no
+      // traffic, so it is the fastest honest signal for those changes.
+      let rank: TestResult["rank"] = [];
+      if (keywordSnapshots) {
+        const sameConfig = keywordSnapshots.filter((k) => !e.controlRevision || k.revision === e.controlRevision);
+        const endAt = [today, addDays(e.date, TEST_WINDOW_DAYS), nextChange ? addDays(nextChange, -1) : today].sort()[0];
+        const pre = latestByKeyword(sameConfig.filter((k) => k.snapshot_date < e.date && k.snapshot_date >= addDays(e.date, -7)));
+        const post = new Map(latestByKeyword(sameConfig.filter((k) => k.snapshot_date > e.date && k.snapshot_date <= endAt)).map((k) => [k.keyword, k]));
+        rank = pre.filter((k) => post.has(k.keyword)).slice(0, 3).map((k) => ({ keyword: k.keyword, before: k.position, after: post.get(k.keyword)!.position }));
+      }
+      const result = { ...evaluated, rank };
       // A different keyword configuration must never replace an old test's
       // control or keep it waiting for observations we no longer collect.
       if (result.verdict === "running" && controlClosed) {
@@ -665,6 +703,8 @@ export type DiagnosisInput = {
   enabled?: boolean;
   lastCheckedOn?: string | null;
   winnerRecentFavoriteRate?: number | null;
+  /** The listing's all-time Etsy views (latest check). */
+  totalViews?: number | null;
 };
 
 const fmt = (n: number) => (n >= 10 ? Math.round(n).toString() : n.toFixed(1));
@@ -711,6 +751,20 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
 
   // Findability does not need a view history: the search position is known day 1.
   if (latestKeywords.length > 0 && (best === null || best > PAGE_ONE_SIZE)) {
+    // A listing that is not on page one yet still gets real traffic is being
+    // found some other way (social, links, repeat buyers, Etsy ads). Telling
+    // it "buyers may not be finding this" is wrong; say where it stands.
+    const recent = windowStats(series, addDays(today, -6), today);
+    const busy = (recent.days >= 3 && (recent.viewsPerDay ?? 0) >= 3) || (input.totalViews ?? 0) >= 1000;
+    if (busy) {
+      return {
+        state: "improve",
+        fixTarget: "title_tags",
+        headline: "Most of your views likely come from outside Etsy search",
+        detail: "This listing gets views but does not show near the top for your keywords. Better title and tags can add search traffic on top.",
+        evidence,
+      };
+    }
     return {
       state: "findability",
       fixTarget: "title_tags",
@@ -784,8 +838,8 @@ export function diagnose(input: DiagnosisInput): Diagnosis {
   // favorites. Do not diagnose trust from that mismatched denominator.
   const winnerFav = input.winnerRecentFavoriteRate ?? null;
   if (own.views >= 30 && own.favoritesPer100Views !== null) {
-    evidence.push(`${own.favoritesPer100Views.toFixed(1)} net favorites per 100 views`);
-    if (winnerFav !== null) evidence.push(`Top listings: ${winnerFav.toFixed(1)} net favorites per 100 views`);
+    evidence.push(`${own.favoritesPer100Views.toFixed(1)} favorites per 100 views`);
+    if (winnerFav !== null) evidence.push(`Top listings: ${winnerFav.toFixed(1)} favorites per 100 views`);
     if (winnerFav !== null && own.favoritesPer100Views < winnerFav * 0.5) {
       return {
         state: "trust",
@@ -845,25 +899,98 @@ export function describeKinds(kinds: ChangeKind[]): string {
 }
 
 /**
- * Suggest up to 3 search keywords from a listing: the first title phrase
- * (Etsy titles are usually comma/pipe separated) plus multi-word tags.
+ * Words and phrases that describe a listing's STATUS or logistics, not the
+ * product. Sellers often lead titles with them ("PRE-ORDER | ...", "READY TO
+ * SHIP | ..."); searching them returns unrelated listings (yarn, stockings),
+ * which poisons ranking, comparisons, tests, and the rewrite. Stripped before
+ * any phrase becomes a tracked keyword.
+ */
+const STATUS_PHRASES =
+  /\b(pre[\s-]?orders?|ready[\s-]+to[\s-]+ship|rts|on[\s-]+sale|sale|free[\s-]+shipping|restock(ed)?|back[\s-]+in[\s-]+stock|in[\s-]+stock|made[\s-]+to[\s-]+order|limited(\s+edition)?|new|some|instant[\s-]+download|digital[\s-]+download|listing|sold[\s-]+out)\b/gi;
+
+/** Generic words that say nothing about WHAT the product is. */
+const GENERIC = new Set([
+  "a", "an", "and", "the", "for", "of", "with", "to", "in", "on", "by", "or", "your", "my", "her", "him", "mom", "dad",
+  "gift", "gifts", "handmade", "custom", "personalized", "unique", "cute", "best", "item", "set", "pack", "lot",
+  "pre", "order", "preorder", "ready", "ship", "shipping", "sale", "new", "some", "stock", "free", "limited", "edition",
+]);
+
+const kwWords = (s: string) => s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+
+/** Remove status/logistics phrases from a title segment or tag. */
+export function stripStatus(raw: string): string {
+  return raw
+    .replace(STATUS_PHRASES, " ")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s'-]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^[-']+|[-']+$/g, "")
+    .trim();
+}
+
+/** Words that actually describe this listing (not status, not generic). */
+export function distinctiveWords(title: string, tags: string[]): Set<string> {
+  return new Set([title, ...tags].flatMap((t) => kwWords(stripStatus(t))).filter((w) => w.length > 2 && !GENERIC.has(w)));
+}
+
+/**
+ * Suggest up to 3 search keywords from a listing: title segments (Etsy titles
+ * are usually comma/pipe/dash separated) and multi-word tags, with status
+ * words removed. Multi-word phrases first; a single word only as a last resort.
  */
 export function suggestKeywords(title: string, tags: string[]): string[] {
   const out: string[] = [];
+  const singles: string[] = [];
   const push = (raw: string) => {
-    const k = raw.toLowerCase().replace(/[^\p{L}\p{N}\s'-]/gu, " ").replace(/\s+/g, " ").trim();
+    const parts = stripStatus(raw).split(" ").slice(0, 4);
+    // Never end on a dangling joiner ("soy candle gift for").
+    while (parts.length && /^(a|an|and|the|for|of|with|to|in|on|by|or)$/.test(parts[parts.length - 1])) parts.pop();
+    const k = parts.join(" ");
     if (k.length < 3 || k.length > 60) return;
-    const words = k.split(" ");
-    const trimmed = words.slice(0, 5).join(" ");
-    if (!out.includes(trimmed)) out.push(trimmed);
+    const words = kwWords(k);
+    if (!words.some((w) => w.length > 2 && !GENERIC.has(w))) return;
+    if (words.length < 2) {
+      if (!singles.includes(k)) singles.push(k);
+      return;
+    }
+    if (!out.includes(k)) out.push(k);
   };
-  const first = title.split(/[,|–—]| - /)[0] ?? "";
-  if (first.trim()) push(first);
+  // Order: the first real product phrase in the title, then the seller's
+  // own multi-word tags, then the remaining title phrases.
+  const segments = title.split(/[,|–—()/]| - /);
+  let firstIdx = -1;
+  for (let i = 0; i < segments.length && firstIdx < 0; i++) {
+    const before = out.length;
+    push(segments[i]);
+    if (out.length > before) firstIdx = i;
+  }
   for (const t of tags) {
     if (out.length >= 3) break;
-    if (t.trim().split(/\s+/).length >= 2) push(t);
+    push(t);
   }
-  return out.slice(0, 3);
+  for (let i = firstIdx + 1; i < segments.length && out.length < 3; i++) push(segments[i]);
+  return [...out, ...singles].slice(0, 3);
+}
+
+/**
+ * Does a tracked keyword actually find listings like this one? True when at
+ * least 3 of the top 25 results share a word that describes this listing, and
+ * the keyword itself contains such a word. False = Etsy shows unrelated
+ * listings for it, so its rank, "top listings", and comparisons are
+ * meaningless. Null = no search results yet (unknown).
+ */
+export function keywordIsRelevant(
+  listing: { title: string | null; tags: string[] },
+  keyword: string,
+  top: { title: string | null; tags: string[] }[]
+): boolean | null {
+  const own = distinctiveWords(listing.title ?? "", listing.tags);
+  if (!kwWords(keyword).some((w) => own.has(w))) return false;
+  const sample = top.slice(0, 25);
+  if (sample.length === 0) return null;
+  const sharing = sample.filter((t) => [t.title ?? "", ...(t.tags ?? [])].some((x) => kwWords(x).some((w) => own.has(w)))).length;
+  return sharing >= Math.min(3, sample.length);
 }
 
 export function normalizeKeywords(raw: unknown): string[] | null {

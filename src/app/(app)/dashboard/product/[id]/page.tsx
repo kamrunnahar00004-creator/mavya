@@ -21,6 +21,7 @@ import {
 } from "@/lib/buyer-question-coverage";
 
 import { isUnscoredEtsyImport } from "@/lib/etsy-photo-import";
+import { listingBeatsShop } from "@/lib/shop-monitor";
 
 export const dynamic = "force-dynamic";
 
@@ -363,6 +364,8 @@ export default async function ProductPage({
   }
 
   // Sign all unique paths in one batch
+  // Soft photo advice when the listing already beats the shop (runs alongside signing).
+  const beatsShopPromise = listingBeatsShop(supabase, product.id);
   const signedUrls = await timed("product.sign", () =>
     batchSignUrls(supabase, pathsToSign)
   );
@@ -564,6 +567,7 @@ export default async function ProductPage({
         productName={product.name}
         initialPhotos={initialPhotos}
         coverageState={coverageState}
+        outperformsShop={await beatsShopPromise}
       />
     </>
   );

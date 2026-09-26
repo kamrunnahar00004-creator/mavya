@@ -11,6 +11,8 @@
 
 import {
   addDays,
+  liftRange,
+  liftVerdict,
   buildDailySeries,
   detectChanges,
   windowStats,
@@ -128,6 +130,9 @@ export type ShopChangeResult = {
   afterPerDay: number | null;
   shopChange: number | null;
   lift: number | null;
+  /** Likely range of the lift (count noise); null until measured. */
+  liftLow: number | null;
+  liftHigh: number | null;
   verdict: "measuring" | "better" | "worse" | "no_change" | "not_enough_data" | "interrupted";
 };
 
@@ -135,8 +140,21 @@ export type ShopTopListing = { listingId: number; title: string; mainImageUrl: s
 
 export type ShopDailyPoint = { date: string; views: number | null; favorites: number | null };
 
+/** One problem shared by most of the shop, said once instead of per listing. */
+export type ShopWideIssue = {
+  kind: "tags";
+  /** Listings with 7+ of 13 tag slots empty. */
+  count: number;
+  /** Of those, listings with no tags at all. */
+  none: number;
+  total: number;
+  /** Most viewed affected listings, to start with. */
+  start: { listingId: number; title: string; mainImageUrl: string | null }[];
+};
+
 export type ShopView = {
   historyDays: number;
+  shopWide: ShopWideIssue | null;
   /** All-time totals from Etsy's counters on the latest check (day 1 value). */
   totals: { views: number; favorites: number };
   /** Shop views and favorites per day, last 30 days. Null = not enough listings reported that day. */
@@ -151,10 +169,10 @@ export type ShopView = {
 };
 
 export const MIN_HISTORY_DAYS = 14;
+/** Views needed in a week before a rise or fall is called (noise floor). */
+export const MIN_TREND_VIEWS = 20;
 const CHANGE_WINDOW = 7;
 const MIN_AFTER_DAYS = 7;
-const BETTER = 1.15;
-const WORSE = 0.87;
 
 const med = (v: number[]) => {
   const s = v.filter(Number.isFinite).sort((a, b) => a - b);
@@ -215,6 +233,18 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   }
   const shopFavMedian = favRates.length >= 3 ? med(favRates) : null;
 
+  // Shop-wide pattern: 5+ listings and 60%+ of the shop share the tag gap. It
+  // is then said once at shop level, and "Fix these first" ranks the other
+  // problems, so it does not just repeat "Add tags" on the three busiest.
+  let trackedCount = 0;
+  let thinTags = 0;
+  for (const [id, w] of work) {
+    if (!current.has(id)) continue;
+    trackedCount += 1;
+    if (13 - w.latest.tags.length >= 7) thinTags += 1;
+  }
+  const tagsShopWide = trackedCount >= 5 && thinTags / trackedCount >= 0.6;
+
   const listings: ShopListingView[] = [];
   for (const [id, w] of work) {
     if (!current.has(id)) continue;
@@ -225,8 +255,11 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     if (last30.days < MIN_HISTORY_DAYS) status = "collecting";
     else if (last30.days >= 30 && last30.views <= 1) status = "dead";
     else if (last7.days >= 5 && prev.days >= 7 && prev.viewsPerDay !== null && last7.viewsPerDay !== null) {
-      if (prev.viewsPerDay >= 1 && last7.viewsPerDay <= prev.viewsPerDay * 0.6) status = "falling";
-      else if (last7.viewsPerDay >= 1 && last7.viewsPerDay >= prev.viewsPerDay * 1.5) status = "rising";
+      // Noise floor: at ~1 view a day, +50% is 0.7 -> 1.05 views, which is
+      // chance. A trend needs 20+ views in the busier of the two weeks compared.
+      const enough = Math.max(last7.viewsPerDay, prev.viewsPerDay) * 7 >= MIN_TREND_VIEWS;
+      if (enough && prev.viewsPerDay >= 1 && last7.viewsPerDay <= prev.viewsPerDay * 0.6) status = "falling";
+      else if (enough && last7.viewsPerDay >= 1 && last7.viewsPerDay >= prev.viewsPerDay * 1.5) status = "rising";
     }
     if (
       status === "steady" &&
@@ -254,10 +287,15 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
     else if (emptyTags > 0) issues.push({ kind: "tags", severity: "medium", text: `${emptyTags} empty tag slot${emptyTags > 1 ? "s" : ""}` });
 
     const statusWeight = { falling: 3, seen_not_liked: 2, dead: 1.5, rising: 0, steady: 0, collecting: 0 }[status];
-    const issueWeight = issues.reduce((s, i) => s + (i.severity === "high" ? 2 : 1), 0);
+    const issueWeight = issues.filter((i) => !(tagsShopWide && i.kind === "tags")).reduce((s, i) => s + (i.severity === "high" ? 2 : 1), 0);
     // Traffic weighs strongly (square root, not log): the same gap on a listing
     // many buyers see is worth more than two gaps on one almost nobody sees.
-    const importance = 1 + Math.sqrt(Math.max(0, last30.views || (w.latest.views ?? 0) / 30));
+    const createdAtDay = createdById.get(id) ?? null;
+    const liveDays = createdAtDay ? Math.max(1, Math.round((Date.parse(`${today}T00:00:00Z`) - Date.parse(`${createdAtDay}T00:00:00Z`)) / 86_400_000)) : null;
+    // Day 1 (no daily data): 30 days at the listing's average views/day since
+    // it went live; without a creation date, all-time views / 30 as before.
+    const monthViews = last30.views || ((w.latest.views ?? 0) / (liveDays ? liveDays / 30 : 30));
+    const importance = 1 + Math.sqrt(Math.max(0, monthViews));
     const score = (statusWeight + issueWeight) * importance;
 
     const totalViews = typeof w.latest.views === "number" && w.latest.views > 0 ? w.latest.views : null;
@@ -304,7 +342,9 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
       const statusText =
         l.status === "falling" ? "Views falling" : l.status === "seen_not_liked" ? "Seen, but few favorites" : l.status === "dead" ? "Almost no views in 30 days" : null;
       // Worst problems first, whatever the area: high before medium.
-      const ranked = [...l.issues].sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "high" ? -1 : 1));
+      const ranked = l.issues
+        .filter((i) => !(tagsShopWide && i.kind === "tags"))
+        .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === "high" ? -1 : 1));
       const reason = [statusText, ...ranked.map((i) => i.text)].filter(Boolean).slice(0, 2).join(" · ");
       const top = ranked[0];
       const action: FixAction =
@@ -362,8 +402,23 @@ export function buildShopView(rows: ShopSnapshotRow[], today: string, currentIds
   }
   while (daily.length && daily[0].views === null) daily.shift();
 
+  const thin = listings.filter((l) => 13 - l.tagsUsed >= 7);
+  const shopWide: ShopWideIssue | null = tagsShopWide
+    ? {
+        kind: "tags",
+        count: thin.length,
+        none: thin.filter((l) => l.tagsUsed === 0).length,
+        total: listings.length,
+        start: [...thin]
+          .sort((a, b) => (b.totalViews ?? 0) - (a.totalViews ?? 0))
+          .slice(0, 5)
+          .map((l) => ({ listingId: l.listingId, title: l.title, mainImageUrl: l.mainImageUrl })),
+      }
+    : null;
+
   return {
     historyDays,
+    shopWide,
     totals: { views: totalViews, favorites: totalFavorites },
     daily,
     top: top.slice(0, 3),
@@ -397,7 +452,7 @@ function shopChanges(
     const series = work.get(e.id)!.series;
     const before = windowStats(series, bFrom, bTo);
     const after = windowStats(series, aFrom, aTo < today ? aTo : today);
-    const base = { listingId: e.id, title: e.title, date: e.date, kinds: e.kinds, beforePerDay: before.viewsPerDay, afterPerDay: after.viewsPerDay, shopChange: null, lift: null };
+    const base = { listingId: e.id, title: e.title, date: e.date, kinds: e.kinds, beforePerDay: before.viewsPerDay, afterPerDay: after.viewsPerDay, shopChange: null, lift: null, liftLow: null, liftHigh: null };
     const ownChanges = changeDates.get(e.id) ?? [];
     if (ownChanges.some((d) => d > e.date && d <= aTo)) {
       results.push({ ...base, verdict: "interrupted" });
@@ -435,7 +490,9 @@ function shopChanges(
       continue;
     }
     const lift = (after.viewsPerDay ?? 0) / before.viewsPerDay / shopChange;
-    results.push({ ...base, shopChange, lift, verdict: lift >= BETTER ? "better" : lift <= WORSE ? "worse" : "no_change" });
+    const range = liftRange(lift, after.views, before.views);
+    const call = liftVerdict(lift, range);
+    results.push({ ...base, shopChange, lift, liftLow: range.low, liftHigh: range.high, verdict: call === "no_clear_change" ? "no_change" : call });
   }
   return results.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 20);
 }

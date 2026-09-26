@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { RubricJson } from "@/lib/rubric";
-import { latestByKeyword, winnerTagFrequency, type KeywordSnapshot } from "@/lib/listing-analytics";
+import { keywordIsRelevant, latestByKeyword, winnerTagFrequency, type KeywordSnapshot } from "@/lib/listing-analytics";
 import type { SellerFacts, WriterContext } from "@/lib/listing-writer";
 
 /**
@@ -50,7 +50,12 @@ export async function loadWriterContext(
   if (!snap) return null;
 
   const keywords: string[] = monitor.keywords ?? [];
-  const latest = latestByKeyword(((kwResult.data as KeywordSnapshot[] | null) ?? []).filter((k) => keywords.includes(k.keyword)));
+  // Only keywords that actually find listings like this one (a status word
+  // like "pre-order" returns yarn and stockings), in the seller's own order so
+  // the first one is their main keyword.
+  const latest = latestByKeyword(((kwResult.data as KeywordSnapshot[] | null) ?? []).filter((k) => keywords.includes(k.keyword)))
+    .filter((k) => keywordIsRelevant({ title: snap.title, tags: snap.tags ?? [] }, k.keyword, k.top) !== false)
+    .sort((x, y) => keywords.indexOf(x.keyword) - keywords.indexOf(y.keyword));
 
   let rubric: RubricJson | null = null;
   const auditId = (photoResult.data as { current_audit_id: string | null } | null)?.current_audit_id;

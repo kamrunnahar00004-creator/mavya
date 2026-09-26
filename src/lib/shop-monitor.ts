@@ -109,3 +109,37 @@ export async function loadShopHome(supabase: SupabaseClient, today: string): Pro
     opened,
   };
 }
+
+/**
+ * Does this product's linked Etsy listing get more favorites per view than
+ * most of the seller's tracked shop? Used to soften photo advice: a photo that
+ * scores low on Mavya's rubric but already outperforms the shop should be
+ * tested before it is replaced. RLS client; any failure or thin data = false.
+ * Needs 5+ shop listings with 100+ all-time views to form a median.
+ */
+export async function listingBeatsShop(supabase: SupabaseClient, productId: string): Promise<boolean> {
+  try {
+    const [{ data: link }, { data: shop }] = await Promise.all([
+      supabase.from("listing_monitors").select("etsy_listing_id").eq("product_id", productId).maybeSingle(),
+      supabase.from("shop_monitors").select("etsy_shop_id, last_checked_on").maybeSingle(),
+    ]);
+    if (!link || !shop?.last_checked_on) return false;
+    const { data: rows } = await supabase
+      .from("shop_listing_snapshots")
+      .select("listing_id, views, favorites")
+      .eq("etsy_shop_id", shop.etsy_shop_id)
+      .eq("snapshot_date", shop.last_checked_on)
+      .range(0, 999);
+    const rated = ((rows as { listing_id: number | string; views: number | null; favorites: number | null }[] | null) ?? [])
+      .filter((r) => (r.views ?? 0) >= 100 && typeof r.favorites === "number")
+      .map((r) => ({ id: Number(r.listing_id), rate: (r.favorites as number) / (r.views as number) }));
+    const own = rated.find((r) => r.id === Number(link.etsy_listing_id));
+    if (!own || rated.length < 5) return false;
+    const sorted = rated.map((r) => r.rate).sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    const median = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    return own.rate > median;
+  } catch {
+    return false;
+  }
+}

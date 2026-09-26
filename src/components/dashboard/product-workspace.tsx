@@ -129,6 +129,8 @@ type Props = {
    *  wiring only in this slice -- not yet rendered anywhere. The client
    *  never recomputes this; it always comes from the server. */
   coverageState: CoverageState;
+  /** The linked listing gets more favorites per view than most of the shop. */
+  outperformsShop?: boolean;
 };
 
 type Photo = {
@@ -511,6 +513,7 @@ export function ProductWorkspace({
   initialPhotos,
   pendingMain,
   coverageState,
+  outperformsShop = false,
 }: Props) {
   const mountedRef = useRef(true);
   const router = useRouter();
@@ -1958,12 +1961,16 @@ export function ProductWorkspace({
   const informationalDocument =
     active.kind === "supporting" &&
     isInformationalSupportingRole(active.supportingRole);
+  const lowButWinning =
+    outperformsShop && active.kind === "main" && active.status === "graded" && active.audit.overallScore < 7;
   const contextBanner = informationalDocument
     ? "This photo carries information a buyer will rely on, so AI improvement is off for it. Improving a photo means redrawing it, and a redraw cannot guarantee a measurement, ingredient, or item count survives unchanged. Your rating is ready below."
     : graphic
     ? "This is a listing graphic, not a plain product photo. We rated it on how clearly and honestly it helps a buyer, and one-click fix is off because generation cannot preserve its text and layout."
     : digital
     ? "Digital product detected. We scored how clearly the thumbnail shows what the buyer receives, not physical photography."
+    : lowButWinning
+    ? "This photo scores low on Mavya's photo check, but this listing gets more favorites per view than most of your shop. Try a change as a test before replacing what works."
     : undefined;
 
   // Feedback nudge fires ONCE per improvement workflow, only after it has fully

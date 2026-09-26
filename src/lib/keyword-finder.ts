@@ -104,7 +104,7 @@ export const LABEL_TEXT: Record<KeywordLabel, string> = {
   winning: "Winning",
   add: "Add as tag",
   keep: "Good, keep it",
-  crowded: "High competition",
-  quiet: "Low lifetime views",
+  crowded: "Very crowded",
+  quiet: "Few views on top listings",
   unknown: "Views unavailable",
 };

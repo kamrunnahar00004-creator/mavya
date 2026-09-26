@@ -173,7 +173,9 @@ export default async function DashboardPage() {
       </p>
       {typeof entitlement.activeListingLimit === "number" && (
         <p className="mt-1 text-[13.5px] text-[var(--color-ink-muted)]">
-          {cards.length} of {entitlement.activeListingLimit} listings in use.
+          {/* "Tracked" is the shop count on Shop home; this is how many the seller has
+              opened to work on. Different nouns so the two numbers never collide. */}
+          {cards.length} opened to work on. Your plan covers up to {entitlement.activeListingLimit}.
           {!pastDue && cards.length >= entitlement.activeListingLimit && (
             <span className="text-[var(--color-ink)]"> Delete a listing to add another.</span>
           )}
