@@ -1,11 +1,10 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
 import { createSupabaseServerClient, getProtectedPageIdentity } from "@/lib/supabase/server";
 import { getEntitlement } from "@/lib/entitlements";
 import { loadShopHome } from "@/lib/shop-monitor";
 import { todayUtc } from "@/lib/listing-monitor";
 import { ShopListings } from "@/components/dashboard/shop-home";
+import { PageBar } from "@/components/page-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -19,16 +18,12 @@ export default async function ShopListingsPage({ searchParams }: { searchParams:
   // Free accounts see their free Shop check here too; paid actions are locked.
   const free = !entitlement.active && entitlement.reason !== "past_due";
   return (
-    <main className="mx-auto max-w-[1100px] px-4 pb-20 pt-6 sm:px-6">
-      <Link href="/dashboard" className="inline-flex items-center gap-1 text-[13.5px] font-semibold text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" /> Shop home
-      </Link>
-      <h1 className="mt-2 font-display text-[26px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
-        {data.shop ? `All listings in ${data.shop.name}` : "Your listings"}
-      </h1>
-      <div className="mt-5">
+    <>
+      <PageBar crumbs={[{ label: "Overview", href: "/dashboard" }, { label: data.shop ? `All listings in ${data.shop.name}` : "All listings" }]} />
+      <main className="mx-auto max-w-[1280px] px-4 pb-20 pt-6 sm:px-8">
+        <h1 className="sr-only">{data.shop ? `All listings in ${data.shop.name}` : "Your listings"}</h1>
         <ShopListings data={data} filter={filter ?? null} canEdit={entitlement.active} free={free} />
-      </div>
-    </main>
+      </main>
+    </>
   );
 }

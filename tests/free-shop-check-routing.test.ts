@@ -42,7 +42,7 @@ describe("free mode screens (structural)", () => {
     expect(dashboard).not.toContain('if (!entitlement.active && !pastDue) redirect("/subscribe");');
   });
   it("paid actions become plan links; the daily chart becomes the upgrade card", () => {
-    expect(shop).toContain("<Unlock label={f.button} primary={i === 0} />");
+    expect(shop).toContain("<Unlock label={f.button} primary={i === 0 && !v.shopWide} />");
     expect(shop).toContain("<UpgradeCard lastChecked={data.shop.lastCheckedOn} />");
   });
 });

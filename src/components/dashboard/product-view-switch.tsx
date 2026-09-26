@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition, type MouseEvent } from "react";
 import { BarChart3, ImageIcon, Loader2, PenLine } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { PageBar, tabClass } from "@/components/page-bar";
 
 /**
  * Photo | Write | Analytics switch at the top of a product page (Listing Coach,
@@ -20,9 +21,12 @@ import { cn } from "@/lib/utils";
 export function ProductViewSwitch({
   productId,
   active,
+  productName,
 }: {
   productId: string;
   active: "photo" | "write" | "analytics";
+  /** Shown in the breadcrumb ("All listings > name"). */
+  productName?: string | null;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -44,42 +48,31 @@ export function ProductViewSwitch({
   }
 
   return (
-    <div className="mx-auto flex max-w-[1200px] justify-center px-6 pt-5">
-      <nav
-        aria-label="Product view"
-        aria-busy={pending}
-        className="inline-flex rounded-[var(--radius-lg)] border border-[var(--color-border)] bg-white p-1 shadow-[var(--shadow-soft)]"
-      >
-        {items.map(({ key, href, label, Icon }) => {
-          const isActive = key === active;
-          const loading = pending && target === key;
-          return (
-            <Link
-              key={key}
-              href={href}
-              prefetch={false}
-              onClick={(e) => go(e, key, href)}
-              onMouseEnter={() => !isActive && router.prefetch(href)}
-              onFocus={() => !isActive && router.prefetch(href)}
-              aria-current={isActive ? "page" : undefined}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-[var(--radius-md)] px-5 py-2 text-[14px] font-semibold transition-colors",
-                isActive || loading
-                  ? "bg-[var(--color-neutral-dark)] text-white"
-                  : "text-[var(--color-ink-muted)] hover:bg-[var(--color-page-deep)] hover:text-[var(--color-ink)]",
-                pending && isActive && "bg-transparent text-[var(--color-ink-muted)]"
-              )}
-            >
-              {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-              ) : (
-                <Icon className="h-4 w-4" aria-hidden="true" />
-              )}
-              {label}
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
+    <PageBar
+      crumbs={[{ label: "All listings", href: "/dashboard/shop" }, { label: productName?.trim() || "Listing" }]}
+      tabs={
+        <nav aria-label="Product view" aria-busy={pending} className="flex flex-wrap gap-1.5">
+          {items.map(({ key, href, label, Icon }) => {
+            const isActive = key === active;
+            const loading = pending && target === key;
+            return (
+              <Link
+                key={key}
+                href={href}
+                prefetch={false}
+                onClick={(e) => go(e, key, href)}
+                onMouseEnter={() => !isActive && router.prefetch(href)}
+                onFocus={() => !isActive && router.prefetch(href)}
+                aria-current={isActive ? "page" : undefined}
+                className={cn(tabClass(isActive || loading), pending && isActive && "border-[var(--color-border)] text-[var(--color-ink-muted)]")}
+              >
+                {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Icon className="h-4 w-4" aria-hidden="true" />}
+                {label}
+              </Link>
+            );
+          })}
+        </nav>
+      }
+    />
   );
 }

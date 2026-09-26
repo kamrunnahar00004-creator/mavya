@@ -13,6 +13,7 @@ import { logEvent } from "@/lib/errors";
 import { loadShopHome } from "@/lib/shop-monitor";
 import { todayUtc } from "@/lib/listing-monitor";
 import { ShopHome } from "@/components/dashboard/shop-home";
+import { PageBar } from "@/components/page-bar";
 
 export const dynamic = "force-dynamic";
 
@@ -51,7 +52,9 @@ export default async function DashboardPage() {
   // only; every paid action inside it links to the plans page.
   if (!entitlement.active && !pastDue) {
     return (
-      <main className="mx-auto max-w-[760px] px-4 pt-8 pb-20 sm:px-6">
+      <>
+      <PageBar crumbs={[{ label: "Overview" }]} />
+      <main className="mx-auto max-w-[1280px] px-4 pt-6 pb-20 sm:px-8">
         <h1 className="sr-only">Your shop</h1>
         <ShopHome data={shopHome} canEdit={false} free />
         {rows.length > 0 && (
@@ -64,6 +67,7 @@ export default async function DashboardPage() {
           </p>
         )}
       </main>
+      </>
     );
   }
 
@@ -156,7 +160,9 @@ export default async function DashboardPage() {
     // "Fix these 3" opens listings and imports their photos. Without one,
     // connecting the shop comes first, with photo upload as the alternative.
     return (
-      <main className="mx-auto max-w-[760px] px-4 pt-8 pb-20 sm:px-6">
+      <>
+      <PageBar crumbs={[{ label: "Overview" }]} />
+      <main className="mx-auto max-w-[1280px] px-4 pt-6 pb-20 sm:px-8">
         <h1 className="sr-only">Your shop</h1>
         <ShopHome data={shopHome} canEdit={entitlement.active} />
         <div className="mt-10 text-center">
@@ -172,18 +178,21 @@ export default async function DashboardPage() {
           </div>
         </div>
       </main>
+      </>
     );
   }
 
   return (
-    <main className="mx-auto max-w-[1200px] px-6 py-10">
+    <>
+    <PageBar crumbs={[{ label: "Overview" }]} />
+    <main className="mx-auto max-w-[1280px] px-4 pt-6 pb-20 sm:px-8">
       <DashboardRatingPoller jobs={activeRatings} />
       {pastDueBanner && <div className="mb-6">{pastDueBanner}</div>}
       <h1 className="sr-only">Your shop</h1>
-      <div className="mx-auto mb-12 max-w-[760px]">
+      <div className="mb-12">
         <ShopHome data={shopHome} canEdit={entitlement.active} />
       </div>
-      <h2 className="font-display text-[24px] font-semibold tracking-[-0.02em] text-[var(--color-ink)]">
+      <h2 className="text-[20px] font-semibold tracking-[-0.01em] text-[var(--color-ink)]">
         Listings you&apos;re working on
       </h2>
       <p className="mt-1.5 text-[15px] text-[var(--color-ink-muted)]">
@@ -217,5 +226,6 @@ export default async function DashboardPage() {
         {!pastDue && <AddProductCard />}
       </div>
     </main>
+    </>
   );
 }

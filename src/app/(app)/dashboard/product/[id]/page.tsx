@@ -540,7 +540,7 @@ export default async function ProductPage({
         const pendingSigned = await batchSignUrls(supabase, [mainRow.storage_path]);
         return (
           <>
-            <ProductViewSwitch productId={product.id} active="photo" />
+            <ProductViewSwitch productId={product.id} active="photo" productName={product.name} />
             <ProductWorkspace
               productId={product.id}
               productName={product.name}
@@ -561,7 +561,7 @@ export default async function ProductPage({
 
   return (
     <>
-      <ProductViewSwitch productId={product.id} active="photo" />
+      <ProductViewSwitch productId={product.id} active="photo" productName={product.name} />
       <ProductWorkspace
         productId={product.id}
         productName={product.name}

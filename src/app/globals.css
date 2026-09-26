@@ -1,29 +1,29 @@
 @import "tailwindcss";
 
 @theme {
-  /* Warm tool system (2026-09-25): Notion-era calm. White-leaning ground,
-     warm ink, hairlines instead of boxes, Mavya orange as the one accent,
-     soft mint / sand / rose for status. */
-  --color-page: #FCFCFB;
-  --color-page-deep: #F1F1EF;
+  /* Product system (2026-09-26, Alura-grade structure in light): cool
+     neutral grays, near-black ink, hairline borders, Mavya orange only for the
+     one primary action, green / amber / red only for good / mid / bad. */
+  --color-page: #F7F7F8;
+  --color-page-deep: #F0F0F2;
   --color-surface: #FFFFFF;
-  --color-ink: #37352F;
-  --color-ink-muted: #6F6E69;
-  --color-ink-soft: #9B9A97;
-  --color-border: #E3E2DE;
-  --color-border-strong: #D3D1CB;
-  --color-border-soft: #EDEDEA;
+  --color-ink: #18181B;
+  --color-ink-muted: #63636B;
+  --color-ink-soft: #9A9AA2;
+  --color-border: #E4E4E7;
+  --color-border-strong: #D4D4D8;
+  --color-border-soft: #EEEEF0;
   --color-primary: #E2622F;
   --color-primary-hover: #CC5423;
   --color-primary-soft: #FFE9DC;
-  --color-neutral-dark: #37352F;
-  --color-neutral-dark-hover: #22211E;
-  --color-weak: #C4453A;
-  --color-weak-soft: #FCE9E6;
-  --color-mid: #C98A1C;
-  --color-mid-soft: #FBF1D9;
-  --color-strong: #2F7D5B;
-  --color-strong-soft: #E4F4EC;
+  --color-neutral-dark: #18181B;
+  --color-neutral-dark-hover: #27272A;
+  --color-weak: #DC3B30;
+  --color-weak-soft: #FDECEA;
+  --color-mid: #D97A0B;
+  --color-mid-soft: #FDF1DE;
+  --color-strong: #16A05A;
+  --color-strong-soft: #E3F6EB;
   --color-tint: #FFF4EC;
   --color-tint-deep: #FFE9DC;
 

@@ -125,7 +125,7 @@ export function ListingWriteView({
 
   if (!linked || !current) {
     return (
-      <main className="mx-auto w-full max-w-[760px] px-4 pb-20 pt-6 sm:px-6">
+      <main className="mx-auto w-full max-w-[880px] px-4 pb-20 pt-6 sm:px-6">
         <h1 className="sr-only">Write your listing</h1>
         <section className={cn(card, "p-6 sm:p-8")}>
           <span className="flex h-11 w-11 items-center justify-center rounded-[var(--radius-lg)] bg-[var(--color-tint)] text-[var(--color-primary)]">
@@ -163,18 +163,32 @@ export function ListingWriteView({
   );
 
   const toFix = checks.filter((c) => !c.ok).length;
+  const passing = checks.length - toFix;
+  const share = checks.length ? passing / checks.length : 1;
+  const grade = share >= 0.8 ? { word: "Good", color: "var(--color-strong)" } : share >= 0.5 ? { word: "Needs work", color: "var(--color-mid)" } : { word: "Weak", color: "var(--color-weak)" };
 
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-[760px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
+    <main className="mx-auto flex w-full min-w-0 max-w-[880px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
       <h1 className="sr-only">Improve your listing</h1>
 
       <section className={card} aria-labelledby="check-h">
-        <div className="border-b border-[var(--color-border-soft)] px-5 py-5 sm:px-6">
-          <p className="text-[13px] font-medium text-[var(--color-ink-soft)]">Listing check</p>
-          <h2 id="check-h" className="font-display mt-1 text-[22px] font-semibold leading-tight tracking-[-0.01em] text-[var(--color-ink)]">
-            {toFix === 0 ? "Your listing looks solid" : `${toFix} thing${toFix === 1 ? "" : "s"} to improve`}
-          </h2>
-          <p className="mt-1 text-[14px] text-[var(--color-ink-muted)]">Read from your live Etsy listing.</p>
+        <div className="flex items-center gap-5 border-b border-[var(--color-border-soft)] px-5 py-5 sm:px-6">
+          <div className="flex flex-shrink-0 items-stretch gap-3">
+            <span className="w-1 rounded-full" style={{ background: grade.color }} aria-hidden="true" />
+            <p className="text-[40px] font-semibold leading-none tabular-nums tracking-[-0.02em]" style={{ color: grade.color }}>
+              {passing}
+              <span className="text-[20px] text-[var(--color-ink-soft)]">/{checks.length}</span>
+            </p>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[13px] font-semibold" style={{ color: grade.color }}>
+              Listing check: {grade.word}
+            </p>
+            <h2 id="check-h" className="mt-0.5 text-[18px] font-semibold leading-snug text-[var(--color-ink)]">
+              {toFix === 0 ? "Every check passes" : `${passing} of ${checks.length} checks pass, ${toFix} to improve`}
+            </h2>
+            <p className="mt-0.5 text-[13.5px] text-[var(--color-ink-muted)]">Read from your live Etsy listing.</p>
+          </div>
         </div>
         <CheckGroup area="title" label="Title" checks={checks}>
           <p className="text-[15px] leading-snug text-[var(--color-ink)]">{current.title || "No title"}</p>

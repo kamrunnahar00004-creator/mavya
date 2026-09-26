@@ -207,7 +207,7 @@ export default async function ProductAnalyticsPage({ params }: { params: Promise
 
   return (
     <>
-      <ProductViewSwitch productId={product.id} active="analytics" />
+      <ProductViewSwitch productId={product.id} active="analytics" productName={product.name} />
       <ListingAnalyticsView key={`${product.id}:${monitor?.revision ?? "unlinked"}`} vm={vm} />
     </>
   );

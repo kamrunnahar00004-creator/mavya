@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
-import { ArrowRight, Check, ChevronDown, ChevronRight, Lock, Store, RefreshCw } from "lucide-react";
+import { ArrowRight, Check, ChevronDown, ChevronRight, Eye, Heart, LayoutList, Lock, Percent, RefreshCw, Store } from "lucide-react";
 import { MetricChart, Sparkline } from "@/components/dashboard/metric-chart";
 import { cn } from "@/lib/utils";
 import { MIN_HISTORY_DAYS, type FixAction, type ShopStatus } from "@/lib/shop-analytics";
@@ -11,7 +11,7 @@ import type { ShopHomeData } from "@/lib/shop-monitor";
 import { FREE_CHECK_EVERY_DAYS } from "@/lib/plans";
 
 // Same flat, single-column language as the listing tabs.
-const card = "min-w-0 rounded-[var(--radius-xl)] border border-[var(--color-border)] bg-white";
+const card = "min-w-0 rounded-[var(--radius-2xl)] border border-[var(--color-border)] bg-white";
 const sectionTitle = "text-[15px] font-semibold text-[var(--color-ink)]";
 const addDaysUtc = (d: string, n: number) => {
   const x = new Date(`${d}T00:00:00Z`);
@@ -253,9 +253,9 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
   const checked = data.shop.lastCheckedOn ? `Checked ${shortDate(data.shop.lastCheckedOn)}` : "First check pending";
   return (
     <div className="flex flex-col gap-5">
-      <header className="flex flex-wrap items-end justify-between gap-2">
+      <header className="flex flex-wrap items-end justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="font-display text-[30px] leading-tight text-[var(--color-ink)]">{data.shop.name}</h2>
+          <h2 className="text-[28px] font-semibold leading-tight tracking-[-0.02em] text-[var(--color-ink)]">{data.shop.name}</h2>
           <p className="text-[13.5px] text-[var(--color-ink-muted)]">
             {v ? `${v.listings.length} listings tracked · ` : ""}
             {checked}
@@ -266,7 +266,7 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
             </p>
           )}
         </div>
-        <button type="button" onClick={() => setSwitching(true)} className={btnGhost} disabled={!canEdit && !free}>
+        <button type="button" onClick={() => setSwitching(true)} className={btnQuiet} disabled={!canEdit && !free}>
           Switch shop
         </button>
       </header>
@@ -281,8 +281,9 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
       ) : (
         <>
           <ShopNumbers v={v} />
-          {!free && v.historyDays >= MIN_HISTORY_DAYS && <ThisWeek v={v} />}
 
+          <div className="grid items-start gap-5 lg:grid-cols-3">
+          <div className="flex min-w-0 flex-col gap-5 lg:col-span-2">
           {v.shopWide && (
             <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="shopwide">
               <h3 id="shopwide" className={sectionTitle}>
@@ -346,13 +347,13 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
                       )}
                     </div>
                     {free ? (
-                      <Unlock label={f.button} primary={i === 0} />
+                      <Unlock label={f.button} primary={i === 0 && !v.shopWide} />
                     ) : (
                       <button
                         type="button"
                         onClick={() => open(f.listingId, f.action)}
                         disabled={busy !== null || !canEdit}
-                        className={i === 0 ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
+                        className={i === 0 && !v.shopWide ? cn(btnPrimary, "min-h-[40px] px-4") : btnQuiet}
                       >
                         {busy === f.listingId ? "Opening..." : f.button}
                         <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -368,16 +369,9 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
               </p>
             )}
           </section>
-
-          {free ? (
-            <UpgradeCard lastChecked={data.shop.lastCheckedOn} />
-          ) : (
-            <>
-              {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
-              {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
-            </>
-          )}
-
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+          {!free && v.historyDays >= MIN_HISTORY_DAYS && <ThisWeek v={v} />}
           {v.top.length > 0 && (
             <section className={cn(card, "p-5 sm:p-6")} aria-labelledby="top3">
               <h3 id="top3" className={sectionTitle}>
@@ -397,6 +391,19 @@ export function ShopHome({ data, canEdit, free = false }: { data: ShopHomeData |
               </ol>
             </section>
           )}
+
+          </div>
+          </div>
+
+          {free ? (
+            <UpgradeCard lastChecked={data.shop.lastCheckedOn} />
+          ) : (
+            <>
+              {data.shop.lastCheckedOn && <MetricChart title="Shop views" points={v.daily} endDate={data.shop.lastCheckedOn} />}
+              {v.historyDays < MIN_HISTORY_DAYS ? <TrendsProgress days={v.historyDays} lastChecked={data.shop.lastCheckedOn} /> : <StatusTiles v={v} />}
+            </>
+          )}
+
 
           {!free && v.changes.length > 0 && <ChangesSummary v={v} />}
 
@@ -465,18 +472,23 @@ function Thumb({ url, small }: { url: string | null; small?: boolean }) {
 /** Day-1 numbers: Etsy's all-time counters, so a new shop is never empty. */
 function ShopNumbers({ v }: { v: View }) {
   const rate = v.totals.views >= 30 ? (v.totals.favorites / v.totals.views) * 100 : null;
+  const noTags = v.listings.filter((l) => l.tagsUsed === 0).length;
   const cells = [
-    { label: "Views", sub: "all time", value: fmt(v.totals.views) },
-    { label: "Favorites", sub: "all time", value: fmt(v.totals.favorites) },
-    { label: "Favorites", sub: "per 100 views", value: rate === null ? "–" : rate.toFixed(1) },
+    { label: "Views", Icon: Eye, value: fmt(v.totals.views), sub: "All time, from Etsy" },
+    { label: "Favorites", Icon: Heart, value: fmt(v.totals.favorites), sub: "All time, from Etsy" },
+    { label: "Favorites per 100 views", Icon: Percent, value: rate === null ? "–" : rate.toFixed(1), sub: "How often viewers save it" },
+    { label: "Listings tracked", Icon: LayoutList, value: String(v.listings.length), sub: noTags ? `${noTags} with no tags` : "All have tags" },
   ];
   return (
-    <section aria-label="Shop numbers" className={cn(card, "grid grid-cols-3 divide-x divide-[var(--color-border-soft)]")}>
+    <section aria-label="Shop numbers" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {cells.map((c) => (
-        <div key={c.label + c.sub} className="min-w-0 px-3 py-4 sm:px-5">
-          <p className="text-[22px] font-bold leading-none tabular-nums text-[var(--color-ink)] sm:text-[26px]">{c.value}</p>
-          <p className="mt-2 text-[13px] font-semibold text-[var(--color-ink)]">{c.label}</p>
-          <p className="text-[12px] text-[var(--color-ink-muted)]">{c.sub}</p>
+        <div key={c.label} className={cn(card, "min-w-0 p-4 sm:p-5")}>
+          <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-ink-muted)]">
+            <c.Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+            <span className="truncate">{c.label}</span>
+          </p>
+          <p className="mt-2 text-[26px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-[var(--color-ink)] sm:text-[30px]">{c.value}</p>
+          <p className="mt-2 truncate text-[12.5px] text-[var(--color-ink-muted)]">{c.sub}</p>
         </div>
       ))}
     </section>

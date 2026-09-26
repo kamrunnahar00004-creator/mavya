@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
-import { ArrowRight, Check, Clock, ExternalLink, Info, Link2, Pencil, Sparkles } from "lucide-react";
+import { ArrowRight, Check, Clock, ExternalLink, Eye, Info, Link2, Pencil, Percent, Sparkles, Tag } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { MetricChart } from "@/components/dashboard/metric-chart";
 import type { CheckIssue, ChangeKind, Diagnosis, TestVerdict, TopEntry } from "@/lib/listing-analytics";
@@ -125,7 +125,7 @@ async function postJson(url: string, body: unknown): Promise<{ ok: boolean; erro
 
 export function ListingAnalyticsView({ vm }: { vm: AnalyticsViewModel }) {
   return (
-    <main className="mx-auto flex w-full min-w-0 max-w-[760px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
+    <main className="mx-auto flex w-full min-w-0 max-w-[880px] flex-col gap-6 break-words px-4 pb-20 pt-6 sm:px-6">
       <h1 className="sr-only">Listing analytics</h1>
       {!vm.monitor ? (
         <LinkListingCard productId={vm.productId} canEdit={vm.canEdit} />
@@ -350,8 +350,8 @@ function NextStep({ vm }: { vm: AnalyticsViewModel }) {
     <section
       aria-labelledby="next-step"
       className={cn(
-        "rounded-[var(--radius-2xl)] p-6 sm:p-7",
-        good ? "bg-[var(--color-strong-soft)]" : waiting ? "bg-white border border-[var(--color-border-soft)]" : "bg-[var(--color-tint)]"
+        "rounded-[var(--radius-2xl)] border border-[var(--color-border)] border-l-4 bg-white p-6 sm:p-7",
+        good ? "border-l-[var(--color-strong)]" : waiting ? "border-l-[var(--color-border-strong)]" : "border-l-[var(--color-primary)]"
       )}
     >
       <p
@@ -385,16 +385,20 @@ function NextStep({ vm }: { vm: AnalyticsViewModel }) {
 function Numbers({ vm }: { vm: AnalyticsViewModel }) {
   const tags = vm.listing?.tags.length;
   const items = [
-    { value: fmt(vm.last7.viewsPerDay), label: "views a day" },
-    { value: fmt(vm.last7.favoritesPer100Views), label: "favorites per 100 views" },
-    { value: tags === undefined ? "–" : `${tags}/13`, label: "tags used" },
+    { Icon: Eye, label: "Views a day", value: fmt(vm.last7.viewsPerDay), sub: "Last 7 days" },
+    { Icon: Percent, label: "Favorites per 100 views", value: fmt(vm.last7.favoritesPer100Views), sub: "Last 7 days" },
+    { Icon: Tag, label: "Tags used", value: tags === undefined ? "–" : `${tags}/13`, sub: tags === 13 ? "All slots used" : "Each empty slot is a missed search" },
   ];
   return (
-    <section aria-label="Last 7 days" className={cn(card, "grid grid-cols-3 divide-x divide-[var(--color-border-soft)]")}>
+    <section aria-label="Last 7 days" className="grid grid-cols-1 gap-3 sm:grid-cols-3">
       {items.map((s) => (
-        <div key={s.label} className="px-3 py-5 text-center sm:px-5">
-          <p className="text-[26px] font-bold leading-none tracking-[-0.02em] text-[var(--color-ink)] tabular-nums sm:text-[30px]">{s.value}</p>
-          <p className="mt-2 text-[12.5px] leading-tight text-[var(--color-ink-muted)]">{s.label}</p>
+        <div key={s.label} className={cn(card, "min-w-0 p-4 sm:p-5")}>
+          <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--color-ink-muted)]">
+            <s.Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+            <span className="truncate">{s.label}</span>
+          </p>
+          <p className="mt-2 text-[28px] font-semibold leading-none tracking-[-0.02em] tabular-nums text-[var(--color-ink)]">{s.value}</p>
+          <p className="mt-2 truncate text-[12.5px] text-[var(--color-ink-muted)]">{s.sub}</p>
         </div>
       ))}
     </section>

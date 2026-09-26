@@ -23,7 +23,7 @@ export default async function ProductWritePage({ params }: { params: Promise<{ i
   const supabase = await createSupabaseServerClient();
   const [entitlement, productResult, monitorResult] = await Promise.all([
     getEntitlement(user.id),
-    supabase.from("products").select("id").eq("id", id).maybeSingle(),
+    supabase.from("products").select("id, name").eq("id", id).maybeSingle(),
     supabase.from("listing_monitors").select("listing_revision").eq("product_id", id).maybeSingle(),
   ]);
   if (!entitlement.active && entitlement.reason !== "past_due") redirect("/subscribe");
@@ -65,7 +65,7 @@ export default async function ProductWritePage({ params }: { params: Promise<{ i
 
   return (
     <>
-      <ProductViewSwitch productId={product.id} active="write" />
+      <ProductViewSwitch productId={product.id} active="write" productName={product.name} />
       <ListingWriteView
         key={`${product.id}:${monitor?.listing_revision ?? "unlinked"}`}
         listingRevision={monitor?.listing_revision ?? "unlinked"}
